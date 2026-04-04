@@ -4,7 +4,12 @@ import 'package:flutter/material.dart';
 // MODELS
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum CardVariant { wideWithImage, narrowAccentTertiary, narrowAccentSecondary, wideWithSkeleton }
+enum CardVariant {
+  wideWithImage,
+  narrowAccentTertiary,
+  narrowAccentSecondary,
+  wideWithSkeleton
+}
 
 class FeatureItem {
   const FeatureItem({
@@ -52,15 +57,18 @@ const socialProofSub = 'mastering their subjects today';
 const List<StudentAvatar> socialProofAvatars = [
   StudentAvatar(
     name: 'Student A',
-    url: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDoA5H5ruUbAHq4nIAuI3dBn24BDFR9PNaXAHqk1jk-37yTsOL-zGpwQorZCf2xgk-D-rc6B07aGcjLJn2S3zKNTbLxKSLOQwaDFBrTvRFWDWI2xh0qN3XIrKjAsjh3W1XBs9ThCkxz9-DkWh_b6OyAciD-Mqs0r78q4szFcojjEN397Ibt6-cWSyytkwC5wDxXpkV0PFWdEzmtliy3q0Lb8YAWEbQZ4W11Vr_-r0vSqBZFY2oMVqt-5rWQQnaNik0Lhy6nWQ8qqRtA',
+    url:
+        'https://lh3.googleusercontent.com/aida-public/AB6AXuDoA5H5ruUbAHq4nIAuI3dBn24BDFR9PNaXAHqk1jk-37yTsOL-zGpwQorZCf2xgk-D-rc6B07aGcjLJn2S3zKNTbLxKSLOQwaDFBrTvRFWDWI2xh0qN3XIrKjAsjh3W1XBs9ThCkxz9-DkWh_b6OyAciD-Mqs0r78q4szFcojjEN397Ibt6-cWSyytkwC5wDxXpkV0PFWdEzmtliy3q0Lb8YAWEbQZ4W11Vr_-r0vSqBZFY2oMVqt-5rWQQnaNik0Lhy6nWQ8qqRtA',
   ),
   StudentAvatar(
     name: 'Student B',
-    url: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAe72-TiU_qvbzWyTxXQVI6IE559y67GBCg77o6CFnBK2tE-uAWMSQCuSQwzgAQGie86dz1gwiGGoAOGlTM21mGHDXIOIplbLrkzjVdFGJADaQWqjnwcnlc4gkYjI47ItYJKinHENVa_TZgr6BNioAc1x9B1nNVwZ2-8IzqDeS4eBF8J5Eoz6kONwWgPhY6QgDEAqZfJXiUOfm1LM7N3aF7eJ6nQ4jeBs3EGev5m28GBS5i7K7RttIsvy3oILYekuikMWJE43Ko_4ma',
+    url:
+        'https://lh3.googleusercontent.com/aida-public/AB6AXuAe72-TiU_qvbzWyTxXQVI6IE559y67GBCg77o6CFnBK2tE-uAWMSQCuSQwzgAQGie86dz1gwiGGoAOGlTM21mGHDXIOIplbLrkzjVdFGJADaQWqjnwcnlc4gkYjI47ItYJKinHENVa_TZgr6BNioAc1x9B1nNVwZ2-8IzqDeS4eBF8J5Eoz6kONwWgPhY6QgDEAqZfJXiUOfm1LM7N3aF7eJ6nQ4jeBs3EGev5m28GBS5i7K7RttIsvy3oILYekuikMWJE43Ko_4ma',
   ),
   StudentAvatar(
     name: 'Student C',
-    url: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAtOahW-q09XnUHi05qOyG3uu1NaQ53aMXIe19gzATlRoiJDZImmTAl-SR84BVpvkiE2E5hxzIFMvtV0KJoNFmppYEXG5nVZErrvqCxPh0wr34NGgyxKXRUNql0eyCmKPa62rGPU6XjVpIqvDfv0WSTafurXfDzXMjkS17wL0q0nXb7Gc8VtKIWIKX4PEPBQE2zw7WvriycFmwDoaSKYtX9qZgjAMHyGbDX74U5bSR8o6WSCW98XsThfs3DLQFZRHvmX5n4DD9mKg3c',
+    url:
+        'https://lh3.googleusercontent.com/aida-public/AB6AXuAtOahW-q09XnUHi05qOyG3uu1NaQ53aMXIe19gzATlRoiJDZImmTAl-SR84BVpvkiE2E5hxzIFMvtV0KJoNFmppYEXG5nVZErrvqCxPh0wr34NGgyxKXRUNql0eyCmKPa62rGPU6XjVpIqvDfv0WSTafurXfDzXMjkS17wL0q0nXb7Gc8VtKIWIKX4PEPBQE2zw7WvriycFmwDoaSKYtX9qZgjAMHyGbDX74U5bSR8o6WSCW98XsThfs3DLQFZRHvmX5n4DD9mKg3c',
   ),
 ];
 
@@ -90,8 +98,7 @@ const List<FeatureItem> features = [
   ),
   FeatureItem(
     title: 'Active Participation',
-    description:
-        'Passivity is the enemy of learning. Our interface keeps you '
+    description: 'Passivity is the enemy of learning. Our interface keeps you '
         'interacting with your material through smart sketching, typing, and speaking.',
     icon: Icons.edit_note_rounded,
     variant: CardVariant.narrowAccentSecondary,

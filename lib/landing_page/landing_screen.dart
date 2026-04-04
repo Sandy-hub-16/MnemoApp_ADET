@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'landing_data.dart';
 import 'app_theme.dart';
+import '../main.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LANDING SCREEN
@@ -61,15 +62,14 @@ class _NavBar extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.surfaceContainerLow.withOpacity(0.82),
             border: Border(
-              bottom: BorderSide(
-                  color: AppColors.outlineVariant.withOpacity(0.12)),
+              bottom:
+                  BorderSide(color: AppColors.outlineVariant.withOpacity(0.12)),
             ),
           ),
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -102,7 +102,8 @@ class _NavBar extends StatelessWidget {
                         ),
                       _PillButton(
                         label: 'Sign In',
-                        onTap: () {},
+                        onTap: () =>
+                            Navigator.of(context).pushNamed(AppRoutes.signIn),
                         small: true,
                       ),
                     ],
@@ -167,8 +168,7 @@ class _HeroCopy extends StatelessWidget {
       children: [
         // "Available Now" badge
         Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
             color: AppColors.primaryContainer.withOpacity(0.30),
             borderRadius: BorderRadius.circular(999),
@@ -222,7 +222,10 @@ class _HeroCopy extends StatelessWidget {
           spacing: 16,
           runSpacing: 16,
           children: [
-            _PillButton(label: 'Get Started for Free', onTap: () {}),
+            _PillButton(
+                label: 'Get Started for Free',
+                onTap: () =>
+                    Navigator.of(context).pushNamed(AppRoutes.signUp1)),
             _OutlineButton(label: 'How it works', onTap: () {}),
           ],
         ),
@@ -260,15 +263,16 @@ class _HeroVisual extends StatefulWidget {
 class _HeroVisualState extends State<_HeroVisual>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700));
+      vsync: this, duration: const Duration(milliseconds: 700));
 
-  late final Animation<double> _tilt =
-      Tween(begin: 0.017, end: 0.0).animate(
-          CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  late final Animation<double> _tilt = Tween(begin: 0.017, end: 0.0)
+      .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -339,8 +343,8 @@ class _HeroVisualState extends State<_HeroVisual>
                       Text(
                         'Ready for your daily breakthrough? Start your session now.',
                         style: AppTextStyles.bodyBase.copyWith(
-                            color: AppColors.onTertiaryContainer
-                                .withOpacity(0.8),
+                            color:
+                                AppColors.onTertiaryContainer.withOpacity(0.8),
                             fontSize: 12),
                       ),
                     ],
@@ -367,20 +371,17 @@ class _FeaturesSection extends StatelessWidget {
     final wide = MediaQuery.sizeOf(context).width >= 768;
 
     return Padding(
-      padding: EdgeInsets.symmetric(
-          horizontal: wide ? 48 : 24, vertical: 96),
+      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 96),
       child: Column(
         children: [
           // Header
           Text(featuresHeading,
-              style: AppTextStyles.sectionHeading,
-              textAlign: TextAlign.center),
+              style: AppTextStyles.sectionHeading, textAlign: TextAlign.center),
           const SizedBox(height: 16),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: Text(featuresSubheading,
-                style: AppTextStyles.bodyLarge,
-                textAlign: TextAlign.center),
+                style: AppTextStyles.bodyLarge, textAlign: TextAlign.center),
           ),
           const SizedBox(height: 64),
 
@@ -450,8 +451,14 @@ class _FeatureCardState extends State<_FeatureCard> {
   bool _hovered = false;
 
   // Returns colors based on variant
-  ({Color bg, Color border, Color iconBg, Color iconColor, Color title, Color body})
-      get _tokens {
+  ({
+    Color bg,
+    Color border,
+    Color iconBg,
+    Color iconColor,
+    Color title,
+    Color body
+  }) get _tokens {
     switch (widget.item.variant) {
       case CardVariant.narrowAccentTertiary:
         return (
@@ -519,8 +526,7 @@ class _FeatureCardState extends State<_FeatureCard> {
             ),
             const SizedBox(height: 16),
             Text(widget.item.title,
-                style:
-                    AppTextStyles.cardHeading.copyWith(color: t.title)),
+                style: AppTextStyles.cardHeading.copyWith(color: t.title)),
             const SizedBox(height: 12),
             Text(widget.item.description,
                 style: AppTextStyles.bodyBase.copyWith(color: t.body)),
@@ -536,9 +542,7 @@ class _FeatureCardState extends State<_FeatureCard> {
                   duration: const Duration(milliseconds: 600),
                   curve: Curves.easeOut,
                   child: Image.network(widget.item.imageUrl!,
-                      height: 210,
-                      width: double.infinity,
-                      fit: BoxFit.cover),
+                      height: 210, width: double.infinity, fit: BoxFit.cover),
                 ),
               ),
             ],
@@ -587,8 +591,7 @@ class _FooterSection extends StatelessWidget {
 
     return Container(
       color: AppColors.surfaceContainerLow,
-      padding: EdgeInsets.symmetric(
-          horizontal: wide ? 48 : 24, vertical: 64),
+      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 64),
       child: wide
           ? Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -607,8 +610,7 @@ class _Brand extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.auto_stories,
-              color: AppColors.primary, size: 20),
+          const Icon(Icons.auto_stories, color: AppColors.primary, size: 20),
           const SizedBox(width: 8),
           Text('MnemoApp',
               style: AppTextStyles.navBrand
@@ -616,8 +618,7 @@ class _Brand extends StatelessWidget {
         ]),
         const SizedBox(height: 6),
         Text('© 2024 MnemoApp. Built for the curious.',
-            style:
-                AppTextStyles.bodyBase.copyWith(fontSize: 13)),
+            style: AppTextStyles.bodyBase.copyWith(fontSize: 13)),
       ],
     );
   }
@@ -629,9 +630,7 @@ class _Links extends StatelessWidget {
     return Wrap(
       spacing: 32,
       runSpacing: 12,
-      children: footerLinks
-          .map((l) => _FooterLink(label: l))
-          .toList(),
+      children: footerLinks.map((l) => _FooterLink(label: l)).toList(),
     );
   }
 }
@@ -659,9 +658,7 @@ class _FooterLinkState extends State<_FooterLink> {
           style: AppTextStyles.bodyBase.copyWith(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: _hovered
-                ? AppColors.primary
-                : AppColors.onSurfaceVariant,
+            color: _hovered ? AppColors.primary : AppColors.onSurfaceVariant,
           ),
           child: Text(widget.label),
         ),
@@ -696,17 +693,23 @@ class _PillButtonState extends State<_PillButton>
       duration: const Duration(milliseconds: 90),
       reverseDuration: const Duration(milliseconds: 220));
 
-  late final _scale = Tween(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  late final _scale = Tween(begin: 1.0, end: 0.95)
+      .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
-      onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
+      onTapUp: (_) {
+        _ctrl.reverse();
+        widget.onTap();
+      },
       onTapCancel: () => _ctrl.reverse(),
       child: ScaleTransition(
         scale: _scale,
@@ -760,13 +763,16 @@ class _OutlineButtonState extends State<_OutlineButton>
       duration: const Duration(milliseconds: 90),
       reverseDuration: const Duration(milliseconds: 220));
 
-  late final _scale = Tween(begin: 1.0, end: 0.95).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+  late final _scale = Tween(begin: 1.0, end: 0.95)
+      .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
 
   bool _hovered = false;
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -775,14 +781,16 @@ class _OutlineButtonState extends State<_OutlineButton>
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTapDown: (_) => _ctrl.forward(),
-        onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
+        onTapUp: (_) {
+          _ctrl.reverse();
+          widget.onTap();
+        },
         onTapCancel: () => _ctrl.reverse(),
         child: ScaleTransition(
           scale: _scale,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
             decoration: BoxDecoration(
               color: _hovered
                   ? AppColors.surfaceContainerLow
@@ -850,11 +858,13 @@ class _BackgroundBlobs extends StatelessWidget {
       child: IgnorePointer(
         child: Stack(children: [
           Positioned(
-            top: 80, left: -80,
+            top: 80,
+            left: -80,
             child: _Blob(380, AppColors.secondaryFixedDim.withOpacity(0.18)),
           ),
           Positioned(
-            top: 320, right: -80,
+            top: 320,
+            right: -80,
             child: _Blob(500, AppColors.tertiaryContainer.withOpacity(0.16)),
           ),
         ]),
@@ -873,7 +883,8 @@ class _Blob extends StatelessWidget {
     return ImageFiltered(
       imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
       child: Container(
-        width: size, height: size,
+        width: size,
+        height: size,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       ),
     );

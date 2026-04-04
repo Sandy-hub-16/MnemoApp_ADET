@@ -7,27 +7,28 @@ import 'package:google_fonts/google_fonts.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class AppColors {
-  static const primary            = Color(0xFF006C51);
-  static const onPrimary          = Color(0xFFFFFFFF);
-  static const primaryContainer   = Color(0xFF57FDC8);
-  static const primaryFixedDim    = Color(0xFF2CE0AD);
+  static const primary = Color(0xFF006C51);
+  static const onPrimary = Color(0xFFFFFFFF);
+  static const primaryContainer = Color(0xFF57FDC8);
+  static const primaryFixedDim = Color(0xFF2CE0AD);
 
-  static const secondary          = Color(0xFF006688);
+  static const secondary = Color(0xFF006688);
   static const secondaryContainer = Color(0xFFC2E8FF);
   static const onSecondaryContainer = Color(0xFF004D67);
-  static const secondaryFixedDim  = Color(0xFF75D1FF);
+  static const secondaryFixedDim = Color(0xFF75D1FF);
 
-  static const tertiary           = Color(0xFF735C00);
-  static const tertiaryContainer  = Color(0xFFFFE087);
+  static const tertiary = Color(0xFF735C00);
+  static const tertiaryContainer = Color(0xFFFFE087);
   static const onTertiaryContainer = Color(0xFF574500);
 
-  static const background         = Color(0xFFF7FAF9);
-  static const onSurface          = Color(0xFF181C1C);
-  static const onSurfaceVariant   = Color(0xFF354C42);
+  static const background = Color(0xFFF7FAF9);
+  static const onSurface = Color(0xFF181C1C);
+  static const onSurfaceVariant = Color(0xFF354C42);
   static const surfaceContainerLowest = Color(0xFFFFFFFF);
-  static const surfaceContainerLow    = Color(0xFFF1F4F3);
+  static const surfaceContainerLow = Color(0xFFF1F4F3);
 
-  static const outlineVariant     = Color(0xFFB3CCBF);
+  static const outlineVariant = Color(0xFFB3CCBF);
+  static const outline = Color(0xFF647C71);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
