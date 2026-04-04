@@ -16,7 +16,6 @@ class SignUpStep3Screen extends StatelessWidget {
     return AuthScaffold(
       title: 'Create Account',
       showBack: true,
-      trailing: const StepBadge(current: 3, total: 3),
       child: const _Step3Body(),
     );
   }
@@ -30,9 +29,9 @@ class _Step3Body extends StatefulWidget {
 }
 
 class _Step3BodyState extends State<_Step3Body> {
-  final _emailCtrl   = TextEditingController();
-  final _pwCtrl      = TextEditingController();
-  final _pw2Ctrl     = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _pwCtrl = TextEditingController();
+  final _pw2Ctrl = TextEditingController();
   bool _obscure1 = true;
   bool _obscure2 = true;
 
@@ -56,22 +55,22 @@ class _Step3BodyState extends State<_Step3Body> {
         const SizedBox(height: 36),
 
         // ── Header ────────────────────────────────────────────────────────
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-          decoration: BoxDecoration(
-            color: AppColors.primaryContainer.withOpacity(0.28),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            'SECURITY FIRST',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 2,
-              color: AppColors.primary,
-            ),
-          ),
-        ),
+        // Container(
+        //   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        //   decoration: BoxDecoration(
+        //     color: AppColors.primaryContainer.withOpacity(0.28),
+        //     borderRadius: BorderRadius.circular(999),
+        //   ),
+        //   child: Text(
+        //     'SECURITY FIRST',
+        //     style: GoogleFonts.plusJakartaSans(
+        //       fontSize: 10,
+        //       fontWeight: FontWeight.w800,
+        //       letterSpacing: 2,
+        //       color: AppColors.primary,
+        //     ),
+        //   ),
+        // ),
         const SizedBox(height: 12),
         Text(
           'Secure your study journey.',
@@ -165,10 +164,9 @@ class _Step3BodyState extends State<_Step3Body> {
                         'At least 12 characters with uppercase letters, '
                         'numbers, and symbols for maximum security.',
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          height: 1.55,
-                          color: AppColors.onSurfaceVariant,
-                        ),
+                            fontSize: 11,
+                            height: 1.55,
+                            color: AppColors.onSurfaceVariant.withOpacity(0.35)),
                       ),
                     ),
                   ],
@@ -204,7 +202,8 @@ class _Step3BodyState extends State<_Step3Body> {
                 color: AppColors.outline,
               ),
               children: [
-                const TextSpan(text: 'By completing sign up, you agree to our '),
+                const TextSpan(
+                    text: 'By completing sign up, you agree to our '),
                 _linkSpan('Terms of Service'),
                 const TextSpan(text: ' and '),
                 _linkSpan('Privacy Policy'),

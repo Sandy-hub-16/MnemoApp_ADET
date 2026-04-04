@@ -47,7 +47,10 @@ class AuthScaffold extends StatelessWidget {
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.only(
-                      left: 24, right: 24, top: 8, bottom: 40,
+                      left: 24,
+                      right: 24,
+                      top: 8,
+                      bottom: 40,
                     ),
                     child: Center(
                       child: ConstrainedBox(
@@ -99,10 +102,7 @@ class _AuthTopBar extends StatelessWidget {
           child: Row(
             children: [
               // Back button
-              if (showBack)
-                _BackButton()
-              else
-                const SizedBox(width: 48),
+              if (showBack) _BackButton() else const SizedBox(width: 48),
 
               // Title — centred
               Expanded(
@@ -224,42 +224,44 @@ class StepProgressBar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Step $current of $total',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
-                color: AppColors.primary,
-              ),
-            ),
-            Text(
-              '${((current / total) * 100).round()}%',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary.withOpacity(0.55),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: current / total),
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOutCubic,
-            builder: (_, value, __) => LinearProgressIndicator(
-              value: value,
-              minHeight: 5,
-              backgroundColor: AppColors.outlineVariant.withOpacity(0.3),
-              valueColor: const AlwaysStoppedAnimation(AppColors.primary),
-            ),
+        // Step label — sits just above the pills, low-key but clear
+        Text(
+          'Step $current of $total',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
+            color: AppColors.primary.withOpacity(0.6),
           ),
+        ),
+        const SizedBox(height: 8),
+
+        // Segmented pill row
+        Row(
+          children: List.generate(total, (i) {
+            final filled = i < current;
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(left: i == 0 ? 0 : 4),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.0, end: filled ? 1.0 : 0.0),
+                  duration: Duration(milliseconds: 380 + i * 60),
+                  curve: Curves.easeOutCubic,
+                  builder: (_, t, __) => Container(
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Color.lerp(
+                        AppColors.outlineVariant.withOpacity(0.28),
+                        AppColors.primary,
+                        t,
+                      ),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
         ),
       ],
     );
@@ -367,7 +369,12 @@ class _AuthTextFieldState extends State<AuthTextField> {
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(radius),
-                  borderSide: BorderSide.none,
+                  borderSide: BorderSide(
+                    // Soft outline so the field is always visible,
+                    // but doesn't compete with the focused primary stroke.
+                    color: AppColors.outlineVariant.withOpacity(0.55),
+                    width: 1.2,
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(radius),
@@ -377,7 +384,10 @@ class _AuthTextFieldState extends State<AuthTextField> {
                   ),
                 ),
                 contentPadding: EdgeInsets.symmetric(
-                  horizontal: widget.prefixIcon != null || widget.prefixText != null ? 0 : 22,
+                  horizontal:
+                      widget.prefixIcon != null || widget.prefixText != null
+                          ? 0
+                          : 22,
                   vertical: 18,
                 ),
                 prefixIcon: widget.prefixIcon != null
@@ -567,7 +577,8 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CustomPaint(size: const Size(20, 20), painter: _GoogleGPainter()),
+                CustomPaint(
+                    size: const Size(20, 20), painter: _GoogleGPainter()),
                 const SizedBox(width: 12),
                 Text(
                   'Connect with Google',
@@ -611,8 +622,8 @@ class _GoogleGPainter extends CustomPainter {
 
     arc(-1.05, 2.09, const Color(0xFF4285F4)); // blue — right
     arc(-3.14, 2.09, const Color(0xFFEA4335)); // red  — left top
-    arc(1.05, 1.05, const Color(0xFF34A853));  // green — bottom right
-    arc(2.09, 1.05, const Color(0xFFFBBC05));  // yellow — bottom left
+    arc(1.05, 1.05, const Color(0xFF34A853)); // green — bottom right
+    arc(2.09, 1.05, const Color(0xFFFBBC05)); // yellow — bottom left
 
     // Horizontal bar of the G
     canvas.drawLine(
@@ -641,7 +652,8 @@ class OrDivider extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Container(height: 1, color: AppColors.outlineVariant.withOpacity(0.35)),
+          child: Container(
+              height: 1, color: AppColors.outlineVariant.withOpacity(0.35)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -656,7 +668,8 @@ class OrDivider extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: Container(height: 1, color: AppColors.outlineVariant.withOpacity(0.35)),
+          child: Container(
+              height: 1, color: AppColors.outlineVariant.withOpacity(0.35)),
         ),
       ],
     );

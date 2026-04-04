@@ -17,7 +17,6 @@ class SignUpStep1Screen extends StatelessWidget {
     return AuthScaffold(
       title: 'Create Account',
       showBack: true,
-      trailing: const StepBadge(current: 1, total: 3),
       child: const _Step1Body(),
     );
   }
@@ -31,7 +30,7 @@ class _Step1Body extends StatefulWidget {
 }
 
 class _Step1BodyState extends State<_Step1Body> {
-  final _nameCtrl     = TextEditingController();
+  final _nameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
 
   @override
@@ -95,8 +94,7 @@ class _Step1BodyState extends State<_Step1Body> {
         // ── Info blob ─────────────────────────────────────────────────────
         InfoBlob(
           icon: Icons.info_outline_rounded,
-          text:
-              'Your name and username will be visible to your study buddies '
+          text: 'Your name and username will be visible to your study buddies '
               'and in collaborative flashcard decks.',
           color: AppColors.secondaryContainer.withOpacity(0.35),
           iconColor: AppColors.secondary,

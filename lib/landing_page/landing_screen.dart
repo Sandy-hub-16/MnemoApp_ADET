@@ -200,10 +200,14 @@ class _HeroCopy extends StatelessWidget {
                   shaderCallback: (b) => const LinearGradient(
                     colors: [AppColors.primary, AppColors.primaryFixedDim],
                   ).createShader(b),
-                  child: Text(
-                    heroHeadlineHighlight,
-                    style: AppTextStyles.heroDisplay(mobile: !wide)
-                        .copyWith(color: Colors.white),
+                  child: Padding(
+                    // Extra bottom room so ShaderMask never clips descenders (g, y, p…)
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      heroHeadlineHighlight,
+                      style: AppTextStyles.heroDisplay(mobile: !wide)
+                          .copyWith(color: Colors.white),
+                    ),
                   ),
                 ),
               ),
@@ -217,18 +221,31 @@ class _HeroCopy extends StatelessWidget {
             style: wide ? AppTextStyles.bodyLarge : AppTextStyles.bodyBase),
         const SizedBox(height: 40),
 
-        // CTA buttons
-        Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: [
-            _PillButton(
+        // CTA buttons — full-width stacked on mobile, inline on desktop
+        if (!wide) ...[
+          _PillButton(
+            label: 'Get Started for Free',
+            onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp1),
+            fullWidth: true,
+          ),
+          const SizedBox(height: 12),
+          _OutlineButton(
+            label: 'How it works',
+            onTap: () {},
+            fullWidth: true,
+          ),
+        ] else
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              _PillButton(
                 label: 'Get Started for Free',
-                onTap: () =>
-                    Navigator.of(context).pushNamed(AppRoutes.signUp1)),
-            _OutlineButton(label: 'How it works', onTap: () {}),
-          ],
-        ),
+                onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp1),
+              ),
+              _OutlineButton(label: 'How it works', onTap: () {}),
+            ],
+          ),
         const SizedBox(height: 40),
 
         // Social proof
@@ -677,10 +694,12 @@ class _PillButton extends StatefulWidget {
     required this.label,
     required this.onTap,
     this.small = false,
+    this.fullWidth = false,
   });
   final String label;
   final VoidCallback onTap;
   final bool small;
+  final bool fullWidth;
 
   @override
   State<_PillButton> createState() => _PillButtonState();
@@ -714,6 +733,8 @@ class _PillButtonState extends State<_PillButton>
       child: ScaleTransition(
         scale: _scale,
         child: Container(
+          width: widget.fullWidth ? double.infinity : null,
+          alignment: widget.fullWidth ? Alignment.center : null,
           padding: EdgeInsets.symmetric(
             horizontal: widget.small ? 26 : 40,
             vertical: widget.small ? 10 : 20,
@@ -748,9 +769,14 @@ class _PillButtonState extends State<_PillButton>
 
 /// Ghost pill button — secondary CTA.
 class _OutlineButton extends StatefulWidget {
-  const _OutlineButton({required this.label, required this.onTap});
+  const _OutlineButton({
+    required this.label,
+    required this.onTap,
+    this.fullWidth = false,
+  });
   final String label;
   final VoidCallback onTap;
+  final bool fullWidth;
 
   @override
   State<_OutlineButton> createState() => _OutlineButtonState();
@@ -790,6 +816,8 @@ class _OutlineButtonState extends State<_OutlineButton>
           scale: _scale,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
+            width: widget.fullWidth ? double.infinity : null,
+            alignment: widget.fullWidth ? Alignment.center : null,
             padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
             decoration: BoxDecoration(
               color: _hovered

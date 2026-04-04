@@ -88,7 +88,8 @@ abstract final class AppTextStyles {
 
   static TextStyle get navBrand => _font(
         fontSize: 21,
-        fontWeight: FontWeight.w900,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.1,
       );
 }
 
