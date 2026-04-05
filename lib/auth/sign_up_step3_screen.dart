@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+import '../services/auth_service.dart';
 import 'auth_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,9 +179,38 @@ class _Step3BodyState extends State<_Step3Body> {
               AuthPrimaryButton(
                 label: 'Complete Sign Up',
                 trailingIcon: Icons.check_rounded,
-                onTap: () {
-                  // UI only. Wire to AuthRepository when auth is implemented.
-                  _showSuccessSheet(context);
+                onTap: () async {
+                  final args = ModalRoute.of(context)!.settings.arguments as Map;
+
+                  String email = _emailCtrl.text.trim();
+                  String password = _pwCtrl.text.trim();
+                  String confirmPassword = _pw2Ctrl.text.trim();
+
+                      if (email.isEmpty || password.isEmpty) {
+                        print("Fill all fields");
+                        return;
+                      }
+
+                      if (password != confirmPassword) {
+                        print("Passwords do not match");
+                        return;
+                      }
+                      var user = await AuthService().registerWithDetails(
+                        email: email,
+                        password: password,
+                        fullName: args['fullName'],
+                        username: args['username'],
+                        age: args['age'],
+                        country: args['country'],
+                      );
+
+                      if (user != null) {
+                        print("Registered: ${user.email}");
+
+                        _showSuccessSheet(context);
+                      } else {
+                        print("Registration failed");
+                      }
                 },
               ),
             ],

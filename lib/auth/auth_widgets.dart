@@ -1,7 +1,9 @@
 import 'dart:ui';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+import '../services/auth_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH SCAFFOLD
@@ -511,12 +513,18 @@ class _AuthPrimaryButtonState extends State<AuthPrimaryButton>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                widget.label,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+              Flexible(
+                child: Text(
+                  widget.label,
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               if (widget.showIcon) ...[
@@ -555,8 +563,18 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
         onTapDown: (_) => setState(() => _pressed = true),
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
-        onTap: () {
-          // UI only — connect real Google OAuth when auth is implemented.
+        onTap: () async {
+          User? user = await AuthService().signInWithGoogle();
+
+          if (user != null) {
+            // ignore: avoid_print
+            print("Logged in: ${user.displayName}");
+
+            Navigator.pushReplacementNamed(context, '/home');
+          } else {
+            // ignore: avoid_print
+            print("Login Failed");
+          }
         },
         child: AnimatedScale(
           scale: _pressed ? 0.97 : 1.0,

@@ -6,7 +6,24 @@ import 'auth/sign_up_step1_screen.dart';
 import 'auth/sign_up_step2_screen.dart';
 import 'auth/sign_up_step3_screen.dart';
 
-void main() => runApp(const MnemoApp());
+import 'package:firebase_core/firebase_core.dart';
+
+void main() async {
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: const FirebaseOptions(
+      apiKey: "AIzaSyD7sUF0hJA2K7brpuye8HYqpEcUgC-kkFs",
+      authDomain: "mnemoapp-192a0.firebaseapp.com",
+      projectId: "mnemoapp-192a0",
+      storageBucket: "mnemoapp-192a0.firebasestorage.app",
+      messagingSenderId: "875157332608",
+      appId: "1:875157332608:web:7077e1ccc398a9fd137c65",
+    ),
+  );
+  runApp(const MnemoApp());
+}
 
 class MnemoApp extends StatelessWidget {
   const MnemoApp({super.key});

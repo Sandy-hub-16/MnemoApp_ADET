@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../main.dart';
+import '../services/auth_service.dart';
 import 'auth_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,8 +106,28 @@ class _SignInBodyState extends State<_SignInBody> {
               AuthPrimaryButton(
                 label: 'Sign In',
                 showIcon: false,
-                onTap: () {
-                  // UI only. Wire to AuthRepository when auth is implemented.
+                onTap: () async {
+                  String email = _emailCtrl.text.trim();
+                  String password = _passwordCtrl.text.trim();
+
+                  if (email.isEmpty || password.isEmpty) {
+                    print("Please fill all fields");
+                    return;
+                  }
+
+                  var user = await AuthService().login(email, password);
+
+                  if(user != null) {
+                    // paltan mo to as popup or ikaw bahala basta makikita ni user
+                    // same as other code na may "print({text})" ctrl+f mo nlng hehe
+                    print("Logged in: ${user.email}");
+                    
+                    // redirect mo to sa home ng user kapag nakalogin na siya
+                    // so far, nireredirect plang to sa landing screen
+                     Navigator.pushReplacementNamed(context, '/home');
+                  } else {
+                    print("Login Failed");
+                  }
                 },
               ),
               const SizedBox(height: 24),

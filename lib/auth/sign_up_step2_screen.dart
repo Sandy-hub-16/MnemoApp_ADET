@@ -14,6 +14,7 @@ class SignUpStep2Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+
     return AuthScaffold(
       title: 'Create Account',
       showBack: true,
@@ -49,6 +50,9 @@ class _Step2BodyState extends State<_Step2Body> {
 
   @override
   Widget build(BuildContext context) {
+
+    final args = ModalRoute.of(context)!.settings.arguments as Map;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -97,7 +101,14 @@ class _Step2BodyState extends State<_Step2Body> {
         // ── Continue CTA ──────────────────────────────────────────────────
         AuthPrimaryButton(
           label: 'Continue to Final Step',
-          onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp3),
+          onTap: () => Navigator.of(context).pushNamed(
+            AppRoutes.signUp3,
+            arguments: {
+              ...args,
+              'age': _age.toInt(),
+              'country': _country ?? '',
+            },
+          ),
         ),
         const SizedBox(height: 16),
 
