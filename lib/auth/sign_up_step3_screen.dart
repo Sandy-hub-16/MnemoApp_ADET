@@ -105,8 +105,10 @@ Future<void> registerUser(Map<String, dynamic> args) async {
 
   @override
   Widget build(BuildContext context) {
-    final args =
-      ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>? ?? {};
+    final rawArgs = ModalRoute.of(context)!.settings.arguments;
+
+    final Map<String, dynamic> args =
+        rawArgs != null ? Map<String, dynamic>.from(rawArgs as Map) : {};
       
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
