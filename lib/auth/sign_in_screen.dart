@@ -119,7 +119,6 @@ class _SignInBodyState extends State<_SignInBody> {
 
                   if(user != null) {
                     // paltan mo to as popup or ikaw bahala basta makikita ni user
-                    // same as other code na may "print({text})" ctrl+f mo nlng hehe
                     print("Logged in: ${user.email}");
                     
                     // redirect mo to sa home ng user kapag nakalogin na siya

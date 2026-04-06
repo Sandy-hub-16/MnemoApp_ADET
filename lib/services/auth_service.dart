@@ -22,19 +22,15 @@ class AuthService {
 
       User? user = userCredential.user;
 
-      if (user != null) {
-  
-        await _db.collection('users').doc(user.uid).set({
-          'fullName': fullName,
-          'username': username,
-          'age': age,
-          'country': country,
-          'email': email,
-          'createdAt': DateTime.now(),
-        });
-      }
-
       return user;
+    } on FirebaseAuthException catch(e) {
+      if(e.code == 'email-already-in-use') {
+        print("Email already registered. Try logging in instead.");
+        return null;
+      } else {
+        print("Register Error: $e");
+        return null;
+      }
     } catch (e) {
       print("Register Error: $e");
       return null;
@@ -52,6 +48,7 @@ class AuthService {
       return userCredential.user;
     } catch(e) {
       print("Register Error: $e");
+      return null;
     }
   }
 
@@ -66,6 +63,7 @@ class AuthService {
       return userCredential.user;
     } catch(e) {
       print("Login Error: $e");
+      return null;
     }
   }
 

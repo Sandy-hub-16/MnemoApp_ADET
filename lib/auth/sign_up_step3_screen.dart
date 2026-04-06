@@ -33,6 +33,10 @@ class _Step3BodyState extends State<_Step3Body> {
   final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
   final _pw2Ctrl = TextEditingController();
+
+  String? _errorMessage;
+  bool _isLoading = false;
+  
   bool _obscure1 = true;
   bool _obscure2 = true;
 
@@ -44,8 +48,66 @@ class _Step3BodyState extends State<_Step3Body> {
     super.dispose();
   }
 
+  String? validateFields() {
+  if (_emailCtrl.text.isEmpty ||
+      _pwCtrl.text.isEmpty ||
+      _pw2Ctrl.text.isEmpty) {
+    return "Please fill all fields";
+  }
+
+  if (!_emailCtrl.text.contains('@')) {
+    return "Invalid email";
+  }
+
+  if (_pwCtrl.text.length < 12) {
+    return "Password must be at least 12 characters";
+  }
+
+  if (_pwCtrl.text != _pw2Ctrl.text) {
+    return "Passwords do not match";
+  }
+
+  return null;
+}
+
+Future<void> registerUser(Map<String, dynamic> args) async {
+  setState(() {
+    _isLoading = true;
+    _errorMessage = null;
+  });
+
+  try {
+    final user = await AuthService().registerWithDetails(
+      email: _emailCtrl.text.trim(),
+      password: _pwCtrl.text.trim(),
+      fullName: args['fullName']  ?? '',
+      username: args['username'] ?? '',
+      age: args['age'] ?? 0,
+      country: args['country'] ?? '',
+    );
+
+    if (user == null) {
+      setState(() {
+        _errorMessage = "Registration failed";
+      });
+    } 
+
+  } catch (e) {
+    setState(() {
+      _errorMessage = e.toString();
+    });
+  }
+
+  setState(() {
+    _isLoading = false;
+  });
+}
+
   @override
   Widget build(BuildContext context) {
+    final args =
+      ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>? ?? {};
+      
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -175,42 +237,31 @@ class _Step3BodyState extends State<_Step3Body> {
               ),
               const SizedBox(height: 24),
 
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
               // Complete Sign Up CTA — UI only
               AuthPrimaryButton(
                 label: 'Complete Sign Up',
                 trailingIcon: Icons.check_rounded,
                 onTap: () async {
-                  final args = ModalRoute.of(context)!.settings.arguments as Map;
+                  final error = validateFields();
 
-                  String email = _emailCtrl.text.trim();
-                  String password = _pwCtrl.text.trim();
-                  String confirmPassword = _pw2Ctrl.text.trim();
+                  if (error != null) {
+                    setState(() => _errorMessage = error);
+                    return;
+                  }
 
-                      if (email.isEmpty || password.isEmpty) {
-                        print("Fill all fields");
-                        return;
-                      }
+                  await registerUser(args);
 
-                      if (password != confirmPassword) {
-                        print("Passwords do not match");
-                        return;
-                      }
-                      var user = await AuthService().registerWithDetails(
-                        email: email,
-                        password: password,
-                        fullName: args['fullName'],
-                        username: args['username'],
-                        age: args['age'],
-                        country: args['country'],
-                      );
-
-                      if (user != null) {
-                        print("Registered: ${user.email}");
-
-                        _showSuccessSheet(context);
-                      } else {
-                        print("Registration failed");
-                      }
+                  if (_errorMessage == null) {
+                    _showSuccessSheet(context);
+                  }
                 },
               ),
             ],
