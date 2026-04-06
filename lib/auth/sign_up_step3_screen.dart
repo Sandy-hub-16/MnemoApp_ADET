@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+import '../services/auth_service.dart';
 import 'auth_widgets.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,6 +33,10 @@ class _Step3BodyState extends State<_Step3Body> {
   final _emailCtrl = TextEditingController();
   final _pwCtrl = TextEditingController();
   final _pw2Ctrl = TextEditingController();
+
+  String? _errorMessage;
+  bool _isLoading = false;
+  
   bool _obscure1 = true;
   bool _obscure2 = true;
 
@@ -43,8 +48,66 @@ class _Step3BodyState extends State<_Step3Body> {
     super.dispose();
   }
 
+  String? validateFields() {
+  if (_emailCtrl.text.isEmpty ||
+      _pwCtrl.text.isEmpty ||
+      _pw2Ctrl.text.isEmpty) {
+    return "Please fill all fields";
+  }
+
+  if (!_emailCtrl.text.contains('@')) {
+    return "Invalid email";
+  }
+
+  if (_pwCtrl.text.length < 12) {
+    return "Password must be at least 12 characters";
+  }
+
+  if (_pwCtrl.text != _pw2Ctrl.text) {
+    return "Passwords do not match";
+  }
+
+  return null;
+}
+
+Future<void> registerUser(Map<String, dynamic> args) async {
+  setState(() {
+    _isLoading = true;
+    _errorMessage = null;
+  });
+
+  try {
+    final user = await AuthService().registerWithDetails(
+      email: _emailCtrl.text.trim(),
+      password: _pwCtrl.text.trim(),
+      fullName: args['fullName']  ?? '',
+      username: args['username'] ?? '',
+      age: args['age'] ?? 0,
+      country: args['country'] ?? '',
+    );
+
+    if (user == null) {
+      setState(() {
+        _errorMessage = "Registration failed";
+      });
+    } 
+
+  } catch (e) {
+    setState(() {
+      _errorMessage = e.toString();
+    });
+  }
+
+  setState(() {
+    _isLoading = false;
+  });
+}
+
   @override
   Widget build(BuildContext context) {
+    final args =
+      ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>? ?? {};
+      
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -174,13 +237,31 @@ class _Step3BodyState extends State<_Step3Body> {
               ),
               const SizedBox(height: 24),
 
+              if (_errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
               // Complete Sign Up CTA — UI only
               AuthPrimaryButton(
                 label: 'Complete Sign Up',
                 trailingIcon: Icons.check_rounded,
-                onTap: () {
-                  // UI only. Wire to AuthRepository when auth is implemented.
-                  _showSuccessSheet(context);
+                onTap: () async {
+                  final error = validateFields();
+
+                  if (error != null) {
+                    setState(() => _errorMessage = error);
+                    return;
+                  }
+
+                  await registerUser(args);
+
+                  if (_errorMessage == null) {
+                    _showSuccessSheet(context);
+                  }
                 },
               ),
             ],

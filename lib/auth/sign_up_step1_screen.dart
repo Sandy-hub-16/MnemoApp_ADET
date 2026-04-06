@@ -105,7 +105,13 @@ class _Step1BodyState extends State<_Step1Body> {
         // ── Next CTA ──────────────────────────────────────────────────────
         AuthPrimaryButton(
           label: 'Next Step',
-          onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp2),
+          onTap: () => Navigator.of(context).pushNamed(
+            AppRoutes.signUp2,
+            arguments: {
+              'fullName': _nameCtrl.text,
+              'username': _usernameCtrl.text
+            },
+          ),
         ),
         const SizedBox(height: 32),
       ],

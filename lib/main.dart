@@ -6,7 +6,28 @@ import 'auth/sign_up_step1_screen.dart';
 import 'auth/sign_up_step2_screen.dart';
 import 'auth/sign_up_step3_screen.dart';
 
-void main() => runApp(const MnemoApp());
+import 'package:firebase_core/firebase_core.dart';
+
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+Future<void> main() async {
+
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: "assets/.env");
+
+  await Firebase.initializeApp(
+    options: FirebaseOptions(
+      apiKey: dotenv.env['FIREBASE_API_KEY']!,
+      authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN']!,
+      projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+      storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
+      messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
+      appId: dotenv.env['FIREBASE_APP_ID']!,
+    ),
+  );
+  runApp(const MnemoApp());
+}
 
 class MnemoApp extends StatelessWidget {
   const MnemoApp({super.key});
