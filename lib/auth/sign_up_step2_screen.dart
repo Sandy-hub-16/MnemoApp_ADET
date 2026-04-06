@@ -51,7 +51,10 @@ class _Step2BodyState extends State<_Step2Body> {
   @override
   Widget build(BuildContext context) {
 
-    final args = ModalRoute.of(context)!.settings.arguments as Map;
+    final rawArgs = ModalRoute.of(context)!.settings.arguments;
+
+    final Map<String, dynamic> args =
+        rawArgs != null ? Map<String, dynamic>.from(rawArgs as Map) : {};
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -103,11 +106,11 @@ class _Step2BodyState extends State<_Step2Body> {
           label: 'Continue to Final Step',
           onTap: () => Navigator.of(context).pushNamed(
             AppRoutes.signUp3,
-            arguments: {
+            arguments: Map<String, dynamic>.from({
               ...args,
               'age': _age.toInt(),
               'country': _country ?? '',
-            },
+            }),
           ),
         ),
         const SizedBox(height: 16),
@@ -115,7 +118,10 @@ class _Step2BodyState extends State<_Step2Body> {
         // ── Skip ──────────────────────────────────────────────────────────
         Center(
           child: GestureDetector(
-            onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp3),
+            onTap: () => Navigator.of(context).pushNamed(
+              AppRoutes.signUp3,
+              arguments: Map<String, dynamic>.from(args),
+            ),
             child: Text(
               'Skip for now',
               style: GoogleFonts.plusJakartaSans(
