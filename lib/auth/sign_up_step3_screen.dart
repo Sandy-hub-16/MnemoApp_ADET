@@ -103,7 +103,6 @@ class _Step3BodyState extends State<_Step3Body> {
   final _pw2Ctrl = TextEditingController();
 
   String? _errorMessage;
-  bool _isLoading = false;
 
   bool _obscure1 = true;
   bool _obscure2 = true;
@@ -140,7 +139,6 @@ class _Step3BodyState extends State<_Step3Body> {
 
   Future<void> registerUser(Map<String, dynamic> args) async {
     setState(() {
-      _isLoading = true;
       _errorMessage = null;
     });
 
@@ -166,7 +164,6 @@ class _Step3BodyState extends State<_Step3Body> {
     }
 
     setState(() {
-      _isLoading = false;
     });
   }
 
@@ -327,34 +324,22 @@ class _Step3BodyState extends State<_Step3Body> {
                     return;
                   }
 
-                  // Navigate to the Verify Email screen and wait for it to pop.
-                  // Pass the full args map + email + password so the dev bypass
-                  // on that screen has everything it needs to hand back to us.
-                  final result = await Navigator.of(context).pushNamed(
-                    '/verify-email',
-                    arguments: {
-                      ...args,
-                      'email': _emailCtrl.text.trim(),
-                      'password': _pwCtrl.text.trim(),
-                    },
-                  );
+                  widget.loadingNotifier.value = true;
 
-                  // result == true means either:
-                  //   • Dev bypass was tapped (OTP skipped), or
-                  //   • TODO: real OTP confirmed by backend.
-                  // Either way: show the loading overlay and create the account.
-                  if (result == true && mounted) {
-                    widget.loadingNotifier.value = true;
+                  // Register User
+                  await registerUser(args);
 
-                    await registerUser(args);
 
-                    if (mounted) {
-                      widget.loadingNotifier.value = false;
-                      if (_errorMessage == null) {
-                        _showSuccessSheet(context);
-                      }
-                    }
-                  }
+                  widget.loadingNotifier.value = false;
+                  // verify screen
+                  Navigator.of(context).pushNamed(
+                  '/verify-email',
+                  arguments: {
+                    ...args,
+                    'email': _emailCtrl.text.trim(),
+                  },
+);
+                  
                 },
               ),
             ],
@@ -402,14 +387,6 @@ class _Step3BodyState extends State<_Step3Body> {
         ),
       );
 
-  /// Temporary success sheet — replace with real post-signup navigation.
-  void _showSuccessSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _SuccessSheet(),
-    );
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -485,6 +462,7 @@ class _PrivacyBento extends StatelessWidget {
 // Replace with real navigation once auth is wired.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ignore: unused_element
 class _SuccessSheet extends StatelessWidget {
   const _SuccessSheet();
 

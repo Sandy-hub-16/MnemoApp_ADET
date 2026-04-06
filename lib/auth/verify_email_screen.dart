@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -57,6 +58,8 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
   // Countdown timer display — UI only, no real timer logic
   final String _countdown = '03:00';
 
+  
+
   @override
   void dispose() {
     for (final c in _controllers) {
@@ -78,6 +81,17 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
       _focusNodes[index - 1].requestFocus();
     }
     setState(() {});
+  }
+
+  Future<void> checkEmailVerified() async {
+    await FirebaseAuth.instance.currentUser?.reload();
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user != null && user.emailVerified) {
+      Navigator.pop(context, true);
+    } else {
+      _showError("Email not verified yet.");
+    }
   }
 
   /// Shared red snackbar used for all errors on this screen.
@@ -127,7 +141,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
               color: AppColors.onSurfaceVariant,
             ),
             children: [
-              const TextSpan(text: "We've sent a 6-digit code to "),
+              const TextSpan(text: "We've sent a verification link to "),
               TextSpan(
                 text: widget.email,
                 style: GoogleFonts.plusJakartaSans(
@@ -173,18 +187,8 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
               AuthPrimaryButton(
                 label: 'Verify & Create Account',
                 trailingIcon: Icons.rocket_launch_rounded,
-                onTap: () {
-                  final allFilled =
-                      _controllers.every((c) => c.text.isNotEmpty);
-
-                  if (!allFilled) {
-                    _showError('Please enter all 6 digits.');
-                    return;
-                  }
-
-                  // All 6 digits entered but OTP validation is not wired yet.
-                  // Always reject until a real backend check is implemented.
-                  _showError('Incorrect code. Please try again.');
+                onTap: () async {
+                  await checkEmailVerified();
                 },
               ),
               const SizedBox(height: 24),
@@ -193,8 +197,9 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
               Column(
                 children: [
                   GestureDetector(
-                    onTap: () {
-                      // UI only — no real resend logic
+                    onTap: () async {
+                        await FirebaseAuth.instance.currentUser?.sendEmailVerification();
+                        _showError("Verification email sent again.");
                     },
                     child: Text(
                       "Didn't receive the code? Resend",
