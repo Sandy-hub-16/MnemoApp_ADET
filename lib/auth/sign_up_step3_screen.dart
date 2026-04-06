@@ -14,16 +14,84 @@ class SignUpStep3Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const _Step3Wrapper();
+  }
+}
+
+// Wrapper that overlays a loading shimmer when _Step3Body sets isLoading.
+// Using a ValueNotifier lets the overlay react without rebuilding the scaffold.
+class _Step3Wrapper extends StatefulWidget {
+  const _Step3Wrapper();
+
+  @override
+  State<_Step3Wrapper> createState() => _Step3WrapperState();
+}
+
+class _Step3WrapperState extends State<_Step3Wrapper> {
+  final ValueNotifier<bool> _loading = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _loading.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return AuthScaffold(
       title: 'Create Account',
       showBack: true,
-      child: const _Step3Body(),
+      child: Stack(
+        children: [
+          _Step3Body(loadingNotifier: _loading),
+          ValueListenableBuilder<bool>(
+            valueListenable: _loading,
+            builder: (_, isLoading, __) {
+              if (!isLoading) return const SizedBox.shrink();
+              return Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: isLoading ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 300),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.background.withOpacity(0.82),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.primary),
+                            strokeWidth: 3,
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Creating your account…',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _Step3Body extends StatefulWidget {
-  const _Step3Body();
+  const _Step3Body({required this.loadingNotifier});
+  final ValueNotifier<bool> loadingNotifier;
 
   @override
   State<_Step3Body> createState() => _Step3BodyState();
@@ -36,7 +104,7 @@ class _Step3BodyState extends State<_Step3Body> {
 
   String? _errorMessage;
   bool _isLoading = false;
-  
+
   bool _obscure1 = true;
   bool _obscure2 = true;
 
@@ -49,59 +117,58 @@ class _Step3BodyState extends State<_Step3Body> {
   }
 
   String? validateFields() {
-  if (_emailCtrl.text.isEmpty ||
-      _pwCtrl.text.isEmpty ||
-      _pw2Ctrl.text.isEmpty) {
-    return "Please fill all fields";
+    if (_emailCtrl.text.isEmpty ||
+        _pwCtrl.text.isEmpty ||
+        _pw2Ctrl.text.isEmpty) {
+      return "Please fill all fields";
+    }
+
+    if (!_emailCtrl.text.contains('@')) {
+      return "Invalid email";
+    }
+
+    if (_pwCtrl.text.length < 12) {
+      return "Password must be at least 12 characters";
+    }
+
+    if (_pwCtrl.text != _pw2Ctrl.text) {
+      return "Passwords do not match";
+    }
+
+    return null;
   }
 
-  if (!_emailCtrl.text.contains('@')) {
-    return "Invalid email";
-  }
-
-  if (_pwCtrl.text.length < 12) {
-    return "Password must be at least 12 characters";
-  }
-
-  if (_pwCtrl.text != _pw2Ctrl.text) {
-    return "Passwords do not match";
-  }
-
-  return null;
-}
-
-Future<void> registerUser(Map<String, dynamic> args) async {
-  setState(() {
-    _isLoading = true;
-    _errorMessage = null;
-  });
-
-  try {
-    final user = await AuthService().registerWithDetails(
-      email: _emailCtrl.text.trim(),
-      password: _pwCtrl.text.trim(),
-      fullName: args['fullName']  ?? '',
-      username: args['username'] ?? '',
-      age: args['age'] ?? 0,
-      country: args['country'] ?? '',
-    );
-
-    if (user == null) {
-      setState(() {
-        _errorMessage = "Registration failed";
-      });
-    } 
-
-  } catch (e) {
+  Future<void> registerUser(Map<String, dynamic> args) async {
     setState(() {
-      _errorMessage = e.toString();
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final user = await AuthService().registerWithDetails(
+        email: _emailCtrl.text.trim(),
+        password: _pwCtrl.text.trim(),
+        fullName: args['fullName'] ?? '',
+        username: args['username'] ?? '',
+        age: args['age'] ?? 0,
+        country: args['country'] ?? '',
+      );
+
+      if (user == null) {
+        setState(() {
+          _errorMessage = "Registration failed";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    }
+
+    setState(() {
+      _isLoading = false;
     });
   }
-
-  setState(() {
-    _isLoading = false;
-  });
-}
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +176,7 @@ Future<void> registerUser(Map<String, dynamic> args) async {
 
     final Map<String, dynamic> args =
         rawArgs != null ? Map<String, dynamic>.from(rawArgs as Map) : {};
-      
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -231,7 +298,8 @@ Future<void> registerUser(Map<String, dynamic> args) async {
                         style: GoogleFonts.plusJakartaSans(
                             fontSize: 11,
                             height: 1.55,
-                            color: AppColors.onSurfaceVariant.withOpacity(0.35)),
+                            color:
+                                AppColors.onSurfaceVariant.withOpacity(0.35)),
                       ),
                     ),
                   ],
@@ -247,22 +315,45 @@ Future<void> registerUser(Map<String, dynamic> args) async {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
-              // Complete Sign Up CTA — UI only
+              // Complete Sign Up CTA — navigates to Verify Email screen (UI only).
+              // On return, flips _isLoading to show the loading state.
               AuthPrimaryButton(
                 label: 'Complete Sign Up',
                 trailingIcon: Icons.check_rounded,
                 onTap: () async {
                   final error = validateFields();
-
                   if (error != null) {
                     setState(() => _errorMessage = error);
                     return;
                   }
 
-                  await registerUser(args);
+                  // Navigate to the Verify Email screen and wait for it to pop.
+                  // Pass the full args map + email + password so the dev bypass
+                  // on that screen has everything it needs to hand back to us.
+                  final result = await Navigator.of(context).pushNamed(
+                    '/verify-email',
+                    arguments: {
+                      ...args,
+                      'email': _emailCtrl.text.trim(),
+                      'password': _pwCtrl.text.trim(),
+                    },
+                  );
 
-                  if (_errorMessage == null) {
-                    _showSuccessSheet(context);
+                  // result == true means either:
+                  //   • Dev bypass was tapped (OTP skipped), or
+                  //   • TODO: real OTP confirmed by backend.
+                  // Either way: show the loading overlay and create the account.
+                  if (result == true && mounted) {
+                    widget.loadingNotifier.value = true;
+
+                    await registerUser(args);
+
+                    if (mounted) {
+                      widget.loadingNotifier.value = false;
+                      if (_errorMessage == null) {
+                        _showSuccessSheet(context);
+                      }
+                    }
                   }
                 },
               ),
