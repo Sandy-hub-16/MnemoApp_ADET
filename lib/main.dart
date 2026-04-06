@@ -5,13 +5,13 @@ import 'auth/sign_in_screen.dart';
 import 'auth/sign_up_step1_screen.dart';
 import 'auth/sign_up_step2_screen.dart';
 import 'auth/sign_up_step3_screen.dart';
+import 'auth/verify_email_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 Future<void> main() async {
-
   WidgetsFlutterBinding.ensureInitialized();
 
   await dotenv.load(fileName: "assets/.env");
@@ -54,6 +54,7 @@ abstract final class AppRoutes {
   static const String signUp1 = '/sign-up/step-1';
   static const String signUp2 = '/sign-up/step-2';
   static const String signUp3 = '/sign-up/step-3';
+  static const String verifyEmail = '/verify-email';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +69,8 @@ abstract final class AppRouter {
       AppRoutes.signUp1 => const SignUpStep1Screen(),
       AppRoutes.signUp2 => const SignUpStep2Screen(),
       AppRoutes.signUp3 => const SignUpStep3Screen(),
+      AppRoutes.verifyEmail => const VerifyEmailScreen(),
+
       _ => const LandingScreen(),
     };
 
