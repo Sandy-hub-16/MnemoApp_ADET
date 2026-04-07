@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'landing_page/landing_screen.dart';
 import 'landing_page/app_theme.dart';
@@ -38,9 +39,28 @@ class MnemoApp extends StatelessWidget {
       title: 'MnemoApp',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      initialRoute: AppRoutes.landing,
+      home: const AuthGate(),
       onGenerateRoute: AppRouter.onGenerateRoute,
     );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user != null) {
+      if (!user.emailVerified) {
+        return const VerifyEmailScreen(); // redirect here
+      } else {
+        return const LandingScreen(); // or your Home screen
+      }
+    }
+
+    return const LandingScreen(); // not logged in
   }
 }
 

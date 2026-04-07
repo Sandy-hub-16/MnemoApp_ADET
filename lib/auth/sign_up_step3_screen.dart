@@ -153,9 +153,9 @@ class _Step3BodyState extends State<_Step3Body> {
       );
 
       if (user == null) {
-        setState(() {
-          _errorMessage = "Registration failed";
-        });
+        _showError("Registration failed. Please try again.");
+      } else {
+         _showSuccess("Account created successfully!");
       }
     } catch (e) {
       setState(() {
@@ -200,7 +200,6 @@ class _Step3BodyState extends State<_Step3Body> {
         //     ),
         //   ),
         // ),
-        const SizedBox(height: 12),
         Text(
           'Secure your study journey.',
           style: GoogleFonts.plusJakartaSans(
@@ -208,6 +207,15 @@ class _Step3BodyState extends State<_Step3Body> {
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
             color: AppColors.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Set up your credentials to protect your progress and personalised decks.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            height: 1.6,
+            color: AppColors.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),
@@ -321,6 +329,7 @@ class _Step3BodyState extends State<_Step3Body> {
                   final error = validateFields();
                   if (error != null) {
                     setState(() => _errorMessage = error);
+                    _showError(error);
                     return;
                   }
 
@@ -331,14 +340,14 @@ class _Step3BodyState extends State<_Step3Body> {
 
 
                   widget.loadingNotifier.value = false;
-                  // verify screen
+                  // go to verify screen
                   Navigator.of(context).pushNamed(
-                  '/verify-email',
-                  arguments: {
-                    ...args,
-                    'email': _emailCtrl.text.trim(),
-                  },
-);
+                    '/verify-email',
+                    arguments: {
+                      ...args,
+                      'email': _emailCtrl.text.trim(),
+                    },
+                  );
                   
                 },
               ),
@@ -387,6 +396,12 @@ class _Step3BodyState extends State<_Step3Body> {
         ),
       );
 
+}
+
+extension on _Step3BodyState {
+  void _showError(String s) {}
+  
+  void _showSuccess(String s) {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -25,17 +25,14 @@ class AuthService {
       );
 
       await userCredential.user!.sendEmailVerification();
-      
+
       User? user = userCredential.user;
 
-      if (user != null && !user.emailVerified) {
-        await FirebaseAuth.instance.signOut();
-
-        throw Exception("Please verify your email before logging in.");
-      }
-
-      
-
+      // Keep the user signed in after sending the verification email so
+      // the app can periodically `reload()` the `currentUser` and detect
+      // when `emailVerified` flips to true. Previously we signed out here,
+      // which made `currentUser` null and prevented the verify screen
+      // from auto-detecting verification.
       return user;
     } on FirebaseAuthException catch(e) {
       if(e.code == 'email-already-in-use') {
