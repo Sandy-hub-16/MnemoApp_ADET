@@ -103,7 +103,6 @@ class _Step3BodyState extends State<_Step3Body> {
   final _pw2Ctrl = TextEditingController();
 
   String? _errorMessage;
-  bool _isLoading = false;
 
   bool _obscure1 = true;
   bool _obscure2 = true;
@@ -140,7 +139,6 @@ class _Step3BodyState extends State<_Step3Body> {
 
   Future<void> registerUser(Map<String, dynamic> args) async {
     setState(() {
-      _isLoading = true;
       _errorMessage = null;
     });
 
@@ -155,9 +153,9 @@ class _Step3BodyState extends State<_Step3Body> {
       );
 
       if (user == null) {
-        setState(() {
-          _errorMessage = "Registration failed";
-        });
+        _showError("Registration failed. Please try again.");
+      } else {
+         _showSuccess("Account created successfully!");
       }
     } catch (e) {
       setState(() {
@@ -166,7 +164,6 @@ class _Step3BodyState extends State<_Step3Body> {
     }
 
     setState(() {
-      _isLoading = false;
     });
   }
 
@@ -203,7 +200,6 @@ class _Step3BodyState extends State<_Step3Body> {
         //     ),
         //   ),
         // ),
-        const SizedBox(height: 12),
         Text(
           'Secure your study journey.',
           style: GoogleFonts.plusJakartaSans(
@@ -211,6 +207,15 @@ class _Step3BodyState extends State<_Step3Body> {
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
             color: AppColors.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Set up your credentials to protect your progress and personalised decks.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            height: 1.6,
+            color: AppColors.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),
@@ -324,37 +329,26 @@ class _Step3BodyState extends State<_Step3Body> {
                   final error = validateFields();
                   if (error != null) {
                     setState(() => _errorMessage = error);
+                    _showError(error);
                     return;
                   }
 
-                  // Navigate to the Verify Email screen and wait for it to pop.
-                  // Pass the full args map + email + password so the dev bypass
-                  // on that screen has everything it needs to hand back to us.
-                  final result = await Navigator.of(context).pushNamed(
+                  widget.loadingNotifier.value = true;
+
+                  // Register User
+                  await registerUser(args);
+
+
+                  widget.loadingNotifier.value = false;
+                  // go to verify screen
+                  Navigator.of(context).pushNamed(
                     '/verify-email',
                     arguments: {
                       ...args,
                       'email': _emailCtrl.text.trim(),
-                      'password': _pwCtrl.text.trim(),
                     },
                   );
-
-                  // result == true means either:
-                  //   • Dev bypass was tapped (OTP skipped), or
-                  //   • TODO: real OTP confirmed by backend.
-                  // Either way: show the loading overlay and create the account.
-                  if (result == true && mounted) {
-                    widget.loadingNotifier.value = true;
-
-                    await registerUser(args);
-
-                    if (mounted) {
-                      widget.loadingNotifier.value = false;
-                      if (_errorMessage == null) {
-                        _showSuccessSheet(context);
-                      }
-                    }
-                  }
+                  
                 },
               ),
             ],
@@ -402,14 +396,12 @@ class _Step3BodyState extends State<_Step3Body> {
         ),
       );
 
-  /// Temporary success sheet — replace with real post-signup navigation.
-  void _showSuccessSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _SuccessSheet(),
-    );
-  }
+}
+
+extension on _Step3BodyState {
+  void _showError(String s) {}
+  
+  void _showSuccess(String s) {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -485,6 +477,7 @@ class _PrivacyBento extends StatelessWidget {
 // Replace with real navigation once auth is wired.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ignore: unused_element
 class _SuccessSheet extends StatelessWidget {
   const _SuccessSheet();
 

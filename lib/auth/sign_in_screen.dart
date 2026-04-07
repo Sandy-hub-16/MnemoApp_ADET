@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
@@ -110,6 +111,7 @@ class _SignInBodyState extends State<_SignInBody> {
                   String email = _emailCtrl.text.trim();
                   String password = _passwordCtrl.text.trim();
 
+
                   if (email.isEmpty || password.isEmpty) {
                     print("Please fill all fields");
                     return;
@@ -117,13 +119,20 @@ class _SignInBodyState extends State<_SignInBody> {
 
                   var user = await AuthService().login(email, password);
 
-                  if(user != null) {
-                    // paltan mo to as popup or ikaw bahala basta makikita ni user
+                  if (user != null) {
                     print("Logged in: ${user.email}");
-                    
-                    // redirect mo to sa home ng user kapag nakalogin na siya
-                    // so far, nireredirect plang to sa landing screen
-                     Navigator.pushReplacementNamed(context, '/home');
+
+                    //  CHECK EMAIL VERIFICATION HERE
+                    if (!user.emailVerified) {
+                      await FirebaseAuth.instance.signOut();
+
+                      Navigator.pushNamed(context, '/verify-email');
+                      return;
+                    }
+
+                    //  VERIFIED → go to home
+                    Navigator.pushReplacementNamed(context, '/home');
+
                   } else {
                     print("Login Failed");
                   }
