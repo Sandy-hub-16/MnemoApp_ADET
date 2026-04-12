@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -89,18 +90,25 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
 
     await user.reload(); // refresh from Firebase
     final refreshedUser = FirebaseAuth.instance.currentUser;
-
     if (refreshedUser?.emailVerified ?? false) {
       _timer?.cancel();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'emailVerified': true,
+      });
+
       if (mounted) {
-            // Show success popup
+        // Show success popup
         _showSuccess("Registered successfully!");
 
         // Wait for 3 seconds so user can see the message
         await Future.delayed(const Duration(seconds: 3));
 
         // Redirect to Home
-         Navigator.pushReplacementNamed(context, '/home');
+        Navigator.pushReplacementNamed(context, '/home');
       }
     }
   }
@@ -125,6 +133,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
       ),
     );
   }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -158,7 +167,6 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 20),
-
         Text(
           'Verify your email',
           style: GoogleFonts.plusJakartaSans(
@@ -169,7 +177,6 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
           ),
         ),
         const SizedBox(height: 10),
-
         RichText(
           text: TextSpan(
             style: GoogleFonts.plusJakartaSans(
@@ -193,9 +200,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
             ],
           ),
         ),
-
         const SizedBox(height: 36),
-
         AuthCard(
           padding: const EdgeInsets.all(28),
           child: Column(
@@ -254,15 +259,10 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
             ],
           ),
         ),
-
         const SizedBox(height: 28),
-
         _BuddyTipCard(),
-
         const SizedBox(height: 36),
-
         _DevBypassButton(onBypass: () => Navigator.of(context).pop(true)),
-
         const SizedBox(height: 36),
       ],
     );
@@ -299,7 +299,6 @@ class _BuddyTipCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 16),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
