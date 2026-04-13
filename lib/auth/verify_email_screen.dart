@@ -42,6 +42,10 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
 
   int _resendSeconds = 0;
 
+  //Account deletion after certain time
+  int _deleteSeconds = 90; // change to 1800 for 30 mins later
+  Timer? _deleteTimer;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +54,21 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
     _timer = Timer.periodic(const Duration(seconds: 5), (_) async {
       await _checkEmailVerifiedAuto();
     });
+
+    _deleteTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_deleteSeconds > 0) {
+        setState(() => _deleteSeconds--);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  String _formatTime(int seconds) {
+    int minutes = seconds ~/ 60;
+    int secs = seconds % 60;
+
+    return "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}";
   }
 
   Future<void> _handleResend() async {
@@ -158,6 +177,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
   void dispose() {
     _timer?.cancel();
     _resendTimer?.cancel();
+    _deleteTimer?.cancel();
     super.dispose();
   }
 
@@ -237,6 +257,39 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
 
               // 🔄 Loading indicator
               const CircularProgressIndicator(),
+
+              const SizedBox(height: 20),
+
+              Text(
+                "⏳ Account will be deleted in:",
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              Text(
+                _formatTime(_deleteSeconds),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.red,
+                ),
+              ),
+
+              if (_deleteSeconds == 0) ...[
+                const SizedBox(height: 10),
+                Text(
+                  "Account expired. Please register again.",
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 24),
 
