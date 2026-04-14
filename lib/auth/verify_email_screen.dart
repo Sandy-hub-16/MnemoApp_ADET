@@ -104,31 +104,87 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
   }
 
   Future<void> _checkEmailVerifiedAuto() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    await user.reload(); // refresh from Firebase
-    final refreshedUser = FirebaseAuth.instance.currentUser;
-    if (refreshedUser?.emailVerified ?? false) {
-      _timer?.cancel();
-
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-        'emailVerified': true,
-      });
-
-      if (mounted) {
-        // Show success popup
-        _showSuccess("Registered successfully!");
-
-        // Wait for 3 seconds so user can see the message
-        await Future.delayed(const Duration(seconds: 3));
-
-        // Redirect to Home
-        Navigator.pushReplacementNamed(context, '/home');
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _handleAccountDeleted();
+        return;
       }
+
+      await user.reload(); // refresh from Firebase
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+
+      if (refreshedUser == null) {
+        _handleAccountDeleted();
+        return;
+      }
+
+      if (refreshedUser?.emailVerified ?? false) {
+        _timer?.cancel();
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'emailVerified': true,
+        });
+
+        if (mounted) {
+          // Show success popup
+          _showSuccess("Registered successfully!");
+
+          // Wait for 3 seconds so user can see the message
+          await Future.delayed(const Duration(seconds: 3));
+
+          // Redirect to Home
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      // Triggers when user/account is deleted from firebase auth
+      if (e.code == 'user-not-found') {
+        _handleAccountDeleted();
+      }
+    } catch (e) {
+      // fallback safety
+      _handleAccountDeleted();
+    }
+  }
+
+  void _handleAccountDeleted() async {
+    _timer?.cancel();
+    _deleteTimer?.cancel();
+
+    // Show popup
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Account expired due to unverified email.",
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      // Wait so user can read message
+      await Future.delayed(const Duration(seconds: 3));
+
+      //  Force logout (important)
+      await FirebaseAuth.instance.signOut();
+
+      //  Redirect to landing page
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/',
+        (route) => false,
+      );
     }
   }
 
