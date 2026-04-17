@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../main.dart';
-import '../services/auth_service.dart';
-import 'auth_widgets.dart';
+import 'services/auth_google_service.dart';
+import 'widgets_design.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN IN SCREEN
@@ -130,8 +130,8 @@ class _SignInBodyState extends State<_SignInBody> {
                       return;
                     }
 
-                    //  VERIFIED → go to home
-                    Navigator.pushReplacementNamed(context, '/home');
+                    //  VERIFIED → go to profile
+                    Navigator.pushReplacementNamed(context, '/profile');
 
                   } else {
                     print("Login Failed");

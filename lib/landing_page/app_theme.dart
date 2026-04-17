@@ -29,6 +29,10 @@ abstract final class AppColors {
 
   static const outlineVariant = Color(0xFFB3CCBF);
   static const outline = Color(0xFF647C71);
+
+  // ── Error tokens — used by LogOutButton and any destructive actions ────────
+  static const error = Color(0xFFBA1A1A);
+  static const errorContainer = Color(0xFFFFDAD6);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,6 +116,8 @@ abstract final class AppTheme {
           surface: AppColors.background,
           onSurface: AppColors.onSurface,
           onSurfaceVariant: AppColors.onSurfaceVariant,
+          error: AppColors.error,
+          errorContainer: AppColors.errorContainer,
         ),
         textTheme: GoogleFonts.plusJakartaSansTextTheme(),
       );

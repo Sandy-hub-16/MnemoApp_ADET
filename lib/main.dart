@@ -2,11 +2,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'landing_page/landing_screen.dart';
 import 'landing_page/app_theme.dart';
-import 'auth/sign_in_screen.dart';
-import 'auth/sign_up_step1_screen.dart';
-import 'auth/sign_up_step2_screen.dart';
-import 'auth/sign_up_step3_screen.dart';
-import 'auth/verify_email_screen.dart';
+import 'auth/login_screen.dart';
+import 'auth/register/register_step1_screen.dart';
+import 'auth/register/register_step2_screen.dart';
+import 'auth/register/register_step3_screen.dart';
+import 'auth/register/verify_email_screen.dart';
+import 'profile/profile_screen.dart';           
+import 'profile/account_settings_screen.dart';  
 
 import 'package:firebase_core/firebase_core.dart';
 
@@ -75,6 +77,8 @@ abstract final class AppRoutes {
   static const String signUp2 = '/sign-up/step-2';
   static const String signUp3 = '/sign-up/step-3';
   static const String verifyEmail = '/verify-email';
+  static const String profile = '/profile';
+  static const String accountSettings = '/account-settings';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +94,8 @@ abstract final class AppRouter {
       AppRoutes.signUp2 => const SignUpStep2Screen(),
       AppRoutes.signUp3 => const SignUpStep3Screen(),
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
-
+      AppRoutes.profile => const ProfileScreen(),
+      AppRoutes.accountSettings => const AccountSettingsScreen(),
       _ => const LandingScreen(),
     };
 

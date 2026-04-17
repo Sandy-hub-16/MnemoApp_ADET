@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
-import '../services/auth_service.dart';
+import 'services/auth_google_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH SCAFFOLD
@@ -287,6 +287,7 @@ class AuthTextField extends StatefulWidget {
     this.suffixIcon,
     this.onSuffixTap,
     this.helperText,
+    this.errorText,
     this.shape = AuthFieldShape.pill,
   });
 
@@ -300,6 +301,7 @@ class AuthTextField extends StatefulWidget {
   final IconData? suffixIcon;
   final VoidCallback? onSuffixTap;
   final String? helperText;
+  final String? errorText;
   final AuthFieldShape shape;
 
   @override
@@ -570,7 +572,7 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
             // ignore: avoid_print
             print("Logged in: ${user.displayName}");
 
-            Navigator.pushReplacementNamed(context, '/home');
+            Navigator.pushReplacementNamed(context, '/profile');
           } else {
             // ignore: avoid_print
             print("Login Failed");
