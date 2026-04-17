@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../landing_page/app_theme.dart';
-import '../main.dart';
-import 'auth_widgets.dart';
+import '../../landing_page/app_theme.dart';
+import '../../main.dart';
+import '../widgets_design.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 1: IDENTITY

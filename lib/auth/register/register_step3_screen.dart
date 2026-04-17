@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../landing_page/app_theme.dart';
-import '../services/auth_service.dart';
-import 'auth_widgets.dart';
+import '../../landing_page/app_theme.dart';
+import '../services/auth_google_service.dart';
+import '../widgets_design.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 3: SECURITY
