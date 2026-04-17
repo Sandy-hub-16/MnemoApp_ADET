@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -41,6 +42,10 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
 
   int _resendSeconds = 0;
 
+  //Account deletion after certain time
+  int _deleteSeconds = 90; // change to 1800 for 30 mins later
+  Timer? _deleteTimer;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +54,21 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
     _timer = Timer.periodic(const Duration(seconds: 5), (_) async {
       await _checkEmailVerifiedAuto();
     });
+
+    _deleteTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_deleteSeconds > 0) {
+        setState(() => _deleteSeconds--);
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  String _formatTime(int seconds) {
+    int minutes = seconds ~/ 60;
+    int secs = seconds % 60;
+
+    return "${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}";
   }
 
   Future<void> _handleResend() async {
@@ -84,24 +104,87 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
   }
 
   Future<void> _checkEmailVerifiedAuto() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    await user.reload(); // refresh from Firebase
-    final refreshedUser = FirebaseAuth.instance.currentUser;
-
-    if (refreshedUser?.emailVerified ?? false) {
-      _timer?.cancel();
-      if (mounted) {
-            // Show success popup
-        _showSuccess("Registered successfully!");
-
-        // Wait for 3 seconds so user can see the message
-        await Future.delayed(const Duration(seconds: 3));
-
-        // Redirect to Home
-         Navigator.pushReplacementNamed(context, '/home');
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _handleAccountDeleted();
+        return;
       }
+
+      await user.reload(); // refresh from Firebase
+      final refreshedUser = FirebaseAuth.instance.currentUser;
+
+      if (refreshedUser == null) {
+        _handleAccountDeleted();
+        return;
+      }
+
+      if (refreshedUser?.emailVerified ?? false) {
+        _timer?.cancel();
+
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'emailVerified': true,
+        });
+
+        if (mounted) {
+          // Show success popup
+          _showSuccess("Registered successfully!");
+
+          // Wait for 3 seconds so user can see the message
+          await Future.delayed(const Duration(seconds: 3));
+
+          // Redirect to Home
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      // Triggers when user/account is deleted from firebase auth
+      if (e.code == 'user-not-found') {
+        _handleAccountDeleted();
+      }
+    } catch (e) {
+      // fallback safety
+      _handleAccountDeleted();
+    }
+  }
+
+  void _handleAccountDeleted() async {
+    _timer?.cancel();
+    _deleteTimer?.cancel();
+
+    // Show popup
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Account expired due to unverified email.",
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: Colors.white,
+            ),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      // Wait so user can read message
+      await Future.delayed(const Duration(seconds: 3));
+
+      //  Force logout (important)
+      await FirebaseAuth.instance.signOut();
+
+      //  Redirect to landing page
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        '/',
+        (route) => false,
+      );
     }
   }
 
@@ -125,6 +208,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
       ),
     );
   }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -149,6 +233,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
   void dispose() {
     _timer?.cancel();
     _resendTimer?.cancel();
+    _deleteTimer?.cancel();
     super.dispose();
   }
 
@@ -158,7 +243,6 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 20),
-
         Text(
           'Verify your email',
           style: GoogleFonts.plusJakartaSans(
@@ -169,7 +253,6 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
           ),
         ),
         const SizedBox(height: 10),
-
         RichText(
           text: TextSpan(
             style: GoogleFonts.plusJakartaSans(
@@ -193,9 +276,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
             ],
           ),
         ),
-
         const SizedBox(height: 36),
-
         AuthCard(
           padding: const EdgeInsets.all(28),
           child: Column(
@@ -233,6 +314,39 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
               // 🔄 Loading indicator
               const CircularProgressIndicator(),
 
+              const SizedBox(height: 20),
+
+              Text(
+                "⏳ Account will be deleted in:",
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              Text(
+                _formatTime(_deleteSeconds),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.red,
+                ),
+              ),
+
+              if (_deleteSeconds == 0) ...[
+                const SizedBox(height: 10),
+                Text(
+                  "Account expired. Please register again.",
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 24),
 
               // 🔁 RESEND
@@ -254,15 +368,10 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
             ],
           ),
         ),
-
         const SizedBox(height: 28),
-
         _BuddyTipCard(),
-
         const SizedBox(height: 36),
-
         _DevBypassButton(onBypass: () => Navigator.of(context).pop(true)),
-
         const SizedBox(height: 36),
       ],
     );
@@ -299,7 +408,6 @@ class _BuddyTipCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 16),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

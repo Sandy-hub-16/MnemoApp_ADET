@@ -1,14 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  // final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   Future<void> sendVerificationEmail() async {
     final user = FirebaseAuth.instance.currentUser;
     await user?.sendEmailVerification();
   }
+
   Future<User?> registerWithDetails({
     required String email,
     required String password,
@@ -17,33 +18,39 @@ class AuthService {
     required int age,
     required String country,
   }) async {
-    try{
-      UserCredential userCredential = 
-        await _auth.createUserWithEmailAndPassword(
-      email: email, 
-      password: password
-      );
+    try {
+      UserCredential userCredential = await _auth
+          .createUserWithEmailAndPassword(email: email, password: password);    
 
-      await userCredential.user!.sendEmailVerification();
+      final user = userCredential.user;
 
-      User? user = userCredential.user;
+      if(user == null) return null;
 
-      // Keep the user signed in after sending the verification email so
-      // the app can periodically `reload()` the `currentUser` and detect
-      // when `emailVerified` flips to true. Previously we signed out here,
-      // which made `currentUser` null and prevented the verify screen
-      // from auto-detecting verification.
+      await user.sendEmailVerification();
+      
+      // Create Firestore Profile
+      await _db.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'email': email,
+        'fullName': fullName,
+        'username': username,
+        'age': age,
+        'country': country,
+        'emailVerified': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
       return user;
-    } on FirebaseAuthException catch(e) {
-      if(e.code == 'email-already-in-use') {
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use') {
         print("Email already registered. Try logging in instead.");
         return null;
       } else {
-        print("Register Error: $e");
+        print("FirebaseAuth Error: ${e.code} - ${e.message}");
         return null;
       }
     } catch (e) {
-      print("Register Error: $e");
+      print("Unknown Error: $e");
       return null;
     }
   }
@@ -57,7 +64,7 @@ class AuthService {
       );
 
       return userCredential.user;
-    } catch(e) {
+    } catch (e) {
       print("Register Error: $e");
       return null;
     }
@@ -65,14 +72,13 @@ class AuthService {
 
   Future<User?> login(String email, String password) async {
     try {
-      UserCredential userCredential =
-          await _auth.signInWithEmailAndPassword(
+      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
       return userCredential.user;
-    } catch(e) {
+    } catch (e) {
       print("Login Error: $e");
       return null;
     }
@@ -83,10 +89,10 @@ class AuthService {
       GoogleAuthProvider googleProvider = GoogleAuthProvider();
 
       UserCredential userCredential =
-        await FirebaseAuth.instance.signInWithPopup(googleProvider);
+          await FirebaseAuth.instance.signInWithPopup(googleProvider);
 
-        return userCredential.user;
-    } catch(e) {
+      return userCredential.user;
+    } catch (e) {
       // ignore: avoid_print
       print("Google Sign-in Error : $e");
       return null;

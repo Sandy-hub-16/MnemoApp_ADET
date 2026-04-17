@@ -137,7 +137,7 @@ class _Step3BodyState extends State<_Step3Body> {
     return null;
   }
 
-  Future<void> registerUser(Map<String, dynamic> args) async {
+  Future<bool> registerUser(Map<String, dynamic> args) async {
     setState(() {
       _errorMessage = null;
     });
@@ -154,17 +154,15 @@ class _Step3BodyState extends State<_Step3Body> {
 
       if (user == null) {
         _showError("Registration failed. Please try again.");
-      } else {
-         _showSuccess("Account created successfully!");
+        return false;
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-      });
-    }
 
-    setState(() {
-    });
+      _showSuccess("Account created successfully!");
+      return true;
+    } catch (e) {
+      _showError(e.toString());
+      return false;
+    }
   }
 
   @override
@@ -207,15 +205,6 @@ class _Step3BodyState extends State<_Step3Body> {
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
             color: AppColors.onSurface,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Set up your credentials to protect your progress and personalised decks.',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 15,
-            height: 1.6,
-            color: AppColors.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),
@@ -336,10 +325,11 @@ class _Step3BodyState extends State<_Step3Body> {
                   widget.loadingNotifier.value = true;
 
                   // Register User
-                  await registerUser(args);
-
+                  final success = await registerUser(args);
 
                   widget.loadingNotifier.value = false;
+
+                  if (!success) return;
                   // go to verify screen
                   Navigator.of(context).pushNamed(
                     '/verify-email',
@@ -348,7 +338,6 @@ class _Step3BodyState extends State<_Step3Body> {
                       'email': _emailCtrl.text.trim(),
                     },
                   );
-                  
                 },
               ),
             ],
@@ -395,13 +384,36 @@ class _Step3BodyState extends State<_Step3Body> {
           decorationColor: AppColors.primary.withOpacity(0.4),
         ),
       );
-
 }
 
 extension on _Step3BodyState {
-  void _showError(String s) {}
-  
-  void _showSuccess(String s) {}
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+            )),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.white,
+            )),
+        backgroundColor: AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
