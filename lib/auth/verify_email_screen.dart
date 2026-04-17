@@ -119,7 +119,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
         return;
       }
 
-      if (refreshedUser?.emailVerified ?? false) {
+      if (refreshedUser.emailVerified) {
         _timer?.cancel();
 
         await FirebaseFirestore.instance
