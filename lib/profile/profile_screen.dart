@@ -1,6 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+import '../auth/services/auth_google_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE SCREEN
@@ -26,8 +29,22 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-class _ProfileScaffold extends StatelessWidget {
+class _ProfileScaffold extends StatefulWidget {
   const _ProfileScaffold();
+
+  @override
+  State<_ProfileScaffold> createState() => _ProfileScaffoldState();
+}
+
+class _ProfileScaffoldState extends State<_ProfileScaffold> {
+  // Used to call _loadProfile() on _ProfileBody after returning from settings.
+  final _bodyKey = GlobalKey<_ProfileBodyState>();
+
+  Future<void> _goToSettings() async {
+    await Navigator.of(context).pushNamed('/account-settings');
+    // Re-fetch profile so any edits (bio, school, etc.) appear immediately.
+    _bodyKey.currentState?._loadProfile();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,9 +76,9 @@ class _ProfileScaffold extends StatelessWidget {
             bottom: false,
             child: Column(
               children: [
-                _ProfileTopBar(),
-                const Expanded(
-                  child: _ProfileBody(),
+                _ProfileTopBar(onSettingsTap: _goToSettings),
+                Expanded(
+                  child: _ProfileBody(key: _bodyKey),
                 ),
               ],
             ),
@@ -78,6 +95,9 @@ class _ProfileScaffold extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileTopBar extends StatelessWidget {
+  const _ProfileTopBar({required this.onSettingsTap});
+  final VoidCallback onSettingsTap;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -88,7 +108,7 @@ class _ProfileTopBar extends StatelessWidget {
         children: [
           _NavIconButton(
             icon: Icons.menu_rounded,
-            onTap: () {}, // Hook up drawer if needed
+            onTap: () {},
           ),
           Text(
             'Buddy Profile',
@@ -101,7 +121,7 @@ class _ProfileTopBar extends StatelessWidget {
           ),
           _NavIconButton(
             icon: Icons.settings_outlined,
-            onTap: () => Navigator.of(context).pushNamed('/account-settings'),
+            onTap: onSettingsTap,
           ),
         ],
       ),
@@ -110,19 +130,63 @@ class _ProfileTopBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE BODY — uses placeholder data until backend wires up Firestore.
+// PROFILE BODY — fetches the logged-in user's data from Firestore.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileBody extends StatelessWidget {
-  const _ProfileBody();
+class _ProfileBody extends StatefulWidget {
+  const _ProfileBody({super.key});
+
+  @override
+  State<_ProfileBody> createState() => _ProfileBodyState();
+}
+
+class _ProfileBodyState extends State<_ProfileBody> {
+  bool _loading = true;
+  String _fullName = '';
+  String _username = '';
+  String _bio = '';
+  String? _photoUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    // Photo URL comes from Firebase Auth directly (set by Google sign-in or
+    // future profile-photo upload); other fields live in Firestore.
+    final authUser = FirebaseAuth.instance.currentUser!;
+
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(uid).get();
+
+    final data = doc.data() ?? {};
+
+    if (mounted) {
+      setState(() {
+        _fullName = data['fullName'] as String? ?? '';
+        _username = data['username'] as String? ?? '';
+        _bio = data['bio'] as String? ?? '';
+        _photoUrl = authUser.photoURL ?? data['photoUrl'] as String?;
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    // ✏️  BACKEND: Replace these with values from your Firestore snapshot.
-    const String fullName = 'Mnemo User';
-    const String username = 'mnemo_user';
-    const String bio = '';
-    const String? photoUrl = null;
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 120),
@@ -130,11 +194,11 @@ class _ProfileBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // ── Avatar + name ───────────────────────────────────────────
-          const _ProfileHeader(
-            fullName: fullName,
-            username: username,
-            bio: bio,
-            photoUrl: photoUrl,
+          _ProfileHeader(
+            fullName: _fullName,
+            username: _username,
+            bio: _bio,
+            photoUrl: _photoUrl,
           ),
           const SizedBox(height: 32),
 
@@ -148,7 +212,12 @@ class _ProfileBody extends StatelessWidget {
           const SizedBox(height: 32),
 
           // ── Action list ─────────────────────────────────────────────
-          _ActionList(context: context),
+          _ActionList(
+            onSettingsTap: () async {
+              await Navigator.of(context).pushNamed('/account-settings');
+              _loadProfile();
+            },
+          ),
           const SizedBox(height: 20),
 
           // ── Log out button ──────────────────────────────────────────
@@ -204,9 +273,7 @@ class _ProfileHeader extends StatelessWidget {
                     photoUrl != null ? NetworkImage(photoUrl!) : null,
                 child: photoUrl == null
                     ? Text(
-                        fullName.isNotEmpty
-                            ? fullName[0].toUpperCase()
-                            : 'M',
+                        fullName.isNotEmpty ? fullName[0].toUpperCase() : 'M',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 40,
                           fontWeight: FontWeight.w800,
@@ -397,11 +464,11 @@ class _StatCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ActionList extends StatelessWidget {
-  const _ActionList({required this.context});
-  final BuildContext context;
+  const _ActionList({required this.onSettingsTap});
+  final VoidCallback onSettingsTap;
 
   @override
-  Widget build(BuildContext outerContext) {
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
@@ -422,22 +489,21 @@ class _ActionList extends StatelessWidget {
             iconBg: AppColors.primaryContainer.withOpacity(0.3),
             iconColor: AppColors.primary,
             label: 'Account Settings',
-            onTap: () =>
-                Navigator.of(outerContext).pushNamed('/account-settings'),
+            onTap: onSettingsTap,
           ),
           _ActionTile(
             icon: Icons.notifications_active_outlined,
             iconBg: AppColors.secondaryContainer.withOpacity(0.3),
             iconColor: AppColors.secondary,
             label: 'Notification Preferences',
-            onTap: () {}, // ✏️  BACKEND: Add route when screen is built
+            onTap: () {},
           ),
           _ActionTile(
             icon: Icons.quiz_outlined,
             iconBg: AppColors.tertiaryContainer.withOpacity(0.3),
             iconColor: AppColors.tertiary,
             label: 'Help & Support',
-            onTap: () {}, // ✏️  BACKEND: Add route when screen is built
+            onTap: () {},
             showDivider: false,
           ),
         ],
@@ -474,8 +540,7 @@ class _ActionTile extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(12),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               child: Row(
                 children: [
                   Container(
@@ -522,9 +587,6 @@ class _ActionTile extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOG OUT BUTTON
-// ✏️  BACKEND: Replace the onTap body with:
-//   await AuthService().signOut();
-//   Navigator.of(context).pushNamedAndRemoveUntil('/sign-in', (r) => false);
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _LogOutButton extends StatelessWidget {
@@ -535,8 +597,14 @@ class _LogOutButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          // ✏️  BACKEND: wire up sign-out logic here
+        onTap: () async {
+          await AuthService().signOut();
+          if (context.mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/',
+              (route) => false,
+            );
+          }
         },
         borderRadius: BorderRadius.circular(999),
         child: Container(
@@ -624,8 +692,8 @@ class _BottomNavBar extends StatelessWidget {
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
                     color: active
                         ? AppColors.primaryContainer.withOpacity(0.45)
@@ -638,9 +706,8 @@ class _BottomNavBar extends StatelessWidget {
                       Icon(
                         active ? _filledIcon(item.icon) : item.icon,
                         size: 24,
-                        color: active
-                            ? AppColors.primary
-                            : Colors.grey.shade400,
+                        color:
+                            active ? AppColors.primary : Colors.grey.shade400,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -648,9 +715,8 @@ class _BottomNavBar extends StatelessWidget {
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: active
-                              ? AppColors.primary
-                              : Colors.grey.shade400,
+                          color:
+                              active ? AppColors.primary : Colors.grey.shade400,
                         ),
                       ),
                     ],
