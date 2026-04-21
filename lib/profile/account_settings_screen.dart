@@ -1,6 +1,21 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+
+// ── Email censor ─────────────────────────────────────────────────────────────
+// Standard approach: reveal first 2 characters, mask the rest of the local
+// part with 3 asterisks, keep the domain fully visible.
+// e.g.  alexkindred@study.com  →  al***@study.com
+String _censorEmail(String email) {
+  final atIndex = email.indexOf('@');
+  if (atIndex < 0) return email;
+  final local = email.substring(0, atIndex);
+  final domain = email.substring(atIndex); // includes the @
+  final visible = local.length >= 2 ? local.substring(0, 2) : local;
+  return '$visible***$domain';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACCOUNT SETTINGS SCREEN
@@ -142,15 +157,19 @@ class _SettingsBody extends StatefulWidget {
 }
 
 class _SettingsBodyState extends State<_SettingsBody> {
-  // ── Controllers — backend dev reads/writes these ───────────────────────────
-  final _nameCtrl   = TextEditingController();
-  final _bioCtrl    = TextEditingController();
+  // ── Controllers ────────────────────────────────────────────────────────────
+  final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
+  final _bioCtrl = TextEditingController();
   final _schoolCtrl = TextEditingController();
   final _courseCtrl = TextEditingController();
 
   // ── State ──────────────────────────────────────────────────────────────────
   String _yearLevel = 'Freshman';
-  bool   _saving    = false;
+  String _email = ''; // read-only — shown but not editable
+  String? _photoUrl;
+  bool _loading = true;
+  bool _saving = false;
 
   static const _yearOptions = [
     'Freshman',
@@ -163,62 +182,77 @@ class _SettingsBodyState extends State<_SettingsBody> {
   @override
   void initState() {
     super.initState();
-    // ✏️  BACKEND: Call _loadProfile() here once Firestore is wired up.
-    // _loadProfile();
+    _loadProfile();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _bioCtrl.dispose();
     _schoolCtrl.dispose();
     _courseCtrl.dispose();
     super.dispose();
   }
 
-  // ── ✏️  BACKEND: Populate controllers from Firestore ──────────────────────
-  // Future<void> _loadProfile() async {
-  //   final uid = FirebaseAuth.instance.currentUser?.uid;
-  //   if (uid == null) return;
-  //   final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-  //   final data = doc.data() ?? {};
-  //   setState(() {
-  //     _nameCtrl.text   = data['fullName']  as String? ?? '';
-  //     _bioCtrl.text    = data['bio']       as String? ?? '';
-  //     _schoolCtrl.text = data['school']    as String? ?? '';
-  //     _courseCtrl.text = data['course']    as String? ?? '';
-  //     _yearLevel       = _yearOptions.contains(data['yearLevel'])
-  //         ? data['yearLevel'] as String
-  //         : 'Freshman';
-  //   });
-  // }
+  // ── Load from Firestore ────────────────────────────────────────────────────
 
-  // ── ✏️  BACKEND: Write controller values to Firestore ─────────────────────
-  // Future<void> _saveChanges() async {
-  //   final uid = FirebaseAuth.instance.currentUser?.uid;
-  //   if (uid == null) return;
-  //   if (_nameCtrl.text.trim().isEmpty) {
-  //     _showSnack('Full name cannot be empty.', isError: true);
-  //     return;
-  //   }
-  //   setState(() => _saving = true);
-  //   try {
-  //     await FirebaseFirestore.instance.collection('users').doc(uid).update({
-  //       'fullName':  _nameCtrl.text.trim(),
-  //       'bio':       _bioCtrl.text.trim(),
-  //       'school':    _schoolCtrl.text.trim(),
-  //       'course':    _courseCtrl.text.trim(),
-  //       'yearLevel': _yearLevel,
-  //       'updatedAt': FieldValue.serverTimestamp(),
-  //     });
-  //     _showSnack('Changes saved!');
-  //     if (mounted) Navigator.of(context).pop();
-  //   } catch (e) {
-  //     _showSnack('Could not save changes. Try again.', isError: true);
-  //   } finally {
-  //     if (mounted) setState(() => _saving = false);
-  //   }
-  // }
+  Future<void> _loadProfile() async {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(authUser.uid)
+        .get();
+
+    final data = doc.data() ?? {};
+
+    if (mounted) {
+      setState(() {
+        _nameCtrl.text = data['fullName'] as String? ?? '';
+        _usernameCtrl.text = data['username'] as String? ?? '';
+        _bioCtrl.text = data['bio'] as String? ?? '';
+        _schoolCtrl.text = data['school'] as String? ?? '';
+        _courseCtrl.text = data['course'] as String? ?? '';
+        _yearLevel = _yearOptions.contains(data['yearLevel'])
+            ? data['yearLevel'] as String
+            : 'Freshman';
+        _email = authUser.email ?? data['email'] as String? ?? '';
+        _photoUrl = authUser.photoURL ?? data['photoUrl'] as String?;
+        _loading = false;
+      });
+    }
+  }
+
+  // ── Save to Firestore ──────────────────────────────────────────────────────
+
+  Future<void> _saveChanges() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'bio': _bioCtrl.text.trim(),
+        'school': _schoolCtrl.text.trim(),
+        'course': _courseCtrl.text.trim(),
+        'yearLevel': _yearLevel,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      _showSnack('Changes saved!');
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      _showSnack('Could not save changes. Try again.', isError: true);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ── Snack helper ───────────────────────────────────────────────────────────
 
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -230,36 +264,62 @@ class _SettingsBodyState extends State<_SettingsBody> {
         backgroundColor: isError ? Colors.red.shade600 : AppColors.primary,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Avatar with edit overlay ──────────────────────────────────────
-          // ✏️  BACKEND: Pass photoUrl from FirebaseAuth/Firestore here.
-          const _AvatarSection(photoUrl: null),
+          // ── Avatar ────────────────────────────────────────────────────────
+          _AvatarSection(
+            photoUrl: _photoUrl,
+            initials: _nameCtrl.text.isNotEmpty
+                ? _nameCtrl.text.trim()[0].toUpperCase()
+                : null,
+          ),
           const SizedBox(height: 32),
 
           // ── Basic info card ───────────────────────────────────────────────
           _SettingsCard(
             children: [
-              const _FieldLabel('Full Name'),
-              const SizedBox(height: 8),
-              _SettingsTextField(
-                controller: _nameCtrl,
-                hint: 'Your full name',
-                prefixIcon: Icons.person_outline_rounded,
-                shape: _FieldShape.pill,
+              // Email — read-only, censored for privacy
+              _ReadOnlyField(
+                label: 'Email Address',
+                value: _censorEmail(_email),
+                icon: Icons.mail_outline_rounded,
               ),
               const SizedBox(height: 20),
+
+              // Full name — set at registration, not editable here
+              _ReadOnlyField(
+                label: 'Full Name',
+                value: _nameCtrl.text,
+                icon: Icons.person_outline_rounded,
+              ),
+              const SizedBox(height: 20),
+
+              // Username — set at registration, not editable here
+              _ReadOnlyField(
+                label: 'Username',
+                value: _usernameCtrl.text.isNotEmpty
+                    ? '@${_usernameCtrl.text}'
+                    : '',
+                icon: Icons.alternate_email_rounded,
+              ),
+              const SizedBox(height: 20),
+
               const _FieldLabel('About Me'),
               const SizedBox(height: 8),
               _SettingsTextArea(
@@ -313,18 +373,13 @@ class _SettingsBodyState extends State<_SettingsBody> {
           ),
           const SizedBox(height: 28),
 
-          // ── Save changes CTA ──────────────────────────────────────────────
+          // ── Save CTA ──────────────────────────────────────────────────────
           _saving
               ? const CircularProgressIndicator(
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
                   strokeWidth: 3,
                 )
-              : _SaveButton(
-                  onTap: () {
-                    // ✏️  BACKEND: Replace with _saveChanges() once wired up.
-                  },
-                ),
+              : _SaveButton(onTap: _saveChanges),
           const SizedBox(height: 16),
         ],
       ),
@@ -339,10 +394,10 @@ class _SettingsBodyState extends State<_SettingsBody> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AvatarSection extends StatelessWidget {
-  const _AvatarSection({this.photoUrl});
+  const _AvatarSection({this.photoUrl, this.initials});
 
-  /// Pass the user's photo URL (from Firebase Auth or Firestore) here.
   final String? photoUrl;
+  final String? initials; // first letter of fullName, shown when no photo
 
   @override
   Widget build(BuildContext context) {
@@ -365,14 +420,22 @@ class _AvatarSection extends StatelessWidget {
           child: CircleAvatar(
             radius: 56,
             backgroundColor: AppColors.surfaceContainerLowest,
-            backgroundImage:
-                photoUrl != null ? NetworkImage(photoUrl!) : null,
+            backgroundImage: photoUrl != null ? NetworkImage(photoUrl!) : null,
             child: photoUrl == null
-                ? Icon(
-                    Icons.person_rounded,
-                    size: 48,
-                    color: AppColors.primary.withOpacity(0.5),
-                  )
+                ? (initials != null
+                    ? Text(
+                        initials!,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      )
+                    : Icon(
+                        Icons.person_rounded,
+                        size: 48,
+                        color: AppColors.primary.withOpacity(0.5),
+                      ))
                 : null,
           ),
         ),
@@ -402,6 +465,60 @@ class _AvatarSection extends StatelessWidget {
               color: Colors.white,
               size: 16,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// READ-ONLY FIELD
+// Used for values the user can see but cannot edit here (e.g. email address).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ReadOnlyField extends StatelessWidget {
+  const _ReadOnlyField({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _FieldLabel(label),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLow.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: AppColors.outline, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  value.isNotEmpty ? value : '—',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.outline,
+                  ),
+                ),
+              ),
+              Icon(Icons.lock_outline_rounded,
+                  color: AppColors.outline.withOpacity(0.4), size: 16),
+            ],
           ),
         ),
       ],
@@ -471,6 +588,7 @@ class _SettingsTextField extends StatelessWidget {
     required this.hint,
     required this.prefixIcon,
     this.shape = _FieldShape.rounded,
+    // ignore: unused_element_parameter
     this.keyboardType = null,
   });
 

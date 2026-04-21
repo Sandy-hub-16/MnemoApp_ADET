@@ -115,22 +115,71 @@ class _Step3BodyState extends State<_Step3Body> {
     super.dispose();
   }
 
-  String? validateFields() {
-    if (_emailCtrl.text.isEmpty ||
-        _pwCtrl.text.isEmpty ||
-        _pw2Ctrl.text.isEmpty) {
-      return "Please fill all fields";
+  String? validateFields(Map<String, dynamic> args) {
+    // Validate all previous step fields
+    final fullName = args['fullName']?.toString().trim() ?? '';
+    final username = args['username']?.toString().trim() ?? '';
+
+    if (fullName.isEmpty) {
+      return "Full name from Step 1 is missing";
     }
 
-    if (!_emailCtrl.text.contains('@')) {
-      return "Invalid email";
+    if (username.isEmpty) {
+      return "Username from Step 1 is missing";
     }
 
-    if (_pwCtrl.text.length < 12) {
-      return "Password must be at least 12 characters";
+    // Validate Step 3 fields
+    final email = _emailCtrl.text.trim();
+    final password = _pwCtrl.text.trim();
+    final confirmPassword = _pw2Ctrl.text.trim();
+
+    if (email.isEmpty) {
+      return "Email address is required";
     }
 
-    if (_pwCtrl.text != _pw2Ctrl.text) {
+    if (password.isEmpty) {
+      return "Password is required";
+    }
+
+    if (confirmPassword.isEmpty) {
+      return "Please confirm your password";
+    }
+
+    // Validate email format
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (!emailRegex.hasMatch(email)) {
+      return "Please enter a valid email address";
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      return "Password must be at least 8 characters";
+    }
+
+    // Validate password strength
+    final hasUppercase = password.contains(RegExp(r'[A-Z]'));
+    final hasLowercase = password.contains(RegExp(r'[a-z]'));
+    final hasNumbers = password.contains(RegExp(r'[0-9]'));
+    // final hasSymbols = password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+
+    if (!hasUppercase) {
+      return "Password must contain at least one uppercase letter";
+    }
+
+    if (!hasLowercase) {
+      return "Password must contain at least one lowercase letter";
+    }
+
+    if (!hasNumbers) {
+      return "Password must contain at least one number";
+    }
+    
+/* symbols are optional for now to reduce user friction, but we can add this back in later if needed -----------------
+    if (!hasSymbols) {
+      return "Password must contain at least one symbol (!@#\$%^&*...)";
+    }
+*/
+    if (password != confirmPassword) {
       return "Passwords do not match";
     }
 
@@ -143,13 +192,24 @@ class _Step3BodyState extends State<_Step3Body> {
     });
 
     try {
+      final fullName = args['fullName']?.toString().trim() ?? '';
+      final username = args['username']?.toString().trim() ?? '';
+      final age = args['age'] ?? 0;
+      final country = args['country']?.toString().trim() ?? '';
+
+      // Ensure all required fields have valid values
+      if (fullName.isEmpty || username.isEmpty) {
+        _showError("Missing required information from previous steps");
+        return false;
+      }
+
       final user = await AuthService().registerWithDetails(
         email: _emailCtrl.text.trim(),
         password: _pwCtrl.text.trim(),
-        fullName: args['fullName'] ?? '',
-        username: args['username'] ?? '',
-        age: args['age'] ?? 0,
-        country: args['country'] ?? '',
+        fullName: fullName,
+        username: username,
+        age: age,
+        country: country,
       );
 
       if (user == null) {
@@ -315,7 +375,7 @@ class _Step3BodyState extends State<_Step3Body> {
                 label: 'Complete Sign Up',
                 trailingIcon: Icons.check_rounded,
                 onTap: () async {
-                  final error = validateFields();
+                  final error = validateFields(args);
                   if (error != null) {
                     setState(() => _errorMessage = error);
                     _showError(error);

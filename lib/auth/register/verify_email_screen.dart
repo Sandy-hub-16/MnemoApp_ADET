@@ -43,7 +43,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
   int _resendSeconds = 0;
 
   //Account deletion after certain time
-  int _deleteSeconds = 90; // change to 1800 for 30 mins later
+  int _deleteSeconds = 180; // change to 1800 for 30 mins later
   Timer? _deleteTimer;
 
   @override
@@ -327,6 +327,7 @@ class _VerifyEmailBodyState extends State<_VerifyEmailBody> {
 
               const SizedBox(height: 6),
 
+              //  visual countdown
               Text(
                 _formatTime(_deleteSeconds),
                 style: GoogleFonts.plusJakartaSans(

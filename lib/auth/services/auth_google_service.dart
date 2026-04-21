@@ -20,14 +20,14 @@ class AuthService {
   }) async {
     try {
       UserCredential userCredential = await _auth
-          .createUserWithEmailAndPassword(email: email, password: password);    
+          .createUserWithEmailAndPassword(email: email, password: password);
 
       final user = userCredential.user;
 
-      if(user == null) return null;
+      if (user == null) return null;
 
       await user.sendEmailVerification();
-      
+
       // Create Firestore Profile
       await _db.collection('users').doc(user.uid).set({
         'uid': user.uid,
@@ -70,18 +70,16 @@ class AuthService {
     }
   }
 
+  // ── login ────────────────────────────────────────────────────────────────
+  // Throws FirebaseAuthException on failure so callers can inspect the
+  // error code and show a precise message (wrong-password, user-not-found,
+  // invalid-email, too-many-requests, etc.).
   Future<User?> login(String email, String password) async {
-    try {
-      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      return userCredential.user;
-    } catch (e) {
-      print("Login Error: $e");
-      return null;
-    }
+    final UserCredential credential = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    return credential.user;
   }
 
   Future<User?> signInWithGoogle() async {
