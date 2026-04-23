@@ -1,23 +1,16 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../landing_page/app_theme.dart';
 import '../auth/services/auth_google_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE SCREEN
-// Displays the logged-in user's profile, deck stats, and navigation actions.
-//
-// ✏️  BACKEND NOTE:
-// Static placeholder values are used throughout this screen.
-// When you're ready to wire up real data:
-//   • Replace the placeholder strings in _ProfileBody with a StreamBuilder
-//     (or FutureBuilder) that reads from your Firestore 'users' collection.
-//   • Implement _LogOutButton's onTap with AuthService().signOut() followed
-//     by Navigator.pushNamedAndRemoveUntil(context, '/sign-in', …).
-//   • The _StatsGrid card values ('12', '45', '3') should come from your
-//     decks collection queries.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProfileScreen extends StatelessWidget {
@@ -37,12 +30,10 @@ class _ProfileScaffold extends StatefulWidget {
 }
 
 class _ProfileScaffoldState extends State<_ProfileScaffold> {
-  // Used to call _loadProfile() on _ProfileBody after returning from settings.
   final _bodyKey = GlobalKey<_ProfileBodyState>();
 
   Future<void> _goToSettings() async {
     await Navigator.of(context).pushNamed('/account-settings');
-    // Re-fetch profile so any edits (bio, school, etc.) appear immediately.
     _bodyKey.currentState?._loadProfile();
   }
 
@@ -53,7 +44,6 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
       extendBody: true,
       body: Stack(
         children: [
-          // ── Decorative blobs ─────────────────────────────────────────────
           Positioned(
             top: 80,
             right: -80,
@@ -70,8 +60,6 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
               color: AppColors.secondaryContainer.withOpacity(0.28),
             ),
           ),
-
-          // ── Main content ──────────────────────────────────────────────────
           SafeArea(
             bottom: false,
             child: Column(
@@ -106,10 +94,7 @@ class _ProfileTopBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _NavIconButton(
-            icon: Icons.menu_rounded,
-            onTap: () {},
-          ),
+          _NavIconButton(icon: Icons.menu_rounded, onTap: () {}),
           Text(
             'Buddy Profile',
             style: GoogleFonts.plusJakartaSans(
@@ -119,10 +104,7 @@ class _ProfileTopBar extends StatelessWidget {
               letterSpacing: -0.2,
             ),
           ),
-          _NavIconButton(
-            icon: Icons.settings_outlined,
-            onTap: onSettingsTap,
-          ),
+          _NavIconButton(icon: Icons.settings_outlined, onTap: onSettingsTap),
         ],
       ),
     );
@@ -130,7 +112,7 @@ class _ProfileTopBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE BODY — fetches the logged-in user's data from Firestore.
+// PROFILE BODY
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileBody extends StatefulWidget {
@@ -142,6 +124,7 @@ class _ProfileBody extends StatefulWidget {
 
 class _ProfileBodyState extends State<_ProfileBody> {
   bool _loading = true;
+  bool _uploadingPhoto = false;
   String _fullName = '';
   String _username = '';
   String _bio = '';
@@ -160,13 +143,9 @@ class _ProfileBodyState extends State<_ProfileBody> {
       return;
     }
 
-    // Photo URL comes from Firebase Auth directly (set by Google sign-in or
-    // future profile-photo upload); other fields live in Firestore.
     final authUser = FirebaseAuth.instance.currentUser!;
-
     final doc =
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
-
     final data = doc.data() ?? {};
 
     if (mounted) {
@@ -180,12 +159,109 @@ class _ProfileBodyState extends State<_ProfileBody> {
     }
   }
 
+  // ── Photo picker & uploader ──────────────────────────────────────────────
+
+  /// Shows a bottom sheet so the user can choose Camera or Gallery.
+  Future<void> _onAvatarTap() async {
+    final source = await _showImageSourceSheet();
+    if (source == null) return;
+    await _pickAndUploadPhoto(source);
+  }
+
+  Future<ImageSource?> _showImageSourceSheet() async {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ImageSourceSheet(),
+    );
+  }
+
+  /// Picks an image, uploads it to Firebase Storage, then updates both
+  /// Firebase Auth profile and the Firestore 'users' document.
+  Future<void> _pickAndUploadPhoto(ImageSource source) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      if (picked == null) return; // user cancelled
+
+      setState(() => _uploadingPhoto = true);
+
+      final ref =
+          FirebaseStorage.instance.ref().child('avatars').child('$uid.jpg');
+
+      // ── Web: read as bytes (dart:io File doesn't exist on web) ──────
+      // ── Mobile: use File for efficient streaming upload ──────────────
+      if (kIsWeb) {
+        final bytes = await picked.readAsBytes();
+        await ref.putData(
+          bytes,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+      } else {
+        await ref.putFile(
+          File(picked.path),
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
+      }
+
+      final downloadUrl = await ref.getDownloadURL();
+
+      await FirebaseAuth.instance.currentUser!.updatePhotoURL(downloadUrl);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update({'photoUrl': downloadUrl});
+
+      if (mounted) {
+        setState(() {
+          _photoUrl = downloadUrl;
+          _uploadingPhoto = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Profile photo updated!',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Photo upload error: $e'); // ← helps debug future errors
+      if (mounted) {
+        setState(() => _uploadingPhoto = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to update photo. Please try again.',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     return SingleChildScrollView(
@@ -193,25 +269,19 @@ class _ProfileBodyState extends State<_ProfileBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Avatar + name ───────────────────────────────────────────
           _ProfileHeader(
             fullName: _fullName,
             username: _username,
             bio: _bio,
             photoUrl: _photoUrl,
+            uploadingPhoto: _uploadingPhoto,
+            onAvatarTap: _onAvatarTap, // ← NEW callback
           ),
           const SizedBox(height: 32),
-
-          // ── Deck stats grid ─────────────────────────────────────────
-          _SectionLabel(
-            left: 'Deck Statistics',
-            right: 'LIFETIME IMPACT',
-          ),
+          _SectionLabel(left: 'Deck Statistics', right: 'LIFETIME IMPACT'),
           const SizedBox(height: 12),
           const _StatsGrid(),
           const SizedBox(height: 32),
-
-          // ── Action list ─────────────────────────────────────────────
           _ActionList(
             onSettingsTap: () async {
               await Navigator.of(context).pushNamed('/account-settings');
@@ -219,8 +289,6 @@ class _ProfileBodyState extends State<_ProfileBody> {
             },
           ),
           const SizedBox(height: 20),
-
-          // ── Log out button ──────────────────────────────────────────
           const _LogOutButton(),
           const SizedBox(height: 16),
         ],
@@ -230,7 +298,146 @@ class _ProfileBodyState extends State<_ProfileBody> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE HEADER
+// IMAGE SOURCE BOTTOM SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ImageSourceSheet extends StatelessWidget {
+  const _ImageSourceSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.outline.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Update Profile Photo',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Choose a source for your new photo',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                // Camera option
+                Expanded(
+                  child: _SourceOption(
+                    icon: Icons.camera_alt_rounded,
+                    label: 'Camera',
+                    color: AppColors.primary,
+                    bgColor: AppColors.primaryContainer.withOpacity(0.25),
+                    onTap: () => Navigator.of(context).pop(ImageSource.camera),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Gallery option
+                Expanded(
+                  child: _SourceOption(
+                    icon: Icons.photo_library_rounded,
+                    label: 'Gallery',
+                    color: AppColors.secondary,
+                    bgColor: AppColors.secondaryContainer.withOpacity(0.25),
+                    onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Cancel
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.outline,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _SourceOption extends StatelessWidget {
+  const _SourceOption({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.bgColor,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color bgColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE HEADER  (updated: tappable avatar, upload spinner, default avatar)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileHeader extends StatelessWidget {
@@ -238,85 +445,102 @@ class _ProfileHeader extends StatelessWidget {
     required this.fullName,
     required this.username,
     required this.bio,
+    required this.onAvatarTap,
     this.photoUrl,
+    this.uploadingPhoto = false,
   });
 
   final String fullName;
   final String username;
   final String bio;
   final String? photoUrl;
+  final bool uploadingPhoto;
+  final VoidCallback onAvatarTap; // ← NEW
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Avatar
-        Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.primary.withOpacity(0.25),
-                    AppColors.primaryContainer.withOpacity(0.35),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              padding: const EdgeInsets.all(3),
-              child: CircleAvatar(
-                radius: 56,
-                backgroundColor: AppColors.surfaceContainerLowest,
-                backgroundImage:
-                    photoUrl != null ? NetworkImage(photoUrl!) : null,
-                child: photoUrl == null
-                    ? Text(
-                        fullName.isNotEmpty ? fullName[0].toUpperCase() : 'M',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 40,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary,
-                        ),
-                      )
-                    : null,
-              ),
-            ),
-            // Edit button — navigates to Account Settings
-            Positioned(
-              bottom: 2,
-              right: 2,
-              child: GestureDetector(
-                onTap: () =>
-                    Navigator.of(context).pushNamed('/account-settings'),
-                child: Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.surfaceContainerLowest,
-                      width: 2.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
+        // ── Avatar stack ─────────────────────────────────────────────
+        GestureDetector(
+          onTap: onAvatarTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Gradient ring
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withOpacity(0.25),
+                      AppColors.primaryContainer.withOpacity(0.35),
                     ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  child: const Icon(
-                    Icons.edit_rounded,
-                    color: Colors.white,
-                    size: 16,
+                ),
+                padding: const EdgeInsets.all(3),
+                child: _AvatarContent(
+                  photoUrl: photoUrl,
+                  fullName: fullName,
+                  uploading: uploadingPhoto,
+                ),
+              ),
+
+              // Upload progress overlay
+              if (uploadingPhoto)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withOpacity(0.4),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Edit button (bottom-right)
+              Positioned(
+                bottom: 2,
+                right: 2,
+                child: GestureDetector(
+                  onTap: onAvatarTap,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.surfaceContainerLowest,
+                        width: 2.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      uploadingPhoto
+                          ? Icons.hourglass_top_rounded
+                          : Icons.edit_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 16),
 
@@ -343,7 +567,7 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ),
 
-        // Bio (only shown if set)
+        // Bio
         if (bio.isNotEmpty) ...[
           const SizedBox(height: 10),
           Text(
@@ -362,9 +586,116 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AVATAR CONTENT  — photo → initial letter → default icon (priority order)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AvatarContent extends StatelessWidget {
+  const _AvatarContent({
+    required this.photoUrl,
+    required this.fullName,
+    this.uploading = false,
+  });
+
+  final String? photoUrl;
+  final String fullName;
+  final bool uploading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photoUrl != null && photoUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          photoUrl!,
+          width: 112,
+          height: 112,
+          fit: BoxFit.cover,
+          // ── Shown while the image is downloading ──────────────────
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 112,
+              height: 112,
+              color: AppColors.primaryContainer.withOpacity(0.2),
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                      : null,
+                ),
+              ),
+            );
+          },
+          // ── Fallback on 429, network error, bad URL, etc. ─────────
+          errorBuilder: (context, error, stackTrace) =>
+              _FallbackAvatar(fullName: fullName),
+        ),
+      );
+    }
+
+    return _FallbackAvatar(fullName: fullName);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FALLBACK AVATAR  — initial letter  OR  default person icon
+// Used when: no photo URL set, network error, or 429 rate-limit hit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FallbackAvatar extends StatelessWidget {
+  const _FallbackAvatar({required this.fullName});
+  final String fullName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (fullName.isNotEmpty) {
+      return Container(
+        width: 112,
+        height: 112,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primaryContainer,
+              AppColors.secondaryContainer,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            fullName[0].toUpperCase(),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 40,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // No name — plain person icon, no badge
+    return Container(
+      width: 112,
+      height: 112,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primaryContainer.withOpacity(0.3),
+      ),
+      child: Icon(
+        Icons.person_rounded,
+        size: 60,
+        color: AppColors.primary.withOpacity(0.5),
+      ),
+    );
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 // STATS GRID
-// ✏️  BACKEND: Replace the hard-coded values with real counts from your
-// decks collection (built, saved, drafts queries).
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _StatsGrid extends StatelessWidget {
@@ -420,9 +751,7 @@ class _StatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(16),
-        border: Border(
-          bottom: BorderSide(color: accentColor, width: 4),
-        ),
+        border: Border(bottom: BorderSide(color: accentColor, width: 4)),
         boxShadow: [
           BoxShadow(
             color: AppColors.onSurface.withOpacity(0.04),
@@ -563,11 +892,8 @@ class _ActionTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.outline,
-                    size: 22,
-                  ),
+                  Icon(Icons.chevron_right_rounded,
+                      color: AppColors.outline, size: 22),
                 ],
               ),
             ),
@@ -600,10 +926,7 @@ class _LogOutButton extends StatelessWidget {
         onTap: () async {
           await AuthService().signOut();
           if (context.mounted) {
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/',
-              (route) => false,
-            );
+            Navigator.of(context).pushNamedAndRemoveUntil('/', (r) => false);
           }
         },
         borderRadius: BorderRadius.circular(999),
@@ -613,9 +936,8 @@ class _LogOutButton extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.errorContainer.withOpacity(0.12),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: AppColors.errorContainer.withOpacity(0.3),
-            ),
+            border:
+                Border.all(color: AppColors.errorContainer.withOpacity(0.3)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -640,12 +962,6 @@ class _LogOutButton extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BOTTOM NAV BAR
-// Shared across Profile + Account Settings screens.
-// activeIndex: 0=Home, 1=Decks, 2=Quiz, 3=Stats (Profile uses 3 for now)
-//
-// ✏️  FUTURE HOMEPAGE NOTE:
-// When your HomeScreen is ready, update ProfileScreen's bottomNavigationBar
-// to set activeIndex: 0 (or whichever tab Profile should live under).
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _BottomNavBar extends StatelessWidget {
@@ -765,10 +1081,7 @@ class _Blob extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
