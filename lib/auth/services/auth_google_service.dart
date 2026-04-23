@@ -18,7 +18,6 @@ class AuthService {
     required int age,
     required String country,
   }) async {
-    try {
       UserCredential userCredential = await _auth
           .createUserWithEmailAndPassword(email: email, password: password);
 
@@ -41,18 +40,7 @@ class AuthService {
       });
 
       return user;
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'email-already-in-use') {
-        print("Email already registered. Try logging in instead.");
-        return null;
-      } else {
-        print("FirebaseAuth Error: ${e.code} - ${e.message}");
-        return null;
-      }
-    } catch (e) {
-      print("Unknown Error: $e");
-      return null;
-    }
+    
   }
 
   Future<User?> register(String email, String password) async {

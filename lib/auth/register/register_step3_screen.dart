@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
@@ -219,8 +220,13 @@ class _Step3BodyState extends State<_Step3Body> {
 
       _showSuccess("Account created successfully!");
       return true;
-    } catch (e) {
-      _showError(e.toString());
+    } on FirebaseAuthException catch (e) {
+      if(e.code == "email-already-in-use") {
+        _showError("Email already registered. Try logging in instead");
+        return false;
+      }
+
+      _showError(e.message ?? "Authentication Error");
       return false;
     }
   }
