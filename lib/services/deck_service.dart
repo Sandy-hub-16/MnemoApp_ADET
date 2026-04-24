@@ -29,16 +29,20 @@ class DeckService {
         'tag': tag,
         'cards': cards,
         'progress': 0.0,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.now(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
       await docRef.set(data);
+      print('🔥 Saving data: $data'); // ✅ DEBUG
 
+      await docRef.set(data);
+      print('✅ Deck saved with ID: ${docRef.id}'); // ✅ DEBUG
       return docRef.id;
     } on FirebaseException catch (e) {
       throw Exception('Firestore error: ${e.message}');
     } catch (e) {
+      print('❌ DeckService ERROR: $e');  // ✅ DEBUG
       throw Exception('Failed to create deck: $e');
     }
   }

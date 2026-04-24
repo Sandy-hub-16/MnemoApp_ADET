@@ -48,13 +48,11 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     return FirebaseFirestore.instance
         .collection('decks')
         .where('userId', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: AppColors.background,
       extendBody: true,
@@ -151,6 +149,10 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _deckStream(),
                         builder: (context, snapshot) {
+                          print(
+                              '🔥 Stream: ${snapshot.connectionState}'); // ✅ DEBUG
+                          print(
+                              '🔥 UID: ${FirebaseAuth.instance.currentUser?.uid}');
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return const SliverToBoxAdapter(

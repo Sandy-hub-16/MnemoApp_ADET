@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
@@ -135,7 +136,7 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
         'id': p.id,
         'question': p.question,
         'answer': p.answer,
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt': Timestamp.now(),
       };
     }).toList();
 
