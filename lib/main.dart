@@ -7,10 +7,12 @@ import 'auth/register/register_step1_screen.dart';
 import 'auth/register/register_step2_screen.dart';
 import 'auth/register/register_step3_screen.dart';
 import 'auth/register/verify_email_screen.dart';
+import 'main_screens/home_screen.dart'; // ← NEW
 import 'main_screens/profile_screen.dart';
-import 'main_screens/sub_screens/account_settings_screen.dart';
+import 'main_screens/sub_screens/profile-settings_screen.dart';
 import 'main_screens/deck_screen.dart';
-import 'main_screens/quiz_screen.dart';
+import 'main_screens/sub_screens/deck-quiz_screen.dart';
+import 'main_screens/progress_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 
@@ -60,11 +62,11 @@ class AuthGate extends StatelessWidget {
       if (!user.emailVerified) {
         return const VerifyEmailScreen();
       } else {
-        return const LandingScreen();
+        return const HomeScreen(); // ← routes to Home after login
       }
     }
 
-    return const LandingScreen();
+    return const LandingScreen(); // unauthenticated → marketing landing
   }
 }
 
@@ -79,10 +81,12 @@ abstract final class AppRoutes {
   static const String signUp2 = '/sign-up/step-2';
   static const String signUp3 = '/sign-up/step-3';
   static const String verifyEmail = '/verify-email';
+  static const String home = '/home'; // ← NEW
   static const String profile = '/profile';
   static const String accountSettings = '/account-settings';
-  static const String decks = '/decks';   // ← NEW
-  static const String quiz = '/quiz';     // ← NEW
+  static const String decks = '/decks';
+  static const String quiz = '/quiz';
+  static const String progress = '/progress';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,29 +102,31 @@ abstract final class AppRouter {
       AppRoutes.signUp2 => const SignUpStep2Screen(),
       AppRoutes.signUp3 => const SignUpStep3Screen(),
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
+      AppRoutes.home => const HomeScreen(), // ← NEW
       AppRoutes.profile => const ProfileScreen(),
       AppRoutes.accountSettings => const AccountSettingsScreen(),
-      AppRoutes.decks => const DeckHubScreen(),   // ← NEW
-      AppRoutes.quiz => const QuizScreen(),        // ← NEW
-      _ => const LandingScreen(),
+      AppRoutes.decks => const DeckHubScreen(),
+      AppRoutes.quiz => const QuizScreen(),
+      AppRoutes.progress => const ProgressScreen(),
+      _ => const HomeScreen(), // ← fallback changed to Home
     };
 
     return PageRouteBuilder(
       settings: settings,
       pageBuilder: (_, __, ___) => page,
       transitionsBuilder: (_, animation, __, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(1.0, 0.0),
-            end: Offset.zero,
-          ).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        final curved =
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return FadeTransition(
+          opacity: curved,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.95, end: 1.0).animate(curved),
+            child: child,
           ),
-          child: FadeTransition(opacity: animation, child: child),
         );
       },
-      transitionDuration: const Duration(milliseconds: 320),
-      reverseTransitionDuration: const Duration(milliseconds: 280),
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 220),
     );
   }
 }

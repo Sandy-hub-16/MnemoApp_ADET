@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../landing_page/app_theme.dart';
+import '../../landing_page/app_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz

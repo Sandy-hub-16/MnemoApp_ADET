@@ -30,6 +30,7 @@ class _DeckHubScaffold extends StatefulWidget {
 
 class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
   int _selectedFilter = 0;
+  bool _loading = true;
 
   static const _filters = [
     'All Decks',
@@ -38,6 +39,20 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     'Organic Chem',
     'World History',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDeck();
+  }
+
+  Future<void> _loadDeck() async {
+    // Simulate brief loading delay for content initialization
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (mounted) {
+      setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,132 +87,146 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
               children: [
                 const _DeckTopBar(),
                 Expanded(
-                  child: CustomScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
-                        sliver: SliverList(
-                          delegate: SliverChildListDelegate([
-                            // ── Hero greeting ───────────────────────────────
-                            _HeroGreeting(),
-                            const SizedBox(height: 20),
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : CustomScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          slivers: [
+                              SliverPadding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                                sliver: SliverList(
+                                  delegate: SliverChildListDelegate([
+                                    // ── Hero greeting ───────────────────────────────
+                                    _HeroGreeting(),
+                                    const SizedBox(height: 20),
 
-                            // ── Search bar ─────────────────────────────────
-                            _SearchBar(),
-                            const SizedBox(height: 16),
+                                    // ── Search bar ─────────────────────────────────
+                                    _SearchBar(),
+                                    const SizedBox(height: 16),
 
-                            // ── Filter chips ───────────────────────────────
-                            SizedBox(
-                              height: 40,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _filters.length + 1,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, i) {
-                                  if (i == _filters.length) {
-                                    return _FilterChip(
-                                      label: '+ Add Filter',
-                                      active: false,
-                                      onTap: () {},
-                                    );
-                                  }
-                                  return _FilterChip(
-                                    label: _filters[i],
-                                    active: _selectedFilter == i,
-                                    onTap: () =>
-                                        setState(() => _selectedFilter = i),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 28),
+                                    // ── Filter chips ───────────────────────────────
+                                    SizedBox(
+                                      height: 40,
+                                      child: ListView.separated(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: _filters.length + 1,
+                                        separatorBuilder: (_, __) =>
+                                            const SizedBox(width: 8),
+                                        itemBuilder: (context, i) {
+                                          if (i == _filters.length) {
+                                            return _FilterChip(
+                                              label: '+ Add Filter',
+                                              active: false,
+                                              onTap: () {},
+                                            );
+                                          }
+                                          return _FilterChip(
+                                            label: _filters[i],
+                                            active: _selectedFilter == i,
+                                            onTap: () => setState(
+                                                () => _selectedFilter = i),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(height: 28),
 
-                            // ── AI Smart Import card ────────────────────────
-                            _AIImportCard(),
-                            const SizedBox(height: 16),
+                                    // ── AI Smart Import card ────────────────────────
+                                    _AIImportCard(),
+                                    const SizedBox(height: 16),
 
-                            // ── Create new deck ─────────────────────────────
-                            _CreateDeckCard(),
-                            const SizedBox(height: 28),
+                                    // ── Create new deck ─────────────────────────────
+                                    _CreateDeckCard(),
+                                    const SizedBox(height: 28),
 
-                            // ── Recent decks header ─────────────────────────
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Recent Decks',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.onSurface,
-                                    letterSpacing: -0.3,
-                                  ),
-                                ),
-                                GestureDetector(
-                                  onTap: () {},
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        'View All',
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.primary,
+                                    // ── Recent decks header ─────────────────────────
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Recent Decks',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.onSurface,
+                                            letterSpacing: -0.3,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 2),
-                                      const Icon(
-                                        Icons.arrow_forward_rounded,
-                                        size: 16,
-                                        color: AppColors.primary,
-                                      ),
-                                    ],
-                                  ),
+                                        GestureDetector(
+                                          onTap: () {},
+                                          child: Row(
+                                            children: [
+                                              Text(
+                                                'View All',
+                                                style:
+                                                    GoogleFonts.plusJakartaSans(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.primary,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 2),
+                                              const Icon(
+                                                Icons.arrow_forward_rounded,
+                                                size: 16,
+                                                color: AppColors.primary,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // ── Deck cards ──────────────────────────────────
+                                    _DeckCard(
+                                      tag: 'Biology',
+                                      tagColor: AppColors.secondaryContainer,
+                                      tagTextColor:
+                                          AppColors.onSecondaryContainer,
+                                      title: 'Cellular Respiration',
+                                      subtitle:
+                                          '42 Cards · Last studied 2h ago',
+                                      progress: 0.85,
+                                      progressColor: AppColors.primary,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _DeckCard(
+                                      tag: 'History',
+                                      tagColor: AppColors.tertiaryContainer,
+                                      tagTextColor:
+                                          AppColors.onTertiaryContainer,
+                                      title: 'The Industrial Revolution',
+                                      subtitle: '128 Cards · Not studied yet',
+                                      progress: 0.12,
+                                      progressColor: AppColors.tertiary,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _DeckCard(
+                                      tag: 'Physics',
+                                      tagColor: AppColors.secondaryContainer,
+                                      tagTextColor:
+                                          AppColors.onSecondaryContainer,
+                                      title: 'Quantum Mechanics 101',
+                                      subtitle:
+                                          '35 Cards · Last studied 1d ago',
+                                      progress: 0.48,
+                                      progressColor: AppColors.secondary,
+                                    ),
+
+                                    // ── Bottom padding for nav ──────────────────────
+                                    const SizedBox(height: 140),
+                                  ]),
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-
-                            // ── Deck cards ──────────────────────────────────
-                            _DeckCard(
-                              tag: 'Biology',
-                              tagColor: AppColors.secondaryContainer,
-                              tagTextColor: AppColors.onSecondaryContainer,
-                              title: 'Cellular Respiration',
-                              subtitle: '42 Cards · Last studied 2h ago',
-                              progress: 0.85,
-                              progressColor: AppColors.primary,
-                            ),
-                            const SizedBox(height: 12),
-                            _DeckCard(
-                              tag: 'History',
-                              tagColor: AppColors.tertiaryContainer,
-                              tagTextColor: AppColors.onTertiaryContainer,
-                              title: 'The Industrial Revolution',
-                              subtitle: '128 Cards · Not studied yet',
-                              progress: 0.12,
-                              progressColor: AppColors.tertiary,
-                            ),
-                            const SizedBox(height: 12),
-                            _DeckCard(
-                              tag: 'Physics',
-                              tagColor: AppColors.secondaryContainer,
-                              tagTextColor: AppColors.onSecondaryContainer,
-                              title: 'Quantum Mechanics 101',
-                              subtitle: '35 Cards · Last studied 1d ago',
-                              progress: 0.48,
-                              progressColor: AppColors.secondary,
-                            ),
-
-                            // ── Bottom padding for nav ──────────────────────
-                            const SizedBox(height: 140),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
+                              ),
+                            ]),
                 ),
               ],
             ),
@@ -660,7 +689,7 @@ class _DeckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () => Navigator.of(context).pushNamed('/quiz'),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -808,7 +837,10 @@ class _DeckOptionsSheet extends StatelessWidget {
           _SheetOption(
               icon: Icons.play_arrow_rounded,
               label: 'Study This Deck',
-              onTap: () => Navigator.pop(context)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).pushNamed('/quiz');
+              }),
           _SheetOption(
               icon: Icons.edit_outlined,
               label: 'Edit Deck',
@@ -901,15 +933,19 @@ class _DeckBottomNavBar extends StatelessWidget {
   static const _items = [
     _NavItem(icon: Icons.home_outlined, label: 'Home', route: '/home'),
     _NavItem(icon: Icons.layers_outlined, label: 'Decks', route: '/decks'),
-    _NavItem(icon: Icons.quiz_outlined, label: 'Quiz', route: '/quiz'),
-    _NavItem(icon: Icons.analytics_outlined, label: 'Stats', route: '/stats'),
+    _NavItem(
+        icon: Icons.analytics_outlined, label: 'Progress', route: '/progress'),
+    _NavItem(
+        icon: Icons.person_outline_rounded,
+        label: 'Profile',
+        route: '/profile'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
+        color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         boxShadow: [
           BoxShadow(
@@ -952,8 +988,9 @@ class _DeckBottomNavBar extends StatelessWidget {
                       Icon(
                         active ? _filledIcon(item.icon) : item.icon,
                         size: 24,
-                        color:
-                            active ? AppColors.primary : Colors.grey.shade400,
+                        color: active
+                            ? AppColors.primary
+                            : AppColors.onSurfaceVariant,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -961,8 +998,9 @@ class _DeckBottomNavBar extends StatelessWidget {
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color:
-                              active ? AppColors.primary : Colors.grey.shade400,
+                          color: active
+                              ? AppColors.primary
+                              : AppColors.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -979,8 +1017,8 @@ class _DeckBottomNavBar extends StatelessWidget {
   static final _filledIconMap = {
     Icons.home_outlined: Icons.home_rounded,
     Icons.layers_outlined: Icons.layers_rounded,
-    Icons.quiz_outlined: Icons.quiz_rounded,
     Icons.analytics_outlined: Icons.analytics_rounded,
+    Icons.person_outline_rounded: Icons.person_rounded,
   };
 
   IconData _filledIcon(IconData icon) => _filledIconMap[icon] ?? icon;
