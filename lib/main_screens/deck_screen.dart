@@ -46,6 +46,30 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     _loadDeck();
   }
 
+  final List<Map<String, dynamic>> allDecks = [
+    {
+      'tag': 'Biology',
+      'title': 'Cellular Respiration',
+      'subtitle': '42 Cards · Last studied 2h ago',
+      'progress': 0.85,
+      'color': AppColors.primary,
+    },
+    {
+      'tag': 'History',
+      'title': 'The Industrial Revolution',
+      'subtitle': '128 Cards · Not studied yet',
+      'progress': 0.12,
+      'color': AppColors.tertiary,
+    },
+    {
+      'tag': 'Physics',
+      'title': 'Quantum Mechanics 101',
+      'subtitle': '35 Cards · Last studied 1d ago',
+      'progress': 0.48,
+      'color': AppColors.secondary,
+    },
+  ];
+
   Future<void> _loadDeck() async {
     // Simulate brief loading delay for content initialization
     await Future.delayed(const Duration(milliseconds: 300));
@@ -56,6 +80,11 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    final selectedCategory = _filters[_selectedFilter];
+
+    final filteredDecks = selectedCategory == 'All Decks'
+        ? allDecks
+        : allDecks.where((deck) => deck['tag'] == selectedCategory).toList();
     return Scaffold(
       backgroundColor: AppColors.background,
       extendBody: true,
@@ -186,41 +215,24 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     const SizedBox(height: 16),
 
                                     // ── Deck cards ──────────────────────────────────
-                                    _DeckCard(
-                                      tag: 'Biology',
-                                      tagColor: AppColors.secondaryContainer,
-                                      tagTextColor:
-                                          AppColors.onSecondaryContainer,
-                                      title: 'Cellular Respiration',
-                                      subtitle:
-                                          '42 Cards · Last studied 2h ago',
-                                      progress: 0.85,
-                                      progressColor: AppColors.primary,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _DeckCard(
-                                      tag: 'History',
-                                      tagColor: AppColors.tertiaryContainer,
-                                      tagTextColor:
-                                          AppColors.onTertiaryContainer,
-                                      title: 'The Industrial Revolution',
-                                      subtitle: '128 Cards · Not studied yet',
-                                      progress: 0.12,
-                                      progressColor: AppColors.tertiary,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _DeckCard(
-                                      tag: 'Physics',
-                                      tagColor: AppColors.secondaryContainer,
-                                      tagTextColor:
-                                          AppColors.onSecondaryContainer,
-                                      title: 'Quantum Mechanics 101',
-                                      subtitle:
-                                          '35 Cards · Last studied 1d ago',
-                                      progress: 0.48,
-                                      progressColor: AppColors.secondary,
-                                    ),
-
+                                    ...filteredDecks.map((deck) {
+                                      return Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child: _DeckCard(
+                                          tag: deck['tag'],
+                                          tagColor:
+                                              AppColors.secondaryContainer,
+                                          tagTextColor:
+                                              AppColors.onSecondaryContainer,
+                                          title: deck['title'],
+                                          subtitle: deck['subtitle'],
+                                          subject: deck['subject'],
+                                          progress: deck['progress'],
+                                          progressColor: deck['color'], 
+                                        ),
+                                      );
+                                    }).toList(),
                                     // ── Bottom padding for nav ──────────────────────
                                     const SizedBox(height: 140),
                                   ]),
@@ -674,6 +686,7 @@ class _DeckCard extends StatelessWidget {
     required this.tagTextColor,
     required this.title,
     required this.subtitle,
+    this.subject,
     required this.progress,
     required this.progressColor,
   });
@@ -683,6 +696,7 @@ class _DeckCard extends StatelessWidget {
   final Color tagTextColor;
   final String title;
   final String subtitle;
+  final String? subject;
   final double progress;
   final Color progressColor;
 

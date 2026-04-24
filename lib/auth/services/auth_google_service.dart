@@ -22,7 +22,6 @@ class AuthService {
         email: email, password: password);
 
     final user = userCredential.user;
-    final providerId = user?.providerData.first.providerId;
 
     if (user == null) return null;
 
@@ -36,7 +35,7 @@ class AuthService {
       'username': username,
       'age': age,
       'country': country,
-      'provider': providerId,
+      'provider': 'email',
       'emailVerified': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
