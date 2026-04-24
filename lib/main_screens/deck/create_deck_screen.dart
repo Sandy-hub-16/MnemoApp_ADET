@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
+import '../../services/deck_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE DECK SCREEN  —  route: /create-deck
@@ -86,8 +87,7 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surfaceContainerLowest,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(
           'Delete Card?',
           style: GoogleFonts.plusJakartaSans(
@@ -123,17 +123,62 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
     );
   }
 
-  /// SAVE DECK — wire to Firestore when backend is ready.
-  void _onSaveDeck() {
-    // TODO: Replace with Firestore write:
-    // final deck = {
-    //   'title': _titleController.text.trim(),
-    //   'tag': _tags[_selectedTagIndex],
-    //   'cards': _pairs.map((p) => {'q': p.question, 'a': p.answer}).toList(),
-    //   'createdAt': FieldValue.serverTimestamp(),
-    // };
-    // FirebaseFirestore.instance.collection('decks').add(deck);
-    Navigator.pop(context);
+  /// SAVE DECK — writes to Firestore via DeckService; stream in deck_screen auto-refreshes.
+  Future<void> _onSaveDeck() async {
+    if (!_canSave) return;
+
+    final title = _titleController.text.trim();
+    final tag = _tags[_selectedTagIndex];
+
+    final List<Map<String, dynamic>> cards = _pairs.map((p) {
+      return {
+        'id': p.id,
+        'question': p.question,
+        'answer': p.answer,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+    }).toList();
+
+    try {
+      await DeckService.createDeck(
+        title: title,
+        tag: tag,
+        cards: cards,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Deck saved successfully!'),
+          backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      );
+
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/decks', // or whatever route deck_screen uses
+          (route) => false, // Remove all previous routes
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save deck: $e'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      );
+    }
   }
 
   bool get _canSave =>
@@ -182,8 +227,7 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
                     physics: const BouncingScrollPhysics(),
                     slivers: [
                       SliverPadding(
-                        padding:
-                            const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                        padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
                         sliver: SliverList(
                           delegate: SliverChildListDelegate([
                             // ── Deck name input ─────────────────────────
@@ -213,15 +257,13 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
 
                             // ── READ: Q&A cards or empty state ──────────
                             if (_pairs.isEmpty)
-                              _EmptyCardsState(
-                                  onAdd: () => _openQAForm(null))
+                              _EmptyCardsState(onAdd: () => _openQAForm(null))
                             else
                               ..._pairs.asMap().entries.map((entry) {
                                 final index = entry.key;
                                 final pair = entry.value;
                                 return Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.only(bottom: 12),
                                   child: _QACard(
                                     pair: pair,
                                     cardNumber: index + 1,
@@ -238,6 +280,7 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
                     ],
                   ),
                 ),
+              
               ],
             ),
           ),
@@ -308,8 +351,8 @@ class _CreateDeckTopBar extends StatelessWidget {
               onTap: onSave,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                 decoration: BoxDecoration(
                   gradient: canSave
                       ? const LinearGradient(
@@ -321,8 +364,7 @@ class _CreateDeckTopBar extends StatelessWidget {
                           end: Alignment.bottomRight,
                         )
                       : null,
-                  color:
-                      canSave ? null : AppColors.surfaceContainerLow,
+                  color: canSave ? null : AppColors.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(999),
                   boxShadow: canSave
                       ? [
@@ -340,9 +382,7 @@ class _CreateDeckTopBar extends StatelessWidget {
                     Icon(
                       Icons.check_rounded,
                       size: 16,
-                      color: canSave
-                          ? AppColors.onPrimary
-                          : AppColors.outline,
+                      color: canSave ? AppColors.onPrimary : AppColors.outline,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -350,9 +390,8 @@ class _CreateDeckTopBar extends StatelessWidget {
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: canSave
-                            ? AppColors.onPrimary
-                            : AppColors.outline,
+                        color:
+                            canSave ? AppColors.onPrimary : AppColors.outline,
                       ),
                     ),
                   ],
@@ -426,8 +465,8 @@ class _DeckNameInput extends StatelessWidget {
                     color: AppColors.primary, size: 22),
               ),
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 18),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
             ),
           ),
         ),
@@ -478,8 +517,8 @@ class _SubjectSelector extends StatelessWidget {
                 onTap: () => onSelected(i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
                     color: active
                         ? AppColors.primary
@@ -556,8 +595,7 @@ class _QASectionHeader extends StatelessWidget {
           GestureDetector(
             onTap: onAdd,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.primaryContainer,
                 borderRadius: BorderRadius.circular(999),
@@ -636,8 +674,7 @@ class _EmptyCardsStateState extends State<_EmptyCardsState> {
                 ),
                 child: Icon(
                   Icons.add_rounded,
-                  color:
-                      _hovered ? AppColors.primary : AppColors.outline,
+                  color: _hovered ? AppColors.primary : AppColors.outline,
                   size: 28,
                 ),
               ),
@@ -706,8 +743,8 @@ class _QACard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(999),
@@ -870,10 +907,8 @@ class _QAFormSheetState extends State<_QAFormSheet> {
   @override
   void initState() {
     super.initState();
-    _qCtrl =
-        TextEditingController(text: widget.existing?.question ?? '');
-    _aCtrl =
-        TextEditingController(text: widget.existing?.answer ?? '');
+    _qCtrl = TextEditingController(text: widget.existing?.question ?? '');
+    _aCtrl = TextEditingController(text: widget.existing?.answer ?? '');
   }
 
   @override
@@ -892,8 +927,8 @@ class _QAFormSheetState extends State<_QAFormSheet> {
   Widget build(BuildContext context) {
     return Padding(
       // Pushes sheet up when keyboard appears
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         margin: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -989,8 +1024,7 @@ class _QAFormSheetState extends State<_QAFormSheet> {
                     child: GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: Container(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         decoration: BoxDecoration(
                           color: AppColors.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(16),
@@ -1025,8 +1059,7 @@ class _QAFormSheetState extends State<_QAFormSheet> {
                           : null,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         decoration: BoxDecoration(
                           gradient: _canSave
                               ? const LinearGradient(
@@ -1038,15 +1071,13 @@ class _QAFormSheetState extends State<_QAFormSheet> {
                                   end: Alignment.bottomRight,
                                 )
                               : null,
-                          color: _canSave
-                              ? null
-                              : AppColors.surfaceContainerLow,
+                          color:
+                              _canSave ? null : AppColors.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: _canSave
                               ? [
                                   BoxShadow(
-                                    color: AppColors.primary
-                                        .withOpacity(0.22),
+                                    color: AppColors.primary.withOpacity(0.22),
                                     blurRadius: 12,
                                     offset: const Offset(0, 4),
                                   )
@@ -1129,8 +1160,7 @@ class _QATextField extends StatelessWidget {
             color: AppColors.outline.withOpacity(0.5),
           ),
           prefixIcon: Padding(
-            padding:
-                const EdgeInsets.only(left: 14, right: 10, top: 14),
+            padding: const EdgeInsets.only(left: 14, right: 10, top: 14),
             child: Icon(icon, color: iconColor, size: 20),
           ),
           prefixIconConstraints:
@@ -1159,8 +1189,7 @@ class _AddCardFAB extends StatelessWidget {
       backgroundColor: AppColors.primary,
       foregroundColor: AppColors.onPrimary,
       elevation: 6,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       icon: const Icon(Icons.add_rounded, size: 24),
       label: Text(
         'Add Card',
@@ -1188,8 +1217,7 @@ class _Blob extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration:
-          BoxDecoration(color: color, shape: BoxShape.circle),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
