@@ -7,8 +7,10 @@ import 'auth/register/register_step1_screen.dart';
 import 'auth/register/register_step2_screen.dart';
 import 'auth/register/register_step3_screen.dart';
 import 'auth/register/verify_email_screen.dart';
-import 'profile/profile_screen.dart';           
-import 'profile/account_settings_screen.dart';  
+import 'main_screens/profile_screen.dart';
+import 'main_screens/sub_screens/account_settings_screen.dart';
+import 'main_screens/deck_screen.dart';
+import 'main_screens/quiz_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 
@@ -56,13 +58,13 @@ class AuthGate extends StatelessWidget {
 
     if (user != null) {
       if (!user.emailVerified) {
-        return const VerifyEmailScreen(); // redirect here
+        return const VerifyEmailScreen();
       } else {
-        return const LandingScreen(); // or your Home screen
+        return const LandingScreen();
       }
     }
 
-    return const LandingScreen(); // not logged in
+    return const LandingScreen();
   }
 }
 
@@ -79,6 +81,8 @@ abstract final class AppRoutes {
   static const String verifyEmail = '/verify-email';
   static const String profile = '/profile';
   static const String accountSettings = '/account-settings';
+  static const String decks = '/decks';   // ← NEW
+  static const String quiz = '/quiz';     // ← NEW
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +100,8 @@ abstract final class AppRouter {
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
       AppRoutes.profile => const ProfileScreen(),
       AppRoutes.accountSettings => const AccountSettingsScreen(),
+      AppRoutes.decks => const DeckHubScreen(),   // ← NEW
+      AppRoutes.quiz => const QuizScreen(),        // ← NEW
       _ => const LandingScreen(),
     };
 

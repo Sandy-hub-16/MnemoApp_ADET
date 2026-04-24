@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../landing_page/app_theme.dart';
+import '../../landing_page/app_theme.dart';
 
 // ── Email censor ─────────────────────────────────────────────────────────────
 // Standard approach: reveal first 2 characters, mask the rest of the local
