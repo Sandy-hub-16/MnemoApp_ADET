@@ -6,7 +6,8 @@ import '../widgets_design.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 2: DEMOGRAPHICS
-// Age (slider + number input) + Nationality (dropdown).
+// Age (compact slider + stepper) + Education Level (selectable tiles).
+// Country defaults to Philippines (ph) and is passed silently.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class SignUpStep2Screen extends StatelessWidget {
@@ -14,7 +15,6 @@ class SignUpStep2Screen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return AuthScaffold(
       title: 'Create Account',
       showBack: true,
@@ -32,30 +32,48 @@ class _Step2Body extends StatefulWidget {
 
 class _Step2BodyState extends State<_Step2Body> {
   double _age = 21;
-  String? _country;
+  String? _education;
+  bool _showEducationError = false;
 
-  static const List<_Country> _countries = [
-    _Country('us', '🇺🇸', 'United States'),
-    _Country('gb', '🇬🇧', 'United Kingdom'),
-    _Country('ca', '🇨🇦', 'Canada'),
-    _Country('au', '🇦🇺', 'Australia'),
-    _Country('de', '🇩🇪', 'Germany'),
-    _Country('fr', '🇫🇷', 'France'),
-    _Country('jp', '🇯🇵', 'Japan'),
-    _Country('ph', '🇵🇭', 'Philippines'),
-    _Country('in', '🇮🇳', 'India'),
-    _Country('br', '🇧🇷', 'Brazil'),
-    _Country('other', '🌍', 'Other'),
+  static const List<_EducationLevel> _educationLevels = [
+    _EducationLevel(
+      key: 'elementary',
+      icon: Icons.child_care_rounded,
+      label: 'Elementary',
+      sublabel: 'Grades 1 – 6',
+    ),
+    _EducationLevel(
+      key: 'highschool',
+      icon: Icons.school_rounded,
+      label: 'Junior High School',
+      sublabel: 'Grades 7 – 10',
+    ),
+    _EducationLevel(
+      key: 'senior_highschool',
+      icon: Icons.auto_stories_rounded,
+      label: 'Senior High School',
+      sublabel: 'Grades 11 – 12 or Tech-Voc',
+    ),
+    _EducationLevel(
+      key: 'undergraduate',
+      icon: Icons.account_balance_rounded,
+      label: 'College Undergraduate',
+      sublabel: 'Undergraduate or associate',
+    ),
+    _EducationLevel(
+      key: 'graduate_working',
+      icon: Icons.work_rounded,
+      label: 'College Graduate & Working Professional',
+      sublabel: 'Graduate or working',
+    ),
   ];
 
   @override
   Widget build(BuildContext context) {
-
     final rawArgs = ModalRoute.of(context)!.settings.arguments;
-
     final Map<String, dynamic> args =
         rawArgs != null ? Map<String, dynamic>.from(rawArgs as Map) : {};
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -86,51 +104,43 @@ class _Step2BodyState extends State<_Step2Body> {
         ),
         const SizedBox(height: 28),
 
-        // ── Age picker card ───────────────────────────────────────────────
+        // ── Compact age picker ────────────────────────────────────────────
         _AgeCard(
           age: _age,
           onChanged: (v) => setState(() => _age = v),
         ),
         const SizedBox(height: 16),
 
-        // ── Nationality card ──────────────────────────────────────────────
-        _NationalityCard(
-          selected: _country,
-          countries: _countries,
-          onChanged: (v) => setState(() => _country = v),
+        // ── Education level dropdown ──────────────────────────────────────
+        _EducationDropdown(
+          selected: _education,
+          levels: _educationLevels,
+          hasError: _showEducationError,
+          onChanged: (v) => setState(() {
+            _education = v;
+            _showEducationError = false;
+          }),
         ),
         const SizedBox(height: 36),
 
         // ── Continue CTA ──────────────────────────────────────────────────
         AuthPrimaryButton(
           label: 'Continue to Final Step',
-          onTap: () => Navigator.of(context).pushNamed(
-            AppRoutes.signUp3,
-            arguments: Map<String, dynamic>.from({
-              ...args,
-              'age': _age.toInt(),
-              'country': _country ?? '',
-            }),
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // ── Skip ──────────────────────────────────────────────────────────
-        Center(
-          child: GestureDetector(
-            onTap: () => Navigator.of(context).pushNamed(
+          onTap: () {
+            if (_education == null) {
+              setState(() => _showEducationError = true);
+              return;
+            }
+            Navigator.of(context).pushNamed(
               AppRoutes.signUp3,
-              arguments: Map<String, dynamic>.from(args),
-            ),
-            child: Text(
-              'Skip for now',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: AppColors.outline,
-              ),
-            ),
-          ),
+              arguments: Map<String, dynamic>.from({
+                ...args,
+                'age': _age.toInt(),
+                'education': _education!,
+                'country': 'ph',
+              }),
+            );
+          },
         ),
         const SizedBox(height: 32),
       ],
@@ -139,8 +149,8 @@ class _Step2BodyState extends State<_Step2Body> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AGE PICKER CARD
-// Large centred number + decrement/increment buttons + slim slider.
+// AGE PICKER CARD — compact horizontal layout.
+// Smaller number (44 px vs original 72 px) with tighter padding.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AgeCard extends StatelessWidget {
@@ -154,7 +164,7 @@ class _AgeCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(24),
@@ -172,19 +182,18 @@ class _AgeCard extends StatelessWidget {
         children: [
           // Label
           Text(
-            'Your Age',
+            'YOUR AGE',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
               color: AppColors.onSurfaceVariant.withOpacity(0.6),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
 
-          // Number + stepper row
+          // Number + stepper row — all inline, compact
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Decrement
@@ -195,35 +204,40 @@ class _AgeCard extends StatelessWidget {
                     : null,
               ),
 
-              // Large age number
-              Column(
-                children: [
-                  ShaderMask(
-                    shaderCallback: (b) => const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppColors.primary, AppColors.primaryFixedDim],
-                    ).createShader(b),
-                    child: Text(
-                      '$ageInt',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 72,
-                        fontWeight: FontWeight.w800,
-                        height: 1,
-                        color: Colors.white, // masked by shader
+              // Age number (smaller: 44 px)
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (b) => const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [AppColors.primary, AppColors.primaryFixedDim],
+                      ).createShader(b),
+                      child: Text(
+                        '$ageInt',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 44,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                          color: Colors.white, // masked by shader
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'years old',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                    const SizedBox(height: 2),
+                    Text(
+                      'years old',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
 
               // Increment
@@ -235,7 +249,7 @@ class _AgeCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
 
           // Slim slider
           SliderTheme(
@@ -244,9 +258,9 @@ class _AgeCard extends StatelessWidget {
               inactiveTrackColor: AppColors.outlineVariant.withOpacity(0.25),
               thumbColor: AppColors.primary,
               overlayColor: AppColors.primary.withOpacity(0.10),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
               trackHeight: 3,
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 18),
             ),
             child: Slider(
               value: age,
@@ -315,8 +329,8 @@ class _StepperButtonState extends State<_StepperButton> {
         scale: _pressed ? 0.9 : 1.0,
         duration: const Duration(milliseconds: 90),
         child: Container(
-          width: 48,
-          height: 48,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             color: enabled
                 ? AppColors.primaryContainer.withOpacity(0.25)
@@ -330,7 +344,7 @@ class _StepperButtonState extends State<_StepperButton> {
           ),
           child: Icon(
             widget.icon,
-            size: 22,
+            size: 20,
             color: enabled ? AppColors.primary : AppColors.outlineVariant,
           ),
         ),
@@ -340,31 +354,63 @@ class _StepperButtonState extends State<_StepperButton> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NATIONALITY CARD
+// EDUCATION DROPDOWN — tap to open a bottom-sheet picker.
+// Shows the selected level inline; validates that a choice was made.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NationalityCard extends StatelessWidget {
-  const _NationalityCard({
+class _EducationDropdown extends StatefulWidget {
+  const _EducationDropdown({
     required this.selected,
-    required this.countries,
+    required this.levels,
+    required this.hasError,
     required this.onChanged,
   });
   final String? selected;
-  final List<_Country> countries;
-  final ValueChanged<String?> onChanged;
+  final List<_EducationLevel> levels;
+  final bool hasError;
+  final ValueChanged<String> onChanged;
 
-  _Country? get _selectedCountry =>
-      selected == null ? null : countries.firstWhere((c) => c.code == selected);
+  @override
+  State<_EducationDropdown> createState() => _EducationDropdownState();
+}
+
+class _EducationDropdownState extends State<_EducationDropdown> {
+  bool _pressed = false;
+
+  _EducationLevel? get _selectedLevel => widget.selected == null
+      ? null
+      : widget.levels.firstWhere((l) => l.key == widget.selected);
+
+  void _openSheet() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _EducationBottomSheet(
+        levels: widget.levels,
+        selected: widget.selected,
+      ),
+    );
+    if (result != null) widget.onChanged(result);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final sel = _selectedLevel;
+    final hasError = widget.hasError;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.outlineVariant.withOpacity(0.18)),
+        border: Border.all(
+          color: hasError
+              ? Colors.red.withOpacity(0.55)
+              : AppColors.outlineVariant.withOpacity(0.18),
+          width: hasError ? 1.5 : 1.0,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.onSurface.withOpacity(0.05),
@@ -376,106 +422,393 @@ class _NationalityCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Label
+          // Label row
           Text(
-            'Nationality',
+            'EDUCATION LEVEL',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-              color: AppColors.onSurfaceVariant.withOpacity(0.6),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: hasError
+                  ? Colors.red.withOpacity(0.7)
+                  : AppColors.onSurfaceVariant.withOpacity(0.6),
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Where are you from?',
+            'What is your educational background?',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 17,
               fontWeight: FontWeight.w700,
               color: AppColors.onSurface,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
 
-          // Dropdown
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: AppColors.outlineVariant.withOpacity(0.4),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selected,
-                hint: Text(
-                  'Select your country',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    color: AppColors.outlineVariant,
+          // Tappable selector field
+          GestureDetector(
+            onTapDown: (_) => setState(() => _pressed = true),
+            onTapUp: (_) {
+              setState(() => _pressed = false);
+              _openSheet();
+            },
+            onTapCancel: () => setState(() => _pressed = false),
+            child: AnimatedScale(
+              scale: _pressed ? 0.98 : 1.0,
+              duration: const Duration(milliseconds: 90),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: sel != null
+                      ? AppColors.primary.withOpacity(0.07)
+                      : AppColors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: hasError
+                        ? Colors.red.withOpacity(0.4)
+                        : sel != null
+                            ? AppColors.primary.withOpacity(0.45)
+                            : AppColors.outlineVariant.withOpacity(0.28),
+                    width: sel != null ? 1.5 : 1.0,
                   ),
                 ),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                    color: AppColors.outline, size: 22),
-                isExpanded: true,
-                dropdownColor: AppColors.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(16),
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  color: AppColors.onSurface,
-                ),
-                items: countries
-                    .map(
-                      (c) => DropdownMenuItem(
-                        value: c.code,
-                        child: Row(children: [
-                          Text(c.flag, style: const TextStyle(fontSize: 18)),
-                          const SizedBox(width: 12),
-                          Text(c.name),
-                        ]),
+                child: Row(
+                  children: [
+                    // Icon badge
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: sel != null
+                            ? AppColors.primary.withOpacity(0.14)
+                            : AppColors.outlineVariant.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    )
-                    .toList(),
-                onChanged: onChanged,
+                      child: Icon(
+                        sel?.icon ?? Icons.school_outlined,
+                        size: 18,
+                        color: sel != null
+                            ? AppColors.primary
+                            : AppColors.onSurfaceVariant.withOpacity(0.5),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+
+                    // Label or placeholder
+                    Expanded(
+                      child: sel != null
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  sel.label,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  sel.sublabel,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.primary.withOpacity(0.6),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
+                              'Select your education level',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: hasError
+                                    ? Colors.red.withOpacity(0.7)
+                                    : AppColors.onSurfaceVariant
+                                        .withOpacity(0.45),
+                              ),
+                            ),
+                    ),
+
+                    // Chevron
+                    Icon(
+                      Icons.expand_less_rounded,
+                      size: 20,
+                      color: sel != null
+                          ? AppColors.primary
+                          : AppColors.onSurfaceVariant.withOpacity(0.4),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
 
-          // Subtle flag preview when a country is selected
-          if (_selectedCountry != null) ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Text(
-                  _selectedCountry!.flag,
-                  style: const TextStyle(fontSize: 22),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  _selectedCountry!.name,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Icon(Icons.check_circle_rounded,
-                    size: 14, color: AppColors.primary),
-              ],
-            ),
-          ],
+          // Error hint
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            child: hasError
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 8, left: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline_rounded,
+                            size: 13, color: Colors.red.withOpacity(0.8)),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Please select your education level to continue.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
         ],
       ),
     );
   }
 }
 
-class _Country {
-  const _Country(this.code, this.flag, this.name);
-  final String code;
-  final String flag;
-  final String name;
+// ─────────────────────────────────────────────────────────────────────────────
+// EDUCATION BOTTOM SHEET — slides up with the list of options.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EducationBottomSheet extends StatelessWidget {
+  const _EducationBottomSheet({
+    required this.levels,
+    required this.selected,
+  });
+  final List<_EducationLevel> levels;
+  final String? selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppColors.outlineVariant.withOpacity(0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withOpacity(0.10),
+            blurRadius: 48,
+            offset: const Offset(0, -8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.outlineVariant.withOpacity(0.45),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+
+          // Title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
+            child: Row(
+              children: [
+                Text(
+                  'Education Level',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceContainerLow,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: AppColors.outlineVariant.withOpacity(0.35)),
+                    ),
+                    child: const Icon(Icons.close_rounded,
+                        size: 16, color: AppColors.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Options list
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              children: levels.asMap().entries.map((entry) {
+                final level = entry.value;
+                final isSelected = selected == level.key;
+                final isLast = entry.key == levels.length - 1;
+
+                return Padding(
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 8),
+                  child: _SheetTile(
+                    level: level,
+                    isSelected: isSelected,
+                    onTap: () => Navigator.of(context).pop(level.key),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetTile extends StatefulWidget {
+  const _SheetTile({
+    required this.level,
+    required this.isSelected,
+    required this.onTap,
+  });
+  final _EducationLevel level;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  State<_SheetTile> createState() => _SheetTileState();
+}
+
+class _SheetTileState extends State<_SheetTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final sel = widget.isSelected;
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        widget.onTap();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: sel
+                ? AppColors.primary.withOpacity(0.07)
+                : AppColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: sel
+                  ? AppColors.primary.withOpacity(0.45)
+                  : AppColors.outlineVariant.withOpacity(0.28),
+              width: sel ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: sel
+                      ? AppColors.primary.withOpacity(0.14)
+                      : AppColors.outlineVariant.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  widget.level.icon,
+                  size: 18,
+                  color: sel
+                      ? AppColors.primary
+                      : AppColors.onSurfaceVariant.withOpacity(0.7),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.level.label,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                        color: sel ? AppColors.primary : AppColors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      widget.level.sublabel,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: sel
+                            ? AppColors.primary.withOpacity(0.6)
+                            : AppColors.onSurfaceVariant.withOpacity(0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              AnimatedOpacity(
+                opacity: sel ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 180),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  size: 18,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA MODELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EducationLevel {
+  const _EducationLevel({
+    required this.key,
+    required this.icon,
+    required this.label,
+    required this.sublabel,
+  });
+  final String key;
+  final IconData icon;
+  final String label;
+  final String sublabel;
 }

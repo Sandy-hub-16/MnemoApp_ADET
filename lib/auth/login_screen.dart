@@ -285,7 +285,7 @@ class _SignInBodyState extends State<_SignInBody> {
 
         _showSuccess('Welcome back!');
         await Future.delayed(const Duration(milliseconds: 600));
-        if (mounted) Navigator.pushReplacementNamed(context, '/profile');
+        if (mounted) Navigator.pushReplacementNamed(context, '/home');
       }
     } on FirebaseAuthException catch (e) {
       // ── Disambiguate the generic "invalid-credential" / "user-not-found"

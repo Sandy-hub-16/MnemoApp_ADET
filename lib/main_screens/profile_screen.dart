@@ -31,6 +31,21 @@ class _ProfileScaffold extends StatefulWidget {
 
 class _ProfileScaffoldState extends State<_ProfileScaffold> {
   final _bodyKey = GlobalKey<_ProfileBodyState>();
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    // Simulate brief loading delay for content initialization
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (mounted) {
+      setState(() => _loading = false);
+    }
+  }
 
   Future<void> _goToSettings() async {
     await Navigator.of(context).pushNamed('/account-settings');
@@ -66,7 +81,14 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
               children: [
                 _ProfileTopBar(onSettingsTap: _goToSettings),
                 Expanded(
-                  child: _ProfileBody(key: _bodyKey),
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : _ProfileBody(key: _bodyKey),
                 ),
               ],
             ),
@@ -969,17 +991,33 @@ class _BottomNavBar extends StatelessWidget {
   final int activeIndex;
 
   static const _items = [
-    _NavItem(icon: Icons.home_outlined, label: 'Home', route: '/home'),
-    _NavItem(icon: Icons.layers_outlined, label: 'Decks', route: '/decks'),
-    _NavItem(icon: Icons.quiz_outlined, label: 'Quiz', route: '/quiz'),
-    _NavItem(icon: Icons.analytics_outlined, label: 'Stats', route: '/stats'),
+    _NavItem(
+        icon: Icons.home_outlined,
+        filled: Icons.home_rounded,
+        label: 'Home',
+        route: '/home'),
+    _NavItem(
+        icon: Icons.layers_outlined,
+        filled: Icons.layers_rounded,
+        label: 'Decks',
+        route: '/decks'),
+    _NavItem(
+        icon: Icons.analytics_outlined,
+        filled: Icons.analytics_rounded,
+        label: 'Progress',
+        route: '/progress'),
+    _NavItem(
+        icon: Icons.person_outline_rounded,
+        filled: Icons.person_rounded,
+        label: 'Profile',
+        route: '/profile'),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
+        color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         boxShadow: [
           BoxShadow(
@@ -1020,10 +1058,11 @@ class _BottomNavBar extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        active ? _filledIcon(item.icon) : item.icon,
+                        active ? item.filled : item.icon,
                         size: 24,
-                        color:
-                            active ? AppColors.primary : Colors.grey.shade400,
+                        color: active
+                            ? AppColors.primary
+                            : AppColors.onSurfaceVariant,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -1031,8 +1070,9 @@ class _BottomNavBar extends StatelessWidget {
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color:
-                              active ? AppColors.primary : Colors.grey.shade400,
+                          color: active
+                              ? AppColors.primary
+                              : AppColors.onSurfaceVariant,
                         ),
                       ),
                     ],
@@ -1045,24 +1085,17 @@ class _BottomNavBar extends StatelessWidget {
       ),
     );
   }
-
-  static final Map<IconData, IconData> _filledIconMap = {
-    Icons.home_outlined: Icons.home_rounded,
-    Icons.layers_outlined: Icons.layers_rounded,
-    Icons.quiz_outlined: Icons.quiz_rounded,
-    Icons.analytics_outlined: Icons.analytics_rounded,
-  };
-
-  IconData _filledIcon(IconData outline) => _filledIconMap[outline] ?? outline;
 }
 
 class _NavItem {
   const _NavItem({
     required this.icon,
+    required this.filled,
     required this.label,
     required this.route,
   });
   final IconData icon;
+  final IconData filled;
   final String label;
   final String route;
 }
