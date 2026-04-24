@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../landing_page/app_theme.dart';
+import '../../landing_page/app_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks
@@ -607,7 +607,9 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () {
+        Navigator.of(context).pushNamed('/create-deck');
+      },
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
