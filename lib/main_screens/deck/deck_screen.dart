@@ -3,6 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'deck-quiz_screen.dart';
+import 'edit_deck_screen.dart';
+import '../../services/deck_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks
@@ -137,7 +140,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                   style: GoogleFonts.plusJakartaSans(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w800,
-                                    color: AppColors.onSurface, // ✅ Added color
+                                    color: AppColors.onSurface,
                                   ),
                                 ),
                               ],
@@ -151,8 +154,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _deckStream(),
                         builder: (context, snapshot) {
-                          print(
-                              '🔥 Stream: ${snapshot.connectionState}'); // ✅ DEBUG
+                          print('🔥 Stream: ${snapshot.connectionState}');
                           print(
                               '🔥 UID: ${FirebaseAuth.instance.currentUser?.uid}');
                           if (snapshot.connectionState ==
@@ -219,13 +221,14 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 12),
                                     child: _DeckCard(
+                                      deckId: filteredDocs[index].id,
+                                      deckTitle: deck['title'] ?? 'Untitled',
                                       tag: deck['tag'] ?? 'Other',
                                       tagColor: AppColors.secondaryContainer,
                                       tagTextColor:
                                           AppColors.onSecondaryContainer,
                                       title: deck['title'] ?? 'Untitled',
-                                      subtitle:
-                                          'Tap to view cards',
+                                      subtitle: 'Tap to view cards',
                                       progress:
                                           (deck['progress'] ?? 0.0).toDouble(),
                                       progressColor: AppColors.primary,
@@ -629,7 +632,6 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
                   ? AppColors.primary.withOpacity(0.5)
                   : AppColors.outlineVariant.withOpacity(0.5),
               width: 1.5,
-              // Dashed border via custom painter below
             ),
           ),
           child: Row(
@@ -686,6 +688,8 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
 
 class _DeckCard extends StatelessWidget {
   const _DeckCard({
+    required this.deckId,
+    required this.deckTitle,
     required this.tag,
     required this.tagColor,
     required this.tagTextColor,
@@ -695,6 +699,8 @@ class _DeckCard extends StatelessWidget {
     required this.progressColor,
   });
 
+  final String deckId;
+  final String deckTitle;
   final String tag;
   final Color tagColor;
   final Color tagTextColor;
@@ -706,7 +712,10 @@ class _DeckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed('/quiz'),
+      onTap: () => Navigator.of(context).pushNamed(
+        '/quiz',
+        arguments: QuizArgs(deckId: deckId, deckTitle: deckTitle),
+      ),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -818,7 +827,7 @@ class _DeckCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _DeckOptionsSheet(),
+      builder: (_) => _DeckOptionsSheet(deckId: deckId, deckTitle: deckTitle),
     );
   }
 }
@@ -828,7 +837,94 @@ class _DeckCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DeckOptionsSheet extends StatelessWidget {
-  const _DeckOptionsSheet();
+  const _DeckOptionsSheet({
+    required this.deckId,
+    required this.deckTitle,
+  });
+
+  final String deckId;
+  final String deckTitle;
+
+  // ── Navigate to Edit Deck ─────────────────────────────────────────────────
+  void _handleEdit(BuildContext context) {
+    Navigator.pop(context); // close sheet
+    Navigator.of(context).pushNamed(
+      '/edit-deck',
+      arguments: EditDeckArgs(deckId: deckId, deckTitle: deckTitle),
+    );
+  }
+
+  // ── Confirm + Delete whole deck ───────────────────────────────────────────
+  void _handleDelete(BuildContext context) async {
+    // Show dialog WHILE sheet is still visible so context is valid
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: AppColors.surfaceContainerLowest,
+        title: Text(
+          'Delete "$deckTitle"?',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+          ),
+        ),
+        content: Text(
+          'This will permanently delete the deck and all its cards. This action cannot be undone.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            color: AppColors.onSurfaceVariant,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppColors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(_, true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppColors.error,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    Navigator.pop(context); // close sheet
+
+    try {
+      await DeckService.deleteDeck(deckId);
+      // The Firestore stream in _DeckHubScaffold auto-refreshes the list.
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to delete deck.',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -852,25 +948,31 @@ class _DeckOptionsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _SheetOption(
-              icon: Icons.play_arrow_rounded,
-              label: 'Study This Deck',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).pushNamed('/quiz');
-              }),
+            icon: Icons.play_arrow_rounded,
+            label: 'Study This Deck',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).pushNamed(
+                '/quiz',
+                arguments: QuizArgs(deckId: deckId, deckTitle: deckTitle),
+              );
+            },
+          ),
           _SheetOption(
-              icon: Icons.edit_outlined,
-              label: 'Edit Deck',
-              onTap: () => Navigator.pop(context)),
+            icon: Icons.edit_outlined,
+            label: 'Edit Deck',
+            onTap: () => _handleEdit(context),
+          ),
           _SheetOption(
-              icon: Icons.share_outlined,
-              label: 'Share',
-              onTap: () => Navigator.pop(context)),
+            icon: Icons.share_outlined,
+            label: 'Share',
+            onTap: () => Navigator.pop(context),
+          ),
           _SheetOption(
             icon: Icons.delete_outline_rounded,
             label: 'Delete Deck',
             color: AppColors.error,
-            onTap: () => Navigator.pop(context),
+            onTap: () => _handleDelete(context),
           ),
           const SizedBox(height: 20),
         ],

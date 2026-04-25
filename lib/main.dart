@@ -8,7 +8,8 @@ import 'auth/register/register_step2_screen.dart';
 import 'auth/register/register_step3_screen.dart';
 import 'auth/register/verify_email_screen.dart';
 import 'main_screens/deck/create_deck_screen.dart';
-import 'main_screens/home_screen.dart'; // ← NEW
+import 'main_screens/deck/edit_deck_screen.dart';
+import 'main_screens/home_screen.dart';
 import 'main_screens/profile_screen.dart';
 import 'main_screens/sub_screens/profile-settings_screen.dart';
 import 'main_screens/deck/deck_screen.dart';
@@ -63,11 +64,11 @@ class AuthGate extends StatelessWidget {
       if (!user.emailVerified) {
         return const VerifyEmailScreen();
       } else {
-        return const HomeScreen(); // ← routes to Home after login
+        return const HomeScreen();
       }
     }
 
-    return const LandingScreen(); // unauthenticated → marketing landing
+    return const LandingScreen();
   }
 }
 
@@ -82,11 +83,12 @@ abstract final class AppRoutes {
   static const String signUp2 = '/sign-up/step-2';
   static const String signUp3 = '/sign-up/step-3';
   static const String verifyEmail = '/verify-email';
-  static const String home = '/home'; // ← NEW
+  static const String home = '/home';
   static const String profile = '/profile';
   static const String accountSettings = '/account-settings';
   static const String decks = '/decks';
   static const String createDeck = '/create-deck';
+  static const String editDeck = '/edit-deck'; // ← NEW
   static const String quiz = '/quiz';
   static const String progress = '/progress';
 }
@@ -104,14 +106,17 @@ abstract final class AppRouter {
       AppRoutes.signUp2 => const SignUpStep2Screen(),
       AppRoutes.signUp3 => const SignUpStep3Screen(),
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
-      AppRoutes.home => const HomeScreen(), // ← NEW
+      AppRoutes.home => const HomeScreen(),
       AppRoutes.profile => const ProfileScreen(),
       AppRoutes.accountSettings => const AccountSettingsScreen(),
       AppRoutes.decks => const DeckHubScreen(),
       AppRoutes.createDeck => const CreateDeckScreen(),
+      AppRoutes.editDeck => EditDeckScreen( // ← NEW
+          args: settings.arguments as EditDeckArgs,
+        ),
       AppRoutes.quiz => const QuizScreen(),
       AppRoutes.progress => const ProgressScreen(),
-      _ => const HomeScreen(), // ← fallback changed to Home
+      _ => const HomeScreen(),
     };
 
     return PageRouteBuilder(
