@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'deck-quiz_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks
@@ -219,13 +220,14 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 12),
                                     child: _DeckCard(
+                                      deckId: filteredDocs[index].id,
+                                      deckTitle: deck['title'] ?? 'Untitled',
                                       tag: deck['tag'] ?? 'Other',
                                       tagColor: AppColors.secondaryContainer,
                                       tagTextColor:
                                           AppColors.onSecondaryContainer,
                                       title: deck['title'] ?? 'Untitled',
-                                      subtitle:
-                                          'Tap to view cards',
+                                      subtitle: 'Tap to view cards',
                                       progress:
                                           (deck['progress'] ?? 0.0).toDouble(),
                                       progressColor: AppColors.primary,
@@ -686,6 +688,8 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
 
 class _DeckCard extends StatelessWidget {
   const _DeckCard({
+    required this.deckId,
+    required this.deckTitle,
     required this.tag,
     required this.tagColor,
     required this.tagTextColor,
@@ -695,6 +699,8 @@ class _DeckCard extends StatelessWidget {
     required this.progressColor,
   });
 
+  final String deckId;
+  final String deckTitle;
   final String tag;
   final Color tagColor;
   final Color tagTextColor;
@@ -706,7 +712,10 @@ class _DeckCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed('/quiz'),
+      onTap: () => Navigator.of(context).pushNamed(
+        '/quiz',
+        arguments: QuizArgs(deckId: deckId, deckTitle: deckTitle),
+      ),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -818,7 +827,7 @@ class _DeckCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _DeckOptionsSheet(),
+      builder: (_) => _DeckOptionsSheet(deckId: deckId, deckTitle: deckTitle),
     );
   }
 }
@@ -828,7 +837,13 @@ class _DeckCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DeckOptionsSheet extends StatelessWidget {
-  const _DeckOptionsSheet();
+  const _DeckOptionsSheet({
+    required this.deckId,
+    required this.deckTitle,
+  });
+
+  final String deckId;
+  final String deckTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -856,7 +871,10 @@ class _DeckOptionsSheet extends StatelessWidget {
               label: 'Study This Deck',
               onTap: () {
                 Navigator.pop(context);
-                Navigator.of(context).pushNamed('/quiz');
+                Navigator.of(context).pushNamed(
+                  '/quiz',
+                  arguments: QuizArgs(deckId: deckId, deckTitle: deckTitle),
+                );
               }),
           _SheetOption(
               icon: Icons.edit_outlined,
