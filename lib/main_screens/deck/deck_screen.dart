@@ -46,8 +46,10 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     if (uid == null) return const Stream.empty();
 
     return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
         .collection('decks')
-        .where('userId', isEqualTo: uid)
+        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 
@@ -223,7 +225,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                           AppColors.onSecondaryContainer,
                                       title: deck['title'] ?? 'Untitled',
                                       subtitle:
-                                          '${(deck['cards'] as List?)?.length ?? 0} Cards',
+                                          'Tap to view cards',
                                       progress:
                                           (deck['progress'] ?? 0.0).toDouble(),
                                       progressColor: AppColors.primary,

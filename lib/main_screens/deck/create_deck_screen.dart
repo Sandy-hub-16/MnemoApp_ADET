@@ -133,13 +133,10 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
 
     final List<Map<String, dynamic>> cards = _pairs.map((p) {
       return {
-        'id': p.id,
         'question': p.question,
         'answer': p.answer,
-        'createdAt': Timestamp.now(),
       };
     }).toList();
-
     try {
       await DeckService.createDeck(
         title: title,
@@ -281,7 +278,6 @@ class _CreateDeckScreenState extends State<CreateDeckScreen> {
                     ],
                   ),
                 ),
-              
               ],
             ),
           ),
