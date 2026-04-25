@@ -11,7 +11,7 @@ import 'main_screens/deck/create_deck_screen.dart';
 import 'main_screens/deck/edit_deck_screen.dart';
 import 'main_screens/home_screen.dart';
 import 'main_screens/profile_screen.dart';
-import 'main_screens/sub_screens/profile-settings_screen.dart';
+import 'main_screens/sub_screens/profile-personal-info_screen.dart';
 import 'main_screens/deck/deck_screen.dart';
 import 'main_screens/deck/deck-quiz_screen.dart';
 import 'main_screens/progress_screen.dart';
