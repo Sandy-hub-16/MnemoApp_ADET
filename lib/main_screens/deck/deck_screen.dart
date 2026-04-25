@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../landing_page/app_theme.dart';
+import '../../landing_page/app_theme.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks
@@ -30,7 +32,6 @@ class _DeckHubScaffold extends StatefulWidget {
 
 class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
   int _selectedFilter = 0;
-  bool _loading = true;
 
   static const _filters = [
     'All Decks',
@@ -40,18 +41,16 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     'World History',
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _loadDeck();
-  }
+  Stream<QuerySnapshot<Map<String, dynamic>>> _deckStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
 
-  Future<void> _loadDeck() async {
-    // Simulate brief loading delay for content initialization
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (mounted) {
-      setState(() => _loading = false);
-    }
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('decks')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
   }
 
   @override
@@ -61,7 +60,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       extendBody: true,
       body: Stack(
         children: [
-          // ── Decorative blobs ──────────────────────────────────────────────
+          // ── Decorative blobs ─────────────────────────────
           Positioned(
             top: -40,
             right: -80,
@@ -70,6 +69,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
               color: AppColors.primaryContainer.withOpacity(0.22),
             ),
           ),
+
           Positioned(
             bottom: 200,
             left: -100,
@@ -79,154 +79,170 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
             ),
           ),
 
-          // ── Main content ─────────────────────────────────────────────────
           SafeArea(
             bottom: false,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const _DeckTopBar(),
                 Expanded(
-                  child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : CustomScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          slivers: [
-                              SliverPadding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(20, 28, 20, 0),
-                                sliver: SliverList(
-                                  delegate: SliverChildListDelegate([
-                                    // ── Hero greeting ───────────────────────────────
-                                    _HeroGreeting(),
-                                    const SizedBox(height: 20),
+                  child: CustomScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      // ✅ 1. STATIC CONTENT (always shows)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            _HeroGreeting(),
+                            const SizedBox(height: 20),
+                            _SearchBar(),
+                            const SizedBox(height: 16),
 
-                                    // ── Search bar ─────────────────────────────────
-                                    _SearchBar(),
+                            // FILTERS
+                            SizedBox(
+                              height: 40,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _filters.length + 1,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (context, i) {
+                                  if (i == _filters.length) {
+                                    return _FilterChip(
+                                        label: '+ Add Filter',
+                                        active: false,
+                                        onTap: () {});
+                                  }
+                                  return _FilterChip(
+                                    label: _filters[i],
+                                    active: _selectedFilter == i,
+                                    onTap: () =>
+                                        setState(() => _selectedFilter = i),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            _AIImportCard(),
+                            const SizedBox(height: 16),
+                            _CreateDeckCard(),
+                            const SizedBox(height: 28),
+
+                            // "Recent Decks" HEADER
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Recent Decks',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.onSurface, // ✅ Added color
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                          ]),
+                        ),
+                      ),
+
+                      // ✅ 2. STREAM DECKS (shows immediately after header)
+                      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _deckStream(),
+                        builder: (context, snapshot) {
+                          print(
+                              '🔥 Stream: ${snapshot.connectionState}'); // ✅ DEBUG
+                          print(
+                              '🔥 UID: ${FirebaseAuth.instance.currentUser?.uid}');
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Center(
+                                    child: CircularProgressIndicator(
+                                        color: AppColors.primary)),
+                              ),
+                            );
+                          }
+
+                          final docs = snapshot.data?.docs ?? [];
+
+                          // ✅ EMPTY STATE - shows right under header
+                          if (docs.isEmpty) {
+                            return SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.all(40),
+                                child: Column(
+                                  children: [
+                                    Icon(Icons.layers_outlined,
+                                        size: 64, color: AppColors.outline),
                                     const SizedBox(height: 16),
-
-                                    // ── Filter chips ───────────────────────────────
-                                    SizedBox(
-                                      height: 40,
-                                      child: ListView.separated(
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: _filters.length + 1,
-                                        separatorBuilder: (_, __) =>
-                                            const SizedBox(width: 8),
-                                        itemBuilder: (context, i) {
-                                          if (i == _filters.length) {
-                                            return _FilterChip(
-                                              label: '+ Add Filter',
-                                              active: false,
-                                              onTap: () {},
-                                            );
-                                          }
-                                          return _FilterChip(
-                                            label: _filters[i],
-                                            active: _selectedFilter == i,
-                                            onTap: () => setState(
-                                                () => _selectedFilter = i),
-                                          );
-                                        },
+                                    Text(
+                                      "No decks yet",
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onSurface,
                                       ),
                                     ),
-                                    const SizedBox(height: 28),
-
-                                    // ── AI Smart Import card ────────────────────────
-                                    _AIImportCard(),
-                                    const SizedBox(height: 16),
-
-                                    // ── Create new deck ─────────────────────────────
-                                    _CreateDeckCard(),
-                                    const SizedBox(height: 28),
-
-                                    // ── Recent decks header ─────────────────────────
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          'Recent Decks',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.w800,
-                                            color: AppColors.onSurface,
-                                            letterSpacing: -0.3,
-                                          ),
-                                        ),
-                                        GestureDetector(
-                                          onTap: () {},
-                                          child: Row(
-                                            children: [
-                                              Text(
-                                                'View All',
-                                                style:
-                                                    GoogleFonts.plusJakartaSans(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: AppColors.primary,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 2),
-                                              const Icon(
-                                                Icons.arrow_forward_rounded,
-                                                size: 16,
-                                                color: AppColors.primary,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      "Create your first deck to get started!",
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 14,
+                                        color: AppColors.onSurfaceVariant,
+                                      ),
                                     ),
-                                    const SizedBox(height: 16),
-
-                                    // ── Deck cards ──────────────────────────────────
-                                    _DeckCard(
-                                      tag: 'Biology',
-                                      tagColor: AppColors.secondaryContainer,
-                                      tagTextColor:
-                                          AppColors.onSecondaryContainer,
-                                      title: 'Cellular Respiration',
-                                      subtitle:
-                                          '42 Cards · Last studied 2h ago',
-                                      progress: 0.85,
-                                      progressColor: AppColors.primary,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _DeckCard(
-                                      tag: 'History',
-                                      tagColor: AppColors.tertiaryContainer,
-                                      tagTextColor:
-                                          AppColors.onTertiaryContainer,
-                                      title: 'The Industrial Revolution',
-                                      subtitle: '128 Cards · Not studied yet',
-                                      progress: 0.12,
-                                      progressColor: AppColors.tertiary,
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _DeckCard(
-                                      tag: 'Physics',
-                                      tagColor: AppColors.secondaryContainer,
-                                      tagTextColor:
-                                          AppColors.onSecondaryContainer,
-                                      title: 'Quantum Mechanics 101',
-                                      subtitle:
-                                          '35 Cards · Last studied 1d ago',
-                                      progress: 0.48,
-                                      progressColor: AppColors.secondary,
-                                    ),
-
-                                    // ── Bottom padding for nav ──────────────────────
-                                    const SizedBox(height: 140),
-                                  ]),
+                                  ],
                                 ),
                               ),
-                            ]),
+                            );
+                          }
+
+                          // ✅ FILTER & BUILD DECKS
+                          final selectedCategory = _filters[_selectedFilter];
+                          final filteredDocs = selectedCategory == 'All Decks'
+                              ? docs
+                              : docs
+                                  .where((doc) =>
+                                      doc.data()['tag'] == selectedCategory)
+                                  .toList();
+
+                          return SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final deck = filteredDocs[index].data();
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _DeckCard(
+                                      tag: deck['tag'] ?? 'Other',
+                                      tagColor: AppColors.secondaryContainer,
+                                      tagTextColor:
+                                          AppColors.onSecondaryContainer,
+                                      title: deck['title'] ?? 'Untitled',
+                                      subtitle:
+                                          'Tap to view cards',
+                                      progress:
+                                          (deck['progress'] ?? 0.0).toDouble(),
+                                      progressColor: AppColors.primary,
+                                    ),
+                                  );
+                                },
+                                childCount: filteredDocs.length,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
+                      // ✅ 3. BOTTOM SPACING
+                      const SliverToBoxAdapter(child: SizedBox(height: 140)),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -238,7 +254,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     );
   }
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // TOP BAR
 // ─────────────────────────────────────────────────────────────────────────────
@@ -595,7 +610,9 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () {
+        Navigator.of(context).pushNamed('/create-deck');
+      },
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),

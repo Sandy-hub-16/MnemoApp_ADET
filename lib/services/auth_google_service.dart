@@ -18,29 +18,29 @@ class AuthService {
     required int age,
     required String country,
   }) async {
-      UserCredential userCredential = await _auth
-          .createUserWithEmailAndPassword(email: email, password: password);
+    UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email, password: password);
 
-      final user = userCredential.user;
+    final user = userCredential.user;
 
-      if (user == null) return null;
+    if (user == null) return null;
 
-      await user.sendEmailVerification();
+    await user.sendEmailVerification();
 
-      // Create Firestore Profile
-      await _db.collection('users').doc(user.uid).set({
-        'uid': user.uid,
-        'email': email,
-        'fullName': fullName,
-        'username': username,
-        'age': age,
-        'country': country,
-        'emailVerified': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+    // Create Firestore Profile
+    await _db.collection('users').doc(user.uid).set({
+      'uid': user.uid,
+      'email': email,
+      'fullName': fullName,
+      'username': username,
+      'age': age,
+      'country': country,
+      'provider': 'email',
+      'emailVerified': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-      return user;
-    
+    return user;
   }
 
   Future<User?> register(String email, String password) async {
@@ -77,9 +77,36 @@ class AuthService {
       UserCredential userCredential =
           await FirebaseAuth.instance.signInWithPopup(googleProvider);
 
-      return userCredential.user;
+      final user = userCredential.user;
+
+      if (user == null) return null;
+
+      // 🔍 Check if user already exists in Firestore
+      final userDoc = await _db.collection('users').doc(user.uid).get();
+
+      if (!userDoc.exists) {
+        // 🆕 First time login → create document
+        await _db.collection('users').doc(user.uid).set({
+          'uid': user.uid,
+          'email': user.email,
+          'fullName': user.displayName ?? "",
+          'username': user.email?.split('@')[0] ?? "",
+          'age': null,
+          'country': "",
+          'photoUrl': user.photoURL,
+          'provider': 'google',
+          'emailVerified': true, // Google emails are already verified
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // update existing user (if needed)
+        await _db.collection('users').doc(user.uid).update({
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+      }
+
+      return user;
     } catch (e) {
-      // ignore: avoid_print
       print("Google Sign-in Error : $e");
       return null;
     }
