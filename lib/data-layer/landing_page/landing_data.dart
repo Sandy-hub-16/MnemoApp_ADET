@@ -114,3 +114,4 @@ const List<FeatureItem> features = [
 ];
 
 const List<String> footerLinks = ['Support', 'Privacy', 'Terms', 'Community'];
+

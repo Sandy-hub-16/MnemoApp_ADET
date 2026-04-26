@@ -1,20 +1,20 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'landing_page/landing_screen.dart';
-import 'landing_page/app_theme.dart';
-import 'auth/login_screen.dart';
-import 'auth/register/register_step1_screen.dart';
-import 'auth/register/register_step2_screen.dart';
-import 'auth/register/register_step3_screen.dart';
-import 'auth/register/verify_email_screen.dart';
-import 'main_screens/deck/create_deck_screen.dart';
-import 'main_screens/deck/edit_deck_screen.dart';
-import 'main_screens/home_screen.dart';
-import 'main_screens/profile_screen.dart';
-import 'main_screens/sub_screens/profile-settings_screen.dart';
-import 'main_screens/deck/deck_screen.dart';
-import 'main_screens/deck/deck-quiz_screen.dart';
-import 'main_screens/progress_screen.dart';
+import 'ui-layer/landing_page/landing_screen.dart';
+import 'ui-layer/landing_page/app_theme.dart';
+import 'ui-layer/auth/login_screen.dart';
+import 'ui-layer/auth/register/register_step1_screen.dart';
+import 'ui-layer/auth/register/register_step2_screen.dart';
+import 'ui-layer/auth/register/register_step3_screen.dart';
+import 'ui-layer/auth/register/verify_email_screen.dart';
+import 'ui-layer/main_screens/deck/create_deck_screen.dart';
+import 'ui-layer/main_screens/deck/edit_deck_screen.dart';
+import 'ui-layer/main_screens/home_screen.dart';
+import 'ui-layer/main_screens/profile_screen.dart';
+import 'ui-layer/main_screens/sub_screens/profile-settings_screen.dart';
+import 'ui-layer/main_screens/deck/deck_screen.dart';
+import 'ui-layer/main_screens/deck/deck-quiz_screen.dart';
+import 'ui-layer/main_screens/progress_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 

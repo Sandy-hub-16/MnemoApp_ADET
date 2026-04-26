@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
-import '../services/auth_google_service.dart';
+import '../../business-layer/services/auth_google_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTH SCAFFOLD
@@ -827,3 +827,4 @@ class _Blob extends StatelessWidget {
     );
   }
 }
+
