@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'deck-quiz_screen.dart';
 import 'edit_deck_screen.dart';
-import '../../services/deck_service.dart';
+import '../../../business-layer/services/deck_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks

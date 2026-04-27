@@ -122,3 +122,4 @@ abstract final class AppTheme {
         textTheme: GoogleFonts.plusJakartaSansTextTheme(),
       );
 }
+

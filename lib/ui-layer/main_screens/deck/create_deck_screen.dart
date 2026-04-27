@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
-import '../../services/deck_service.dart';
+import '../../../business-layer/services/deck_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE DECK SCREEN  —  route: /create-deck

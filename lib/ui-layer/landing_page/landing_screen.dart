@@ -1,8 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'landing_data.dart';
+import '../../data-layer/landing_page/landing_data.dart';
 import 'app_theme.dart';
-import '../main.dart';
+import '../../main.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LANDING SCREEN
@@ -918,3 +918,4 @@ class _Blob extends StatelessWidget {
     );
   }
 }
+
