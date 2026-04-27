@@ -31,21 +31,6 @@ class _ProfileScaffold extends StatefulWidget {
 
 class _ProfileScaffoldState extends State<_ProfileScaffold> {
   final _bodyKey = GlobalKey<_ProfileBodyState>();
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-  }
-
-  Future<void> _loadProfile() async {
-    // Simulate brief loading delay for content initialization
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (mounted) {
-      setState(() => _loading = false);
-    }
-  }
 
   Future<void> _goToSettings() async {
     await Navigator.of(context).pushNamed('/account-settings');
@@ -59,36 +44,31 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
       extendBody: true,
       body: Stack(
         children: [
+          // ── Decorative blobs ──────────────────────────────────────────────
           Positioned(
-            top: 80,
-            right: -80,
+            top: -80,
+            left: -60,
             child: _Blob(
-              size: 320,
-              color: AppColors.primaryContainer.withOpacity(0.35),
+              size: 340,
+              color: AppColors.secondaryContainer.withOpacity(0.20),
             ),
           ),
           Positioned(
-            bottom: 120,
-            left: -100,
+            top: MediaQuery.of(context).size.height * 0.4,
+            right: -100,
             child: _Blob(
-              size: 280,
-              color: AppColors.secondaryContainer.withOpacity(0.28),
+              size: 300,
+              color: AppColors.tertiaryContainer.withOpacity(0.15),
             ),
           ),
+
           SafeArea(
             bottom: false,
             child: Column(
               children: [
                 _ProfileTopBar(onSettingsTap: _goToSettings),
                 Expanded(
-                  child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : _ProfileBody(key: _bodyKey),
+                  child: _ProfileBody(key: _bodyKey),
                 ),
               ],
             ),
@@ -101,7 +81,7 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TOP BAR
+// TOP APP BAR  — glassmorphic pill, "Mnemo" centred italic, avatar on right
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileTopBar extends StatelessWidget {
@@ -111,21 +91,39 @@ class _ProfileTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withOpacity(0.75),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.background.withOpacity(0.75),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // Menu button
           _NavIconButton(icon: Icons.menu_rounded, onTap: () {}),
-          Text(
-            'Buddy Profile',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primary,
-              letterSpacing: -0.2,
+
+          // "Mnemo" title — centred
+          Expanded(
+            child: Center(
+              child: Text(
+                'Mnemo',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.5,
+                ),
+              ),
             ),
           ),
+
+          // Settings button
           _NavIconButton(icon: Icons.settings_outlined, onTap: onSettingsTap),
         ],
       ),
@@ -134,7 +132,7 @@ class _ProfileTopBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE BODY
+// PROFILE BODY  — stateful, owns all data + photo upload logic
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileBody extends StatefulWidget {
@@ -147,10 +145,17 @@ class _ProfileBody extends StatefulWidget {
 class _ProfileBodyState extends State<_ProfileBody> {
   bool _loading = true;
   bool _uploadingPhoto = false;
+
+  // ── Profile fields ────────────────────────────────────────────────────────
   String _fullName = '';
-  String _username = '';
   String _bio = '';
+  String _course = '';
   String? _photoUrl;
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  int _deckCount = 0;
+  int _cardCount = 0;
+  int _draftCount = 0;
 
   @override
   void initState() {
@@ -166,16 +171,43 @@ class _ProfileBodyState extends State<_ProfileBody> {
     }
 
     final authUser = FirebaseAuth.instance.currentUser!;
-    final doc =
+
+    // ── Firestore user doc ────────────────────────────────────────────────
+    final userDoc =
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    final data = doc.data() ?? {};
+    final data = userDoc.data() ?? {};
+
+    // ── Decks subcollection ───────────────────────────────────────────────
+    final decksSnap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('decks')
+        .get();
+
+    int totalCards = 0;
+    int drafts = 0;
+
+    for (final doc in decksSnap.docs) {
+      final d = doc.data();
+      // Count total cards (field name may vary; try cardCount or cards list)
+      if (d['cardCount'] is int) {
+        totalCards += (d['cardCount'] as int);
+      } else if (d['cards'] is List) {
+        totalCards += (d['cards'] as List).length;
+      }
+      // Count drafts
+      if (d['isDraft'] == true) drafts++;
+    }
 
     if (mounted) {
       setState(() {
         _fullName = data['fullName'] as String? ?? '';
-        _username = data['username'] as String? ?? '';
         _bio = data['bio'] as String? ?? '';
+        _course = data['course'] as String? ?? '';
         _photoUrl = authUser.photoURL ?? data['photoUrl'] as String?;
+        _deckCount = decksSnap.size;
+        _cardCount = totalCards;
+        _draftCount = drafts;
         _loading = false;
       });
     }
@@ -183,14 +215,13 @@ class _ProfileBodyState extends State<_ProfileBody> {
 
   // ── Photo picker & uploader ──────────────────────────────────────────────
 
-  /// Shows a bottom sheet so the user can choose Camera or Gallery.
   Future<void> _onAvatarTap() async {
     final source = await _showImageSourceSheet();
     if (source == null) return;
     await _pickAndUploadPhoto(source);
   }
 
-  Future<ImageSource?> _showImageSourceSheet() async {
+  Future<ImageSource?> _showImageSourceSheet() {
     return showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -198,8 +229,6 @@ class _ProfileBodyState extends State<_ProfileBody> {
     );
   }
 
-  /// Picks an image, uploads it to Firebase Storage, then updates both
-  /// Firebase Auth profile and the Firestore 'users' document.
   Future<void> _pickAndUploadPhoto(ImageSource source) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -212,21 +241,16 @@ class _ProfileBodyState extends State<_ProfileBody> {
         maxWidth: 800,
         maxHeight: 800,
       );
-      if (picked == null) return; // user cancelled
+      if (picked == null) return;
 
       setState(() => _uploadingPhoto = true);
 
       final ref =
           FirebaseStorage.instance.ref().child('avatars').child('$uid.jpg');
 
-      // ── Web: read as bytes (dart:io File doesn't exist on web) ──────
-      // ── Mobile: use File for efficient streaming upload ──────────────
       if (kIsWeb) {
         final bytes = await picked.readAsBytes();
-        await ref.putData(
-          bytes,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
+        await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
       } else {
         await ref.putFile(
           File(picked.path),
@@ -261,7 +285,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
         );
       }
     } catch (e) {
-      debugPrint('Photo upload error: $e'); // ← helps debug future errors
+      debugPrint('Photo upload error: $e');
       if (mounted) {
         setState(() => _uploadingPhoto = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -283,37 +307,653 @@ class _ProfileBodyState extends State<_ProfileBody> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 2,
+        ),
+      );
     }
 
+    // Build the bio/subtitle line (course + bio combined if both present)
+    final String subtitleLine = [
+      if (_course.isNotEmpty) _course,
+      if (_bio.isNotEmpty) _bio,
+    ].join(' • ');
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 120),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Profile Header ─────────────────────────────────────────────
           _ProfileHeader(
             fullName: _fullName,
-            username: _username,
-            bio: _bio,
+            subtitle: subtitleLine,
             photoUrl: _photoUrl,
             uploadingPhoto: _uploadingPhoto,
-            onAvatarTap: _onAvatarTap, // ← NEW callback
+            onAvatarTap: _onAvatarTap,
           ),
           const SizedBox(height: 32),
-          _SectionLabel(left: 'Deck Statistics', right: 'LIFETIME IMPACT'),
-          const SizedBox(height: 12),
-          const _StatsGrid(),
+
+          // ── Stats Bento ────────────────────────────────────────────────
+          _StatsBento(
+            deckCount: _deckCount,
+            cardCount: _cardCount,
+            draftCount: _draftCount,
+          ),
           const SizedBox(height: 32),
-          _ActionList(
-            onSettingsTap: () async {
+
+          // ── Settings label ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Text(
+              'Account Settings',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.onSurfaceVariant,
+                letterSpacing: 1.4,
+              ),
+            ),
+          ),
+
+          // ── Settings List ──────────────────────────────────────────────
+          _SettingsTile(
+            icon: Icons.manage_accounts_outlined,
+            iconBg: AppColors.secondaryContainer.withOpacity(0.5),
+            iconColor: AppColors.onSecondaryContainer,
+            label: 'Personal Information',
+            onTap: () async {
               await Navigator.of(context).pushNamed('/account-settings');
               _loadProfile();
             },
           ),
-          const SizedBox(height: 20),
-          const _LogOutButton(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          _SettingsTile(
+            icon: Icons.notifications_outlined,
+            iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+            iconColor: AppColors.onTertiaryContainer,
+            label: 'Notifications',
+            onTap: () {},
+          ),
+          const SizedBox(height: 10),
+          _SettingsTile(
+            icon: Icons.palette_outlined,
+            iconBg: AppColors.primaryContainer.withOpacity(0.3),
+            iconColor: AppColors.primary,
+            label: 'Appearance',
+            onTap: () {},
+          ),
+          const SizedBox(height: 24),
+
+          // ── Log Out ────────────────────────────────────────────────────
+          _LogOutButton(),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE HEADER  — avatar with edit pen, name, subtitle/bio
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({
+    required this.fullName,
+    required this.subtitle,
+    required this.onAvatarTap,
+    this.photoUrl,
+    this.uploadingPhoto = false,
+  });
+
+  final String fullName;
+  final String subtitle;
+  final String? photoUrl;
+  final bool uploadingPhoto;
+  final VoidCallback onAvatarTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        // ── Avatar stack ─────────────────────────────────────────────────
+        GestureDetector(
+          onTap: onAvatarTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Gradient ring
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withOpacity(0.25),
+                      AppColors.primaryContainer.withOpacity(0.40),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                padding: const EdgeInsets.all(3),
+                child: _AvatarContent(
+                  photoUrl: photoUrl,
+                  fullName: fullName,
+                  uploading: uploadingPhoto,
+                ),
+              ),
+
+              // Upload progress overlay
+              if (uploadingPhoto)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withOpacity(0.4),
+                    ),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Edit pen button (bottom-right)
+              Positioned(
+                bottom: 2,
+                right: 2,
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.surfaceContainerLowest,
+                      width: 2.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    uploadingPhoto
+                        ? Icons.hourglass_top_rounded
+                        : Icons.edit_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(width: 20),
+
+        // ── Name + subtitle ───────────────────────────────────────────────
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                fullName,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: AppColors.onSurface,
+                  height: 1.1,
+                ),
+              ),
+              if (subtitle.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    height: 1.55,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AVATAR CONTENT  — photo → initial letter → default icon
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AvatarContent extends StatelessWidget {
+  const _AvatarContent({
+    required this.photoUrl,
+    required this.fullName,
+    this.uploading = false,
+  });
+
+  final String? photoUrl;
+  final String fullName;
+  final bool uploading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photoUrl != null && photoUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          photoUrl!,
+          width: 112,
+          height: 112,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 112,
+              height: 112,
+              color: AppColors.primaryContainer.withOpacity(0.2),
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded /
+                          loadingProgress.expectedTotalBytes!
+                      : null,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) =>
+              _FallbackAvatar(fullName: fullName),
+        ),
+      );
+    }
+    return _FallbackAvatar(fullName: fullName);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FALLBACK AVATAR  — initial letter  OR  person icon
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FallbackAvatar extends StatelessWidget {
+  const _FallbackAvatar({required this.fullName});
+  final String fullName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (fullName.isNotEmpty) {
+      return Container(
+        width: 112,
+        height: 112,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [
+              AppColors.primaryContainer,
+              AppColors.secondaryContainer,
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            fullName[0].toUpperCase(),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 40,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 112,
+      height: 112,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primaryContainer.withOpacity(0.3),
+      ),
+      child: Icon(
+        Icons.person_rounded,
+        size: 60,
+        color: AppColors.primary.withOpacity(0.5),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATS BENTO  — container wrapping the 3 stat cards
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatsBento extends StatelessWidget {
+  const _StatsBento({
+    required this.deckCount,
+    required this.cardCount,
+    required this.draftCount,
+  });
+
+  final int deckCount;
+  final int cardCount;
+  final int draftCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Label
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
+            child: Text(
+              'Learning Stats',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.onSurfaceVariant,
+                letterSpacing: 1.4,
+              ),
+            ),
+          ),
+
+          // Top card — Decks Built (wider, accent blob)
+          _DecksBuiltCard(count: deckCount),
+          const SizedBox(height: 10),
+
+          // Bottom row — Cards Saved + Drafts
+          Row(
+            children: [
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.bookmark_rounded,
+                  iconColor: AppColors.secondary,
+                  value: '$cardCount',
+                  label: 'Cards Saved',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatCard(
+                  icon: Icons.note_rounded,
+                  iconColor: AppColors.tertiary,
+                  value: '$draftCount',
+                  label: 'Drafts',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DecksBuiltCard extends StatelessWidget {
+  const _DecksBuiltCard({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // Accent blob in top-right
+          Positioned(
+            top: -16,
+            right: -16,
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withOpacity(0.30),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.layers_rounded,
+                color: AppColors.primary,
+                size: 28,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '$count',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 36,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.onSurface,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Decks Built',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  const _StatCard({
+    required this.icon,
+    required this.iconColor,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: iconColor, size: 26),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              color: AppColors.onSurface,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS TILE  — rounded card row with icon, label, chevron
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SettingsTile extends StatelessWidget {
+  const _SettingsTile({
+    required this.icon,
+    required this.iconBg,
+    required this.iconColor,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color iconBg;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: iconColor, size: 21),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.onSurfaceVariant,
+                size: 22,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOG OUT BUTTON
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LogOutButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () async {
+          await AuthService().signOut();
+          if (context.mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil('/', (r) => false);
+          }
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+          decoration: BoxDecoration(
+            color: AppColors.errorContainer.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(20),
+            border:
+                Border.all(color: AppColors.errorContainer.withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLow,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.logout_rounded,
+                    color: AppColors.error, size: 21),
+              ),
+              const SizedBox(width: 16),
+              Text(
+                'Log Out',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.error,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -356,7 +996,7 @@ class _ImageSourceSheet extends StatelessWidget {
               color: AppColors.onSurface,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             'Choose a source for your new photo',
             style: GoogleFonts.plusJakartaSans(
@@ -369,7 +1009,6 @@ class _ImageSourceSheet extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // Camera option
                 Expanded(
                   child: _SourceOption(
                     icon: Icons.camera_alt_rounded,
@@ -380,7 +1019,6 @@ class _ImageSourceSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Gallery option
                 Expanded(
                   child: _SourceOption(
                     icon: Icons.photo_library_rounded,
@@ -393,8 +1031,6 @@ class _ImageSourceSheet extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          // Cancel
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(
@@ -452,530 +1088,6 @@ class _SourceOption extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PROFILE HEADER  (updated: tappable avatar, upload spinner, default avatar)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({
-    required this.fullName,
-    required this.username,
-    required this.bio,
-    required this.onAvatarTap,
-    this.photoUrl,
-    this.uploadingPhoto = false,
-  });
-
-  final String fullName;
-  final String username;
-  final String bio;
-  final String? photoUrl;
-  final bool uploadingPhoto;
-  final VoidCallback onAvatarTap; // ← NEW
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // ── Avatar stack ─────────────────────────────────────────────
-        GestureDetector(
-          onTap: onAvatarTap,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // Gradient ring
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary.withOpacity(0.25),
-                      AppColors.primaryContainer.withOpacity(0.35),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                padding: const EdgeInsets.all(3),
-                child: _AvatarContent(
-                  photoUrl: photoUrl,
-                  fullName: fullName,
-                  uploading: uploadingPhoto,
-                ),
-              ),
-
-              // Upload progress overlay
-              if (uploadingPhoto)
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black.withOpacity(0.4),
-                    ),
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 3,
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Edit button (bottom-right)
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: GestureDetector(
-                  onTap: onAvatarTap,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppColors.surfaceContainerLowest,
-                        width: 2.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.3),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      uploadingPhoto
-                          ? Icons.hourglass_top_rounded
-                          : Icons.edit_rounded,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Name
-        Text(
-          fullName,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-            color: AppColors.onSurface,
-          ),
-        ),
-        const SizedBox(height: 4),
-
-        // Username
-        Text(
-          '@$username',
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: AppColors.primary,
-            letterSpacing: 1.2,
-          ),
-        ),
-
-        // Bio
-        if (bio.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text(
-            bio,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              height: 1.6,
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AVATAR CONTENT  — photo → initial letter → default icon (priority order)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _AvatarContent extends StatelessWidget {
-  const _AvatarContent({
-    required this.photoUrl,
-    required this.fullName,
-    this.uploading = false,
-  });
-
-  final String? photoUrl;
-  final String fullName;
-  final bool uploading;
-
-  @override
-  Widget build(BuildContext context) {
-    if (photoUrl != null && photoUrl!.isNotEmpty) {
-      return ClipOval(
-        child: Image.network(
-          photoUrl!,
-          width: 112,
-          height: 112,
-          fit: BoxFit.cover,
-          // ── Shown while the image is downloading ──────────────────
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Container(
-              width: 112,
-              height: 112,
-              color: AppColors.primaryContainer.withOpacity(0.2),
-              child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded /
-                          loadingProgress.expectedTotalBytes!
-                      : null,
-                ),
-              ),
-            );
-          },
-          // ── Fallback on 429, network error, bad URL, etc. ─────────
-          errorBuilder: (context, error, stackTrace) =>
-              _FallbackAvatar(fullName: fullName),
-        ),
-      );
-    }
-
-    return _FallbackAvatar(fullName: fullName);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FALLBACK AVATAR  — initial letter  OR  default person icon
-// Used when: no photo URL set, network error, or 429 rate-limit hit.
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FallbackAvatar extends StatelessWidget {
-  const _FallbackAvatar({required this.fullName});
-  final String fullName;
-
-  @override
-  Widget build(BuildContext context) {
-    if (fullName.isNotEmpty) {
-      return Container(
-        width: 112,
-        height: 112,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [
-              AppColors.primaryContainer,
-              AppColors.secondaryContainer,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            fullName[0].toUpperCase(),
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 40,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-            ),
-          ),
-        ),
-      );
-    }
-
-    // No name — plain person icon, no badge
-    return Container(
-      width: 112,
-      height: 112,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.primaryContainer.withOpacity(0.3),
-      ),
-      child: Icon(
-        Icons.person_rounded,
-        size: 60,
-        color: AppColors.primary.withOpacity(0.5),
-      ),
-    );
-  }
-}
-// ─────────────────────────────────────────────────────────────────────────────
-// STATS GRID
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _StatsGrid extends StatelessWidget {
-  const _StatsGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            value: '12',
-            label: 'Built',
-            accentColor: AppColors.primaryContainer,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            value: '45',
-            label: 'Saved',
-            accentColor: AppColors.secondaryContainer,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            value: '3',
-            label: 'Drafts',
-            accentColor: AppColors.tertiaryContainer,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.value,
-    required this.label,
-    required this.accentColor,
-  });
-
-  final String value;
-  final String label;
-  final Color accentColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border(bottom: BorderSide(color: accentColor, width: 4)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            value,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: AppColors.onSurface,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label.toUpperCase(),
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: AppColors.outline,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ACTION LIST
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ActionList extends StatelessWidget {
-  const _ActionList({required this.onSettingsTap});
-  final VoidCallback onSettingsTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        children: [
-          _ActionTile(
-            icon: Icons.person_outline_rounded,
-            iconBg: AppColors.primaryContainer.withOpacity(0.3),
-            iconColor: AppColors.primary,
-            label: 'Account Settings',
-            onTap: onSettingsTap,
-          ),
-          _ActionTile(
-            icon: Icons.notifications_active_outlined,
-            iconBg: AppColors.secondaryContainer.withOpacity(0.3),
-            iconColor: AppColors.secondary,
-            label: 'Notification Preferences',
-            onTap: () {},
-          ),
-          _ActionTile(
-            icon: Icons.quiz_outlined,
-            iconBg: AppColors.tertiaryContainer.withOpacity(0.3),
-            iconColor: AppColors.tertiary,
-            label: 'Help & Support',
-            onTap: () {},
-            showDivider: false,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.label,
-    required this.onTap,
-    this.showDivider = true,
-  });
-
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String label;
-  final VoidCallback onTap;
-  final bool showDivider;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: iconBg,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: iconColor, size: 22),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onSurface,
-                      ),
-                    ),
-                  ),
-                  Icon(Icons.chevron_right_rounded,
-                      color: AppColors.outline, size: 22),
-                ],
-              ),
-            ),
-          ),
-        ),
-        if (showDivider)
-          Divider(
-            height: 1,
-            indent: 72,
-            endIndent: 16,
-            color: AppColors.outlineVariant.withOpacity(0.3),
-          ),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LOG OUT BUTTON
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _LogOutButton extends StatelessWidget {
-  const _LogOutButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          await AuthService().signOut();
-          if (context.mounted) {
-            Navigator.of(context).pushNamedAndRemoveUntil('/', (r) => false);
-          }
-        },
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            color: AppColors.errorContainer.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(999),
-            border:
-                Border.all(color: AppColors.errorContainer.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.logout_rounded, color: AppColors.error, size: 20),
-              const SizedBox(width: 10),
-              Text(
-                'Log Out',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.error,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -1137,39 +1249,6 @@ class _NavIconButton extends StatelessWidget {
         ),
         child: Icon(icon, color: AppColors.primary, size: 22),
       ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.left, required this.right});
-  final String left;
-  final String right;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Text(
-          left,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AppColors.onSurface,
-          ),
-        ),
-        Text(
-          right,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            color: AppColors.outline,
-            letterSpacing: 0.8,
-          ),
-        ),
-      ],
     );
   }
 }
