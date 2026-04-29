@@ -1,5 +1,10 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
+const functions = require("firebase-functions");
+
+const { generateDeck } = require("./generate-deck");
+
+exports.generateDeck = generateDeck;
 
 admin.initializeApp();
 
