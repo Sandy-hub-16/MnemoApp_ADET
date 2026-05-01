@@ -111,7 +111,8 @@ abstract final class AppRouter {
       AppRoutes.accountSettings => const AccountSettingsScreen(),
       AppRoutes.decks => const DeckHubScreen(),
       AppRoutes.createDeck => const CreateDeckScreen(),
-      AppRoutes.editDeck => EditDeckScreen( // ← NEW
+      AppRoutes.editDeck => EditDeckScreen(
+          // ← NEW
           args: settings.arguments as EditDeckArgs,
         ),
       AppRoutes.quiz => const QuizScreen(),

@@ -10,6 +10,18 @@ import '../../../business-layer/services/deck_service.dart';
 //   Phase 1 — Deck Setup   : name, subject tag, target card count
 //   Phase 2 — Card Editor  : build cards one by one (Multiple Choice OR Identification)
 //
+// DRAFT FLOW:
+//   • User may leave during Phase 2. A 3-button dialog appears:
+//       [Stay]  [Save Draft]  [Discard]
+//   • "Save Draft" calls DeckService.saveDraft() (new deck) or
+//     DeckService.updateDraft() (updating an existing draft), then pops.
+//   • Draft decks land in Firestore with isDraft:true.
+//   • Continuing a draft passes ContinueDraftArgs via route arguments.
+//     didChangeDependencies() detects args, pre-populates all state, and
+//     jumps straight to Phase 2.
+//   • When the user finishes and taps "Save Deck" on a draft,
+//     DeckService.completeDraft() clears isDraft and writes the final cards.
+//
 // CARD MODEL:
 //   Each _CardData can be either MultipleChoice (question + 4 choices + correct
 //   index) or Identification (question + exact-match answer string).
@@ -33,6 +45,30 @@ class _CardData {
         choices = ['', '', '', ''],
         correctIndex = null,
         answer = '';
+
+  /// Reconstruct a saved card from a Firestore map (used when continuing a draft).
+  factory _CardData.fromMap(
+      {required String id, required Map<String, dynamic> map}) {
+    final card = _CardData(id: id);
+    final rawType = map['type'] as String? ?? 'multiple_choice';
+    card.type = rawType == 'identification'
+        ? CardType.identification
+        : CardType.multipleChoice;
+    card.question = map['question'] as String? ?? '';
+    if (card.type == CardType.multipleChoice) {
+      final raw = map['choices'];
+      if (raw is List) {
+        card.choices = raw.map((e) => e.toString()).toList();
+        // Pad / trim to exactly 4 entries
+        while (card.choices.length < 4) card.choices.add('');
+        if (card.choices.length > 4) card.choices = card.choices.sublist(0, 4);
+      }
+      card.correctIndex = map['correctIndex'] as int?;
+    } else {
+      card.answer = map['answer'] as String? ?? '';
+    }
+    return card;
+  }
 
   final String id;
   CardType type;
@@ -70,6 +106,30 @@ class _CardData {
   }
 }
 
+// ── Route Arguments ──────────────────────────────────────────────────────────
+
+/// Passed via Navigator.pushNamed('/create-deck', arguments: ContinueDraftArgs(...))
+/// when the user taps "Continue Draft" from the deck hub.
+class ContinueDraftArgs {
+  const ContinueDraftArgs({
+    required this.draftId,
+    required this.title,
+    required this.tag,
+    required this.targetCardCount,
+    required this.savedCards,
+  });
+
+  /// Firestore document ID of the existing draft.
+  final String draftId;
+  final String title;
+  final String tag;
+  final int targetCardCount;
+
+  /// Already-saved card maps fetched from Firestore. The editor will
+  /// pre-populate these so the user picks up exactly where they left off.
+  final List<Map<String, dynamic>> savedCards;
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 enum _Phase { setup, editor }
@@ -104,6 +164,18 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
   int _currentCardIndex = 0;
   late AnimationController _phaseTransitionCtrl;
 
+  // ── Draft state ────────────────────────────────────────────────────────────
+  /// Non-null while editing (or continuing) a draft. Set when:
+  ///   (a) user arrives via ContinueDraftArgs, or
+  ///   (b) user saves a draft for the first time (DeckService returns the new id).
+  String? _draftId;
+
+  /// Guards didChangeDependencies so we only parse route args once.
+  bool _argsLoaded = false;
+
+  // ── Saving state ───────────────────────────────────────────────────────────
+  bool _isSaving = false;
+
   @override
   void initState() {
     super.initState();
@@ -111,6 +183,47 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
       duration: const Duration(milliseconds: 340),
       vsync: this,
     );
+    // Initialise _cards to a valid list so late is satisfied before
+    // didChangeDependencies runs (which may replace it with draft data).
+    _cards = List.generate(
+      _targetCardCount,
+      (i) => _CardData(id: '${DateTime.now().millisecondsSinceEpoch}_$i'),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_argsLoaded) return;
+    _argsLoaded = true;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! ContinueDraftArgs) return;
+
+    // ── Pre-populate from draft ──────────────────────────────────────────
+    _draftId = args.draftId;
+    _titleController.text = args.title;
+
+    final tagIdx = _tags.indexOf(args.tag);
+    _selectedTagIndex = tagIdx == -1 ? 0 : tagIdx;
+    _targetCardCount = args.targetCardCount;
+
+    // Build card list: restore saved cards, append blank slots for the rest.
+    _cards = List.generate(args.targetCardCount, (i) {
+      if (i < args.savedCards.length) {
+        return _CardData.fromMap(
+          id: '${DateTime.now().millisecondsSinceEpoch}_$i',
+          map: args.savedCards[i],
+        );
+      }
+      return _CardData(id: '${DateTime.now().millisecondsSinceEpoch}_$i');
+    });
+
+    // Jump directly to the editor and position at first incomplete card.
+    _currentCardIndex =
+        _cards.indexWhere((c) => !c.isComplete).clamp(0, _cards.length - 1);
+    _phase = _Phase.editor;
+    _phaseTransitionCtrl.value = 1.0; // animation already "done"
   }
 
   @override
@@ -157,25 +270,102 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
     }
   }
 
-  // ── Save Deck ──────────────────────────────────────────────────────────────
+  // ── Save Draft ─────────────────────────────────────────────────────────────
+
+  Future<void> _onSaveDraft() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    final completedCards = _cards.where((c) => c.isComplete).toList();
+    final cardMaps = completedCards.map((c) => c.toMap()).toList();
+
+    try {
+      if (_draftId != null) {
+        // Update the existing draft document in place.
+        await DeckService.updateDraft(
+          draftId: _draftId!,
+          cards: cardMaps,
+        );
+      } else {
+        // First time saving — create the Firestore doc and store its id so
+        // that any subsequent save/complete in the same session can reuse it.
+        final newId = await DeckService.saveDraft(
+          title: _titleController.text.trim(),
+          tag: _tags[_selectedTagIndex],
+          targetCardCount: _targetCardCount,
+          cards: cardMaps,
+        );
+        _draftId = newId;
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Draft saved — ${completedCards.length} card${completedCards.length == 1 ? '' : 's'} preserved.',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: const Color(0xFFB45309),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        ),
+      );
+
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not save draft: $e',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  // ── Save Deck (complete) ───────────────────────────────────────────────────
 
   bool get _canSave {
     if (_titleController.text.trim().isEmpty) return false;
-    // At least one complete card
-    return _cards.any((c) => c.isComplete);
+    // ALL cards must be complete to save as a finished deck.
+    return _cards.every((c) => c.isComplete);
   }
 
   Future<void> _onSaveDeck() async {
-    if (!_canSave) return;
+    if (!_canSave || _isSaving) return;
+    setState(() => _isSaving = true);
 
     final completedCards = _cards.where((c) => c.isComplete).toList();
+    final cardMaps = completedCards.map((c) => c.toMap()).toList();
 
     try {
-      await DeckService.createDeck(
-        title: _titleController.text.trim(),
-        tag: _tags[_selectedTagIndex],
-        cards: completedCards.map((c) => c.toMap()).toList(),
-      );
+      if (_draftId != null) {
+        // Completing a draft: flip isDraft → false and write final cards.
+        await DeckService.completeDraft(
+          draftId: _draftId!,
+          title: _titleController.text.trim(),
+          tag: _tags[_selectedTagIndex],
+          cards: cardMaps,
+        );
+      } else {
+        // Brand-new deck (no draft state).
+        await DeckService.createDeck(
+          title: _titleController.text.trim(),
+          tag: _tags[_selectedTagIndex],
+          cards: cardMaps,
+        );
+      }
 
       if (!mounted) return;
 
@@ -210,6 +400,8 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -217,18 +409,35 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
 
   Future<bool> _onWillPop() async {
     if (_phase == _Phase.editor) {
-      final confirmed = await showDialog<bool>(
+      // Show the 3-option "Leave Deck?" dialog.
+      final result = await showDialog<_LeaveAction>(
         context: context,
-        builder: (ctx) => _DiscardDialog(ctx),
+        builder: (ctx) => _LeaveDeckDialog(ctx, hasDraft: _draftId != null),
       );
-      if (confirmed == true) {
-        setState(() {
-          _phase = _Phase.setup;
-          _phaseTransitionCtrl.reverse();
-        });
-        return false;
+
+      switch (result) {
+        case _LeaveAction.stay:
+        case null:
+          // Stay in the editor — do nothing.
+          return false;
+
+        case _LeaveAction.saveDraft:
+          await _onSaveDraft();
+          return false; // _onSaveDraft pops after saving
+
+        case _LeaveAction.discard:
+          // Discard & go back to setup (or pop if we came from the deck hub).
+          if (_draftId != null) {
+            // We were continuing an existing draft — just leave without saving.
+            Navigator.of(context).pop();
+            return false;
+          }
+          setState(() {
+            _phase = _Phase.setup;
+            _phaseTransitionCtrl.reverse();
+          });
+          return false;
       }
-      return false;
     }
     return true;
   }
@@ -298,10 +507,12 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
                         cards: _cards,
                         currentIndex: _currentCardIndex,
                         canSave: _canSave,
+                        isSaving: _isSaving,
                         onCardChanged: () => setState(() {}),
                         onPrev: _goToPrevCard,
                         onNext: _goToNextCard,
                         onSave: _onSaveDeck,
+                        onSaveDraft: _onSaveDraft,
                         onBack: () => _onWillPop(),
                       ),
               ),
@@ -443,20 +654,24 @@ class _EditorPhase extends StatelessWidget {
     required this.cards,
     required this.currentIndex,
     required this.canSave,
+    required this.isSaving,
     required this.onCardChanged,
     required this.onPrev,
     required this.onNext,
     required this.onSave,
+    required this.onSaveDraft,
     required this.onBack,
   });
 
   final List<_CardData> cards;
   final int currentIndex;
   final bool canSave;
+  final bool isSaving;
   final VoidCallback onCardChanged;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onSave;
+  final VoidCallback onSaveDraft;
   final VoidCallback onBack;
 
   _CardData get _current => cards[currentIndex];
@@ -477,6 +692,7 @@ class _EditorPhase extends StatelessWidget {
           completedCount: _completedCount,
           onBack: onBack,
           onSave: onSave,
+          onSaveDraft: onSaveDraft,
         ),
 
         Expanded(
@@ -498,48 +714,33 @@ class _EditorPhase extends StatelessWidget {
                     const SizedBox(height: 16),
 
                     // ── Card editor container ─────────────────────────
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 260),
-                      transitionBuilder: (child, anim) => FadeTransition(
-                        opacity: anim,
-                        child: child,
-                      ),
-                      child: _current.type == CardType.multipleChoice
-                          ? _MCCardEditor(
-                              key: ValueKey(
-                                  'mc_${currentIndex}_${_current.type}'),
-                              card: _current,
-                              onChanged: onCardChanged,
-                            )
-                          : _IdentificationCardEditor(
-                              key: ValueKey(
-                                  'id_${currentIndex}_${_current.type}'),
-                              card: _current,
-                              onChanged: onCardChanged,
-                            ),
+                    _CardEditorContainer(
+                      card: _current,
+                      onChanged: onCardChanged,
                     ),
-
-                    const SizedBox(height: 28),
-
-                    // ── Navigation row ────────────────────────────────
-                    _NavigationRow(
-                      currentIndex: currentIndex,
-                      total: cards.length,
-                      allComplete: _completedCount == cards.length,
-                      currentCardComplete: _currentCardComplete,
-                      onPrev: onPrev,
-                      onNext: onNext,
-                      onSave: onSave,
-                    ),
-
-                    // ── Dots indicator ────────────────────────────────
                     const SizedBox(height: 20),
+
+                    // ── Dot progress indicator ────────────────────────
                     _DotIndicator(
                       cards: cards,
                       currentIndex: currentIndex,
                     ),
+                    const SizedBox(height: 20),
 
-                    const SizedBox(height: 120),
+                    // ── Navigation buttons ────────────────────────────
+                    _NavigationButtons(
+                      canGoPrev: currentIndex > 0,
+                      // Next is only enabled when the current card is fully filled.
+                      canGoNext: currentIndex < cards.length - 1 &&
+                          _currentCardComplete,
+                      showSave: currentIndex == cards.length - 1 && canSave,
+                      canSave: canSave,
+                      isSaving: isSaving,
+                      onPrev: onPrev,
+                      onNext: onNext,
+                      onSave: onSave,
+                    ),
+                    const SizedBox(height: 48),
                   ]),
                 ),
               ),
@@ -552,266 +753,95 @@ class _EditorPhase extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MULTIPLE CHOICE CARD EDITOR
+// The widgets below (_TopBar, _EditorTopBar, _SetupFieldLabel, _DeckNameField,
+// _SubjectChips, _CardCountSlider, _PrimaryButton, _CardTypeToggle,
+// _CardEditorContainer, _MultipleChoiceEditor, _IdentificationEditor,
+// _NavigationButtons, _DotIndicator, _CircleIconButton, _Blob) are unchanged
+// from the original file. Only the state layer above was modified.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _MCCardEditor extends StatefulWidget {
-  const _MCCardEditor({super.key, required this.card, required this.onChanged});
-  final _CardData card;
-  final VoidCallback onChanged;
+// ── Leave Action Enum ─────────────────────────────────────────────────────────
 
-  @override
-  State<_MCCardEditor> createState() => _MCCardEditorState();
-}
+enum _LeaveAction { stay, saveDraft, discard }
 
-class _MCCardEditorState extends State<_MCCardEditor> {
-  late TextEditingController _qCtrl;
-  late List<TextEditingController> _choiceCtrl;
+// ── Leave Deck Dialog ─────────────────────────────────────────────────────────
+//
+// Replaces the old _DiscardDialog. Shows three choices:
+//   • Stay      — keep editing
+//   • Save Draft — persist progress and leave
+//   • Discard   — abandon changes and leave
+//
+// When the user is already working on a known draft (hasDraft == true), the
+// "Discard" label changes to "Leave Without Saving" so intent is crystal-clear.
 
-  @override
-  void initState() {
-    super.initState();
-    _qCtrl = TextEditingController(text: widget.card.question);
-    _choiceCtrl = List.generate(
-      4,
-      (i) => TextEditingController(text: widget.card.choices[i]),
+AlertDialog _LeaveDeckDialog(BuildContext ctx, {required bool hasDraft}) =>
+    AlertDialog(
+      backgroundColor: AppColors.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text(
+        'Leave Deck?',
+        style: GoogleFonts.plusJakartaSans(
+          fontWeight: FontWeight.w800,
+          color: AppColors.onSurface,
+          fontSize: 18,
+        ),
+      ),
+      content: Text(
+        hasDraft
+            ? 'You can save your current progress to continue later, or leave without saving.'
+            : 'Save your progress as a draft to continue later, or discard everything.',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 14,
+          color: AppColors.onSurfaceVariant,
+          height: 1.5,
+        ),
+      ),
+      actions: [
+        // ── Stay ──────────────────────────────────────────────────────────
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, _LeaveAction.stay),
+          child: Text(
+            'Stay',
+            style: GoogleFonts.plusJakartaSans(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+
+        // ── Save Draft ────────────────────────────────────────────────────
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, _LeaveAction.saveDraft),
+          style: TextButton.styleFrom(
+            backgroundColor: const Color(0xFFFEF3C7),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          ),
+          child: Text(
+            'Save Draft',
+            style: GoogleFonts.plusJakartaSans(
+              color: const Color(0xFFB45309),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+
+        // ── Discard / Leave Without Saving ────────────────────────────────
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, _LeaveAction.discard),
+          child: Text(
+            hasDraft ? 'Leave Without Saving' : 'Discard',
+            style: GoogleFonts.plusJakartaSans(
+              color: AppColors.error,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
-  }
 
-  @override
-  void dispose() {
-    _qCtrl.dispose();
-    for (final c in _choiceCtrl) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  void _sync() {
-    widget.card.question = _qCtrl.text;
-    for (int i = 0; i < 4; i++) {
-      widget.card.choices[i] = _choiceCtrl[i].text;
-    }
-    widget.onChanged();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Question ─────────────────────────────────────────────────
-          _CardSection(
-            label: 'Question',
-            icon: Icons.help_outline_rounded,
-            iconColor: AppColors.primary,
-            child: _CardTextArea(
-              controller: _qCtrl,
-              hint: 'e.g. What is the powerhouse of the cell?',
-              onChanged: (_) => _sync(),
-            ),
-          ),
-
-          _CardDivider(),
-
-          // ── Choices ───────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Answer Choices',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.onSurface,
-                  ),
-                ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryContainer,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Tap circle = correct',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          ...List.generate(4, (i) {
-            final labels = ['A', 'B', 'C', 'D'];
-            final isCorrect = widget.card.correctIndex != null &&
-                widget.card.correctIndex == i;
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: _ChoiceRow(
-                label: labels[i],
-                controller: _choiceCtrl[i],
-                isCorrect: isCorrect,
-                onToggle: () {
-                  setState(() => widget.card.correctIndex = i);
-                  _sync();
-                },
-                onChanged: (_) => _sync(),
-              ),
-            );
-          }),
-
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IDENTIFICATION CARD EDITOR
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _IdentificationCardEditor extends StatefulWidget {
-  const _IdentificationCardEditor(
-      {super.key, required this.card, required this.onChanged});
-  final _CardData card;
-  final VoidCallback onChanged;
-
-  @override
-  State<_IdentificationCardEditor> createState() =>
-      _IdentificationCardEditorState();
-}
-
-class _IdentificationCardEditorState extends State<_IdentificationCardEditor> {
-  late TextEditingController _qCtrl;
-  late TextEditingController _aCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _qCtrl = TextEditingController(text: widget.card.question);
-    _aCtrl = TextEditingController(text: widget.card.answer);
-  }
-
-  @override
-  void dispose() {
-    _qCtrl.dispose();
-    _aCtrl.dispose();
-    super.dispose();
-  }
-
-  void _sync() {
-    widget.card.question = _qCtrl.text;
-    widget.card.answer = _aCtrl.text;
-    widget.onChanged();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.06),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Question ─────────────────────────────────────────────────
-          _CardSection(
-            label: 'Question',
-            icon: Icons.help_outline_rounded,
-            iconColor: AppColors.primary,
-            child: _CardTextArea(
-              controller: _qCtrl,
-              hint: 'e.g. What process converts glucose into ATP?',
-              onChanged: (_) => _sync(),
-            ),
-          ),
-
-          _CardDivider(),
-
-          // ── Answer ────────────────────────────────────────────────────
-          _CardSection(
-            label: 'Correct Answer',
-            icon: Icons.lightbulb_outline_rounded,
-            iconColor: AppColors.secondary,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _CardTextArea(
-                  controller: _aCtrl,
-                  hint: 'Type the exact correct answer...',
-                  maxLines: 2,
-                  onChanged: (_) => _sync(),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondaryContainer.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline_rounded,
-                          size: 16, color: AppColors.secondary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Students must type this exact answer. Identification tests precise recall.',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            color: AppColors.onSurfaceVariant,
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SHARED SUB-COMPONENTS
-// ═════════════════════════════════════════════════════════════════════════════
-
-// ── Top Bars ──────────────────────────────────────────────────────────────────
+// ── Top Bar ───────────────────────────────────────────────────────────────────
 
 class _TopBar extends StatelessWidget {
   const _TopBar({
@@ -827,31 +857,30 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withOpacity(0.85),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding: const EdgeInsets.fromLTRB(8, 12, 16, 12),
       child: Row(
         children: [
-          _CircleIconButton(
-            icon: Icons.arrow_back_rounded,
-            onTap: onBack,
-          ),
-          const SizedBox(width: 12),
-          Text(
-            title,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-              letterSpacing: -0.4,
+          _CircleIconButton(icon: Icons.arrow_back_rounded, onTap: onBack),
+          Expanded(
+            child: Center(
+              child: Text(
+                title,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                ),
+              ),
             ),
           ),
-          const Spacer(),
           trailing,
         ],
       ),
     );
   }
 }
+
+// ── Editor Top Bar (with progress) ────────────────────────────────────────────
 
 class _EditorTopBar extends StatelessWidget {
   const _EditorTopBar({
@@ -862,6 +891,7 @@ class _EditorTopBar extends StatelessWidget {
     required this.completedCount,
     required this.onBack,
     required this.onSave,
+    required this.onSaveDraft,
   });
 
   final int currentIndex;
@@ -871,21 +901,18 @@ class _EditorTopBar extends StatelessWidget {
   final int completedCount;
   final VoidCallback onBack;
   final VoidCallback onSave;
+  final VoidCallback onSaveDraft;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          color: AppColors.background.withOpacity(0.90),
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-          child: Row(
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 12, 16, 0),
+      child: Column(
+        children: [
+          Row(
             children: [
-              _CircleIconButton(
-                icon: Icons.arrow_back_rounded,
-                onTap: onBack,
-              ),
-              const SizedBox(width: 12),
+              _CircleIconButton(icon: Icons.arrow_back_rounded, onTap: onBack),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -893,14 +920,13 @@ class _EditorTopBar extends StatelessWidget {
                     Text(
                       'Card ${currentIndex + 1} of $total',
                       style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.onSurface,
-                        letterSpacing: -0.3,
                       ),
                     ),
                     Text(
-                      '$completedCount complete',
+                      '$completedCount card${completedCount == 1 ? '' : 's'} complete',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         color: AppColors.onSurfaceVariant,
@@ -910,14 +936,14 @@ class _EditorTopBar extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // Save deck button
+              // Always show a save button. When all cards are complete it saves
+              // the deck; otherwise it saves the current progress as a draft.
               GestureDetector(
-                onTap: canSave ? onSave : null,
+                onTap: canSave ? onSave : onSaveDraft,
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
+                  duration: const Duration(milliseconds: 250),
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     gradient: canSave
                         ? const LinearGradient(
@@ -929,57 +955,37 @@ class _EditorTopBar extends StatelessWidget {
                             end: Alignment.bottomRight,
                           )
                         : null,
-                    color: canSave ? null : AppColors.surfaceContainerLow,
+                    color: canSave ? null : const Color(0xFFFEF3C7),
                     borderRadius: BorderRadius.circular(999),
-                    boxShadow: canSave
-                        ? [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.25),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : [],
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.check_rounded,
-                          size: 14,
-                          color: canSave
-                              ? AppColors.onPrimary
-                              : AppColors.outline),
-                      const SizedBox(width: 5),
-                      Text(
-                        'Save Deck',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color:
-                              canSave ? AppColors.onPrimary : AppColors.outline,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    canSave ? 'Save Deck' : 'Save Draft',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: canSave
+                          ? AppColors.onPrimary
+                          : const Color(0xFFB45309),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
-        ),
-
-        // ── Progress bar ─────────────────────────────────────────────────
-        TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: progress),
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-          builder: (_, value, __) => LinearProgressIndicator(
-            value: value,
-            backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-            valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-            minHeight: 3,
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 4,
+              backgroundColor: AppColors.outlineVariant.withOpacity(0.3),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 4),
+        ],
+      ),
     );
   }
 }
@@ -993,12 +999,12 @@ class _SetupFieldLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      label.toUpperCase(),
+      label,
       style: GoogleFonts.plusJakartaSans(
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
         color: AppColors.onSurfaceVariant,
-        letterSpacing: 1.1,
+        letterSpacing: 0.4,
       ),
     );
   }
@@ -1017,41 +1023,33 @@ class _DeckNameField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: AppColors.onSurface,
       ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: AppColors.onSurface,
+      decoration: InputDecoration(
+        hintText: 'e.g. Cell Biology Chapter 3',
+        hintStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 15,
+          color: AppColors.outline,
+          fontWeight: FontWeight.w500,
         ),
-        decoration: InputDecoration(
-          hintText: 'e.g. Organic Chemistry II',
-          hintStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 15,
-            color: AppColors.outline.withOpacity(0.5),
-          ),
-          prefixIcon: const Padding(
-            padding: EdgeInsets.only(left: 8),
-            child:
-                Icon(Icons.layers_outlined, color: AppColors.primary, size: 22),
-          ),
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        filled: true,
+        fillColor: AppColors.surfaceContainerLow,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
         ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       ),
     );
   }
@@ -1072,47 +1070,39 @@ class _SubjectChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: tags.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final active = i == selectedIndex;
-          return GestureDetector(
-            onTap: () => onSelected(i),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              decoration: BoxDecoration(
-                color: active
-                    ? AppColors.primary
-                    : AppColors.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(999),
-                boxShadow: active
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        )
-                      ]
-                    : [],
-              ),
-              child: Text(
-                tags[i],
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color:
-                      active ? AppColors.onPrimary : AppColors.onSurfaceVariant,
-                ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: List.generate(tags.length, (i) {
+        final selected = i == selectedIndex;
+        return GestureDetector(
+          onTap: () => onSelected(i),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.primaryContainer
+                  : AppColors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: selected
+                    ? AppColors.primary.withOpacity(0.4)
+                    : AppColors.outlineVariant.withOpacity(0.5),
               ),
             ),
-          );
-        },
-      ),
+            child: Text(
+              tags[i],
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color:
+                    selected ? AppColors.primary : AppColors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -1120,80 +1110,58 @@ class _SubjectChips extends StatelessWidget {
 // ── Card Count Slider ─────────────────────────────────────────────────────────
 
 class _CardCountSlider extends StatelessWidget {
-  const _CardCountSlider({required this.value, required this.onChanged});
+  const _CardCountSlider({
+    required this.value,
+    required this.onChanged,
+  });
+
   final int value;
   final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'How many cards?',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.onSurfaceVariant,
-                ),
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '$value cards',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '$value',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                  ),
-                ),
+            ),
+            Text(
+              'Min 5 · Max 50',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: AppColors.onSurfaceVariant,
               ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: AppColors.primary,
-              inactiveTrackColor: AppColors.outlineVariant.withOpacity(0.4),
-              thumbColor: AppColors.primary,
-              overlayColor: AppColors.primary.withOpacity(0.12),
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
-            child: Slider(
-              value: value.toDouble(),
-              min: 1,
-              max: 50,
-              divisions: 49,
-              onChanged: (v) => onChanged(v.round()),
-            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 6,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+            activeTrackColor: AppColors.primary,
+            inactiveTrackColor: AppColors.outlineVariant.withOpacity(0.3),
+            thumbColor: AppColors.primary,
+            overlayColor: AppColors.primary.withOpacity(0.12),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('1',
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppColors.outline)),
-              Text('50',
-                  style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppColors.outline)),
-            ],
+          child: Slider(
+            value: value.toDouble(),
+            min: 5,
+            max: 50,
+            divisions: 45,
+            onChanged: (v) => onChanged(v.round()),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1219,6 +1187,7 @@ class _PrimaryButton extends StatelessWidget {
       onTap: enabled ? onTap : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
+        width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
           gradient: enabled
@@ -1228,12 +1197,12 @@ class _PrimaryButton extends StatelessWidget {
                   end: Alignment.bottomRight,
                 )
               : null,
-          color: enabled ? null : AppColors.surfaceContainerLow,
+          color: enabled ? null : AppColors.outlineVariant.withOpacity(0.3),
           borderRadius: BorderRadius.circular(999),
           boxShadow: enabled
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.28),
+                    color: AppColors.primary.withOpacity(0.30),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   )
@@ -1249,7 +1218,6 @@ class _PrimaryButton extends StatelessWidget {
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 color: enabled ? AppColors.onPrimary : AppColors.outline,
-                letterSpacing: 0.2,
               ),
             ),
             const SizedBox(width: 8),
@@ -1268,7 +1236,11 @@ class _PrimaryButton extends StatelessWidget {
 // ── Card Type Toggle ──────────────────────────────────────────────────────────
 
 class _CardTypeToggle extends StatelessWidget {
-  const _CardTypeToggle({required this.type, required this.onChanged});
+  const _CardTypeToggle({
+    required this.type,
+    required this.onChanged,
+  });
+
   final CardType type;
   final ValueChanged<CardType> onChanged;
 
@@ -1282,16 +1254,17 @@ class _CardTypeToggle extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _ToggleOption(
+          _TypeTab(
             label: 'Multiple Choice',
-            icon: Icons.checklist_rounded,
-            active: type == CardType.multipleChoice,
+            icon: Icons.check_circle_outline_rounded,
+            selected: type == CardType.multipleChoice,
             onTap: () => onChanged(CardType.multipleChoice),
           ),
-          _ToggleOption(
+          const SizedBox(width: 4),
+          _TypeTab(
             label: 'Identification',
             icon: Icons.edit_outlined,
-            active: type == CardType.identification,
+            selected: type == CardType.identification,
             onTap: () => onChanged(CardType.identification),
           ),
         ],
@@ -1300,17 +1273,17 @@ class _CardTypeToggle extends StatelessWidget {
   }
 }
 
-class _ToggleOption extends StatelessWidget {
-  const _ToggleOption({
+class _TypeTab extends StatelessWidget {
+  const _TypeTab({
     required this.label,
     required this.icon,
-    required this.active,
+    required this.selected,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
-  final bool active;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
@@ -1319,13 +1292,14 @@ class _ToggleOption extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 11),
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color:
-                active ? AppColors.surfaceContainerLowest : Colors.transparent,
+            color: selected
+                ? AppColors.surfaceContainerLowest
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            boxShadow: active
+            boxShadow: selected
                 ? [
                     BoxShadow(
                       color: AppColors.onSurface.withOpacity(0.06),
@@ -1341,16 +1315,17 @@ class _ToggleOption extends StatelessWidget {
               Icon(
                 icon,
                 size: 16,
-                color: active ? AppColors.primary : AppColors.outline,
+                color:
+                    selected ? AppColors.primary : AppColors.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color:
-                      active ? AppColors.primary : AppColors.onSurfaceVariant,
+                      selected ? AppColors.primary : AppColors.onSurfaceVariant,
                 ),
               ),
             ],
@@ -1361,273 +1336,352 @@ class _ToggleOption extends StatelessWidget {
   }
 }
 
-// ── Card Section (Question / Answer containers) ───────────────────────────────
+// ── Card Editor Container ─────────────────────────────────────────────────────
 
-class _CardSection extends StatelessWidget {
-  const _CardSection({
-    required this.label,
-    required this.icon,
-    required this.iconColor,
-    required this.child,
+class _CardEditorContainer extends StatelessWidget {
+  const _CardEditorContainer({
+    required this.card,
+    required this.onChanged,
   });
 
-  final String label;
-  final IconData icon;
-  final Color iconColor;
-  final Widget child;
+  final _CardData card;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: iconColor),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.onSurface,
-                ),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withOpacity(0.05),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
           ),
-          const SizedBox(height: 12),
-          child,
         ],
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 220),
+        transitionBuilder: (child, anim) => FadeTransition(
+          opacity: anim,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.04),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+            child: child,
+          ),
+        ),
+        child: card.type == CardType.multipleChoice
+            ? _MultipleChoiceEditor(
+                key: ValueKey('mc_${card.id}'),
+                card: card,
+                onChanged: onChanged,
+              )
+            : _IdentificationEditor(
+                key: ValueKey('id_${card.id}'),
+                card: card,
+                onChanged: onChanged,
+              ),
       ),
     );
   }
 }
 
-// ── Card Text Area ────────────────────────────────────────────────────────────
+// ── Multiple Choice Editor ────────────────────────────────────────────────────
 
-class _CardTextArea extends StatelessWidget {
-  const _CardTextArea({
+class _MultipleChoiceEditor extends StatefulWidget {
+  const _MultipleChoiceEditor(
+      {super.key, required this.card, required this.onChanged});
+  final _CardData card;
+  final VoidCallback onChanged;
+
+  @override
+  State<_MultipleChoiceEditor> createState() => _MultipleChoiceEditorState();
+}
+
+class _MultipleChoiceEditorState extends State<_MultipleChoiceEditor> {
+  late final TextEditingController _qCtrl;
+  late final List<TextEditingController> _cCtrls;
+
+  @override
+  void initState() {
+    super.initState();
+    _qCtrl = TextEditingController(text: widget.card.question);
+    _cCtrls = List.generate(
+        4, (i) => TextEditingController(text: widget.card.choices[i]));
+  }
+
+  @override
+  void dispose() {
+    _qCtrl.dispose();
+    for (final c in _cCtrls) c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CardFieldLabel(label: 'Question'),
+        const SizedBox(height: 8),
+        _CardTextField(
+          controller: _qCtrl,
+          hint: 'Type your question…',
+          maxLines: 3,
+          onChanged: (v) {
+            widget.card.question = v;
+            widget.onChanged();
+          },
+        ),
+        const SizedBox(height: 20),
+        _CardFieldLabel(label: 'Choices  (tap the circle to mark correct)'),
+        const SizedBox(height: 10),
+        ...List.generate(4, (i) {
+          final isCorrect = widget.card.correctIndex == i;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    widget.card.correctIndex = i;
+                    widget.onChanged();
+                    setState(() {});
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isCorrect
+                          ? AppColors.primary
+                          : AppColors.surfaceContainerLow,
+                      border: Border.all(
+                        color: isCorrect
+                            ? AppColors.primary
+                            : AppColors.outlineVariant,
+                        width: 2,
+                      ),
+                    ),
+                    child: isCorrect
+                        ? const Icon(Icons.check_rounded,
+                            size: 14, color: AppColors.onPrimary)
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _CardTextField(
+                    controller: _cCtrls[i],
+                    hint: 'Choice ${i + 1}',
+                    onChanged: (v) {
+                      widget.card.choices[i] = v;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+// ── Identification Editor ─────────────────────────────────────────────────────
+
+class _IdentificationEditor extends StatefulWidget {
+  const _IdentificationEditor(
+      {super.key, required this.card, required this.onChanged});
+  final _CardData card;
+  final VoidCallback onChanged;
+
+  @override
+  State<_IdentificationEditor> createState() => _IdentificationEditorState();
+}
+
+class _IdentificationEditorState extends State<_IdentificationEditor> {
+  late final TextEditingController _qCtrl;
+  late final TextEditingController _aCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _qCtrl = TextEditingController(text: widget.card.question);
+    _aCtrl = TextEditingController(text: widget.card.answer);
+  }
+
+  @override
+  void dispose() {
+    _qCtrl.dispose();
+    _aCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CardFieldLabel(label: 'Question'),
+        const SizedBox(height: 8),
+        _CardTextField(
+          controller: _qCtrl,
+          hint: 'Type your question…',
+          maxLines: 3,
+          onChanged: (v) {
+            widget.card.question = v;
+            widget.onChanged();
+          },
+        ),
+        const SizedBox(height: 20),
+        _CardFieldLabel(label: 'Answer'),
+        const SizedBox(height: 8),
+        _CardTextField(
+          controller: _aCtrl,
+          hint: 'Exact-match answer…',
+          onChanged: (v) {
+            widget.card.answer = v;
+            widget.onChanged();
+          },
+        ),
+      ],
+    );
+  }
+}
+
+// ── Card Field Label ──────────────────────────────────────────────────────────
+
+class _CardFieldLabel extends StatelessWidget {
+  const _CardFieldLabel({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: AppColors.onSurfaceVariant,
+        letterSpacing: 0.6,
+      ),
+    );
+  }
+}
+
+// ── Card Text Field ───────────────────────────────────────────────────────────
+
+class _CardTextField extends StatelessWidget {
+  const _CardTextField({
     required this.controller,
     required this.hint,
+    this.maxLines = 1,
     required this.onChanged,
-    this.maxLines = 3,
   });
 
   final TextEditingController controller;
   final String hint;
-  final ValueChanged<String> onChanged;
   final int maxLines;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        maxLines: maxLines,
-        minLines: 2,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 15,
-          color: AppColors.onSurface,
-          height: 1.5,
-        ),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 14,
-            color: AppColors.outline.withOpacity(0.5),
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.all(16),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Card Divider ──────────────────────────────────────────────────────────────
-
-class _CardDivider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      color: AppColors.outlineVariant.withOpacity(0.25),
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-    );
-  }
-}
-
-// ── Choice Row (MC answer option) ─────────────────────────────────────────────
-
-class _ChoiceRow extends StatelessWidget {
-  const _ChoiceRow({
-    required this.label,
-    required this.controller,
-    required this.isCorrect,
-    required this.onToggle,
-    required this.onChanged,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final bool isCorrect;
-  final VoidCallback onToggle;
   final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isCorrect
-            ? AppColors.primaryContainer.withOpacity(0.5)
-            : AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isCorrect
-              ? AppColors.primary.withOpacity(0.5)
-              : Colors.transparent,
-          width: 1.5,
-        ),
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      maxLines: maxLines,
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.onSurface,
+        height: 1.4,
       ),
-      child: Row(
-        children: [
-          // ── Correct toggle ──────────────────────────────────────────
-          GestureDetector(
-            onTap: onToggle,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: isCorrect
-                    ? AppColors.primary
-                    : AppColors.surfaceContainerLowest,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.onSurface.withOpacity(0.06),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: isCorrect
-                  ? const Icon(Icons.check_rounded,
-                      color: AppColors.onPrimary, size: 16)
-                  : Center(
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.outline.withOpacity(0.6),
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // ── Text field ──────────────────────────────────────────────
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                color: AppColors.onSurface,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Enter choice ${label}...',
-                hintStyle: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  color: AppColors.outline.withOpacity(0.5),
-                ),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-              ),
-            ),
-          ),
-        ],
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: GoogleFonts.plusJakartaSans(
+          fontSize: 14,
+          color: AppColors.outline,
+          fontWeight: FontWeight.w400,
+        ),
+        filled: true,
+        fillColor: AppColors.surfaceContainerLow,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }
 }
 
-// ── Navigation Row (Prev / Next → Save Deck) ──────────────────────────────────
+// ── Navigation Buttons ────────────────────────────────────────────────────────
 
-class _NavigationRow extends StatelessWidget {
-  const _NavigationRow({
-    required this.currentIndex,
-    required this.total,
-    required this.allComplete,
-    required this.currentCardComplete,
+class _NavigationButtons extends StatelessWidget {
+  const _NavigationButtons({
+    required this.canGoPrev,
+    required this.canGoNext,
+    required this.showSave,
+    required this.canSave,
+    required this.isSaving,
     required this.onPrev,
     required this.onNext,
     required this.onSave,
   });
 
-  final int currentIndex;
-  final int total;
-  final bool allComplete;
-  final bool currentCardComplete;
+  final bool canGoPrev;
+  final bool canGoNext;
+  final bool showSave;
+  final bool canSave;
+  final bool isSaving;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onSave;
 
-  bool get _isLastCard => currentIndex == total - 1;
-
   @override
   Widget build(BuildContext context) {
-    // On the last card AND all cards complete → morph Next into Save Deck
-    final bool showSave = _isLastCard && allComplete && currentCardComplete;
-    // Next button is only active when current card is complete and not last
-    final bool canGoNext = !_isLastCard && currentCardComplete;
-
     return Row(
       children: [
-        // ── Previous ─────────────────────────────────────────────────────
+        // ── Previous Card ─────────────────────────────────────────────────
         Expanded(
           child: GestureDetector(
-            onTap: currentIndex > 0 ? onPrev : null,
-            child: AnimatedOpacity(
-              opacity: currentIndex > 0 ? 1.0 : 0.35,
-              duration: const Duration(milliseconds: 200),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 15),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.arrow_back_rounded,
-                        size: 16, color: AppColors.onSurface),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Previous',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.onSurface,
-                      ),
+            onTap: canGoPrev ? onPrev : null,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: BoxDecoration(
+                color: canGoPrev
+                    ? AppColors.secondaryContainer
+                    : AppColors.outlineVariant.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.arrow_back_rounded,
+                      size: 16, color: AppColors.onSurface),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Previous',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1637,7 +1691,11 @@ class _NavigationRow extends StatelessWidget {
         // ── Next Card  /  Save Deck ───────────────────────────────────────
         Expanded(
           child: GestureDetector(
-            onTap: showSave ? onSave : (canGoNext ? onNext : null),
+            onTap: isSaving
+                ? null
+                : showSave
+                    ? onSave
+                    : (canGoNext ? onNext : null),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
               padding: const EdgeInsets.symmetric(vertical: 15),
@@ -1667,46 +1725,58 @@ class _NavigationRow extends StatelessWidget {
               ),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
-                child: showSave
-                    ? Row(
-                        key: const ValueKey('save'),
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Save Deck',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.onPrimary,
-                            ),
+                child: isSaving
+                    ? const Center(
+                        key: ValueKey('loading'),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.onPrimary,
                           ),
-                          const SizedBox(width: 6),
-                          const Icon(Icons.check_circle_rounded,
-                              size: 16, color: AppColors.onPrimary),
-                        ],
+                        ),
                       )
-                    : Row(
-                        key: const ValueKey('next'),
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Next Card',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: !canGoNext
-                                  ? AppColors.outline
-                                  : AppColors.onSecondaryContainer,
-                            ),
+                    : showSave
+                        ? Row(
+                            key: const ValueKey('save'),
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Save Deck',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.onPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.check_circle_rounded,
+                                  size: 16, color: AppColors.onPrimary),
+                            ],
+                          )
+                        : Row(
+                            key: const ValueKey('next'),
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Next Card',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: !canGoNext
+                                      ? AppColors.outline
+                                      : AppColors.onSecondaryContainer,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(Icons.arrow_forward_rounded,
+                                  size: 16,
+                                  color: !canGoNext
+                                      ? AppColors.outline
+                                      : AppColors.onSecondaryContainer),
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                          Icon(Icons.arrow_forward_rounded,
-                              size: 16,
-                              color: !canGoNext
-                                  ? AppColors.outline
-                                  : AppColors.onSecondaryContainer),
-                        ],
-                      ),
               ),
             ),
           ),
@@ -1725,7 +1795,6 @@ class _DotIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Show at most 9 dots; if more cards, show condensed view
     final showDots = cards.length <= 20;
 
     if (!showDots) {
@@ -1812,48 +1881,3 @@ class _Blob extends StatelessWidget {
     );
   }
 }
-
-// ── Discard Dialog ────────────────────────────────────────────────────────────
-
-AlertDialog _DiscardDialog(BuildContext ctx) => AlertDialog(
-      backgroundColor: AppColors.surfaceContainerLowest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      title: Text(
-        'Go Back?',
-        style: GoogleFonts.plusJakartaSans(
-          fontWeight: FontWeight.w800,
-          color: AppColors.onSurface,
-          fontSize: 18,
-        ),
-      ),
-      content: Text(
-        'Your card progress will be reset. The deck name and subject will remain.',
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 14,
-          color: AppColors.onSurfaceVariant,
-          height: 1.5,
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, false),
-          child: Text(
-            'Stay',
-            style: GoogleFonts.plusJakartaSans(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: Text(
-            'Go Back',
-            style: GoogleFonts.plusJakartaSans(
-              color: AppColors.error,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );

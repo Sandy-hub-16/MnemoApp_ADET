@@ -8,16 +8,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'deck-quiz_screen.dart';
 import 'edit_deck_screen.dart';
+import 'create_deck_screen.dart';
 import '../../../business-layer/services/deck_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks
 // Displays the main deck library with AI import, filters, and deck cards.
 //
-// 🎨 FRONTEND NOTE:
-// All deck data is hardcoded as placeholder _DeckData objects.
-// Replace with a Firestore stream/query in _DeckBody.
-// Filter chip selection state lives in _DeckHubScreenState.
+// SECTIONS:
+//   1. Static content  — hero, search bar, filter chips, AI import, create card
+//   2. Drafts          — unfinished decks (isDraft:true); tap → /create-deck
+//   3. Recent Decks    — completed decks (isDraft:false); tap → /quiz
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DeckHubScreen extends StatelessWidget {
@@ -59,6 +60,54 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
         .snapshots();
   }
 
+  /// Fetches draft cards then navigates to /create-deck to continue the draft.
+  Future<void> _continueDraft(
+    BuildContext context,
+    String deckId,
+    Map<String, dynamic> data,
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
+    );
+
+    try {
+      final savedCards = await DeckService.getDeckCards(deckId);
+      if (!context.mounted) return;
+      Navigator.pop(context); // close loader
+
+      Navigator.of(context).pushNamed(
+        '/create-deck',
+        arguments: ContinueDraftArgs(
+          draftId: deckId,
+          title: data['title'] ?? '',
+          tag: data['tag'] ?? 'Other',
+          targetCardCount: (data['targetCardCount'] ?? 10) as int,
+          savedCards: savedCards,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.pop(context); // close loader
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not load draft. Please try again.',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -75,7 +124,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
               color: AppColors.primaryContainer.withOpacity(0.22),
             ),
           ),
-
           Positioned(
             bottom: 200,
             left: -100,
@@ -94,7 +142,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                   child: CustomScrollView(
                     physics: const BouncingScrollPhysics(),
                     slivers: [
-                      // ✅ 1. STATIC CONTENT (always shows)
+                      // ── 1. STATIC CONTENT ──────────────────────────────
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
                         sliver: SliverList(
@@ -133,51 +181,147 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                             const SizedBox(height: 16),
                             _CreateDeckCard(),
                             const SizedBox(height: 28),
-
-                            // "Recent Decks" HEADER
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Recent Decks',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
                           ]),
                         ),
                       ),
 
-                      // ✅ 2. STREAM DECKS (shows immediately after header)
+                      // ── 2. DYNAMIC CONTENT (drafts + completed decks) ──
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _deckStream(),
                         builder: (context, snapshot) {
-                          print('🔥 Stream: ${snapshot.connectionState}');
-                          print(
-                              '🔥 UID: ${FirebaseAuth.instance.currentUser?.uid}');
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return const SliverToBoxAdapter(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 40),
                                 child: Center(
-                                    child: CircularProgressIndicator(
-                                        color: AppColors.primary)),
+                                  child: CircularProgressIndicator(
+                                      color: AppColors.primary),
+                                ),
                               ),
                             );
                           }
 
-                          final docs = snapshot.data?.docs ?? [];
+                          final allDocs = snapshot.data?.docs ?? [];
 
-                          // ✅ EMPTY STATE - shows right under header
-                          if (docs.isEmpty) {
-                            return SliverToBoxAdapter(
-                              child: Padding(
+                          // ── Split into drafts vs completed ──────────────
+                          final draftDocs = allDocs
+                              .where((d) => d.data()['isDraft'] == true)
+                              .toList();
+
+                          final selectedCategory = _filters[_selectedFilter];
+                          final completedDocs = allDocs
+                              .where((d) => d.data()['isDraft'] != true)
+                              .where((d) => selectedCategory == 'All Decks'
+                                  ? true
+                                  : d.data()['tag'] == selectedCategory)
+                              .toList();
+
+                          // ── Build list items ────────────────────────────
+                          final items = <Widget>[];
+
+                          // DRAFTS SECTION
+                          if (draftDocs.isNotEmpty) {
+                            items.add(
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF3CD),
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                            Icons.edit_note_rounded,
+                                            size: 14,
+                                            color: Color(0xFF856404),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            'DRAFTS',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF856404),
+                                              letterSpacing: 1.0,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Unfinished Decks',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.onSurface,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+
+                            for (final doc in draftDocs) {
+                              final data = doc.data();
+                              items.add(
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                                  child: _DraftDeckCard(
+                                    deckId: doc.id,
+                                    data: data,
+                                    onContinue: () =>
+                                        _continueDraft(context, doc.id, data),
+                                    onDelete: () => _confirmDeleteDraft(context,
+                                        doc.id, data['title'] ?? 'Untitled'),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            // Divider between sections
+                            items.add(
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                                child: Divider(
+                                  color:
+                                      AppColors.outlineVariant.withOpacity(0.4),
+                                  thickness: 1,
+                                ),
+                              ),
+                            );
+                          }
+
+                          // RECENT DECKS HEADER
+                          items.add(
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                              child: Text(
+                                'Recent Decks',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.onSurface,
+                                ),
+                              ),
+                            ),
+                          );
+
+                          // COMPLETED DECKS or EMPTY STATE
+                          if (completedDocs.isEmpty) {
+                            items.add(
+                              Padding(
                                 padding: const EdgeInsets.all(40),
                                 child: Column(
                                   children: [
@@ -185,7 +329,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                         size: 64, color: AppColors.outline),
                                     const SizedBox(height: 16),
                                     Text(
-                                      "No decks yet",
+                                      'No decks yet',
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 18,
                                         fontWeight: FontWeight.w700,
@@ -194,58 +338,49 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      "Create your first deck to get started!",
+                                      'Create your first deck to get started!',
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 14,
                                         color: AppColors.onSurfaceVariant,
                                       ),
+                                      textAlign: TextAlign.center,
                                     ),
                                   ],
                                 ),
                               ),
                             );
+                          } else {
+                            for (final doc in completedDocs) {
+                              final deck = doc.data();
+                              items.add(
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                                  child: _DeckCard(
+                                    deckId: doc.id,
+                                    deckTitle: deck['title'] ?? 'Untitled',
+                                    tag: deck['tag'] ?? 'Other',
+                                    tagColor: AppColors.secondaryContainer,
+                                    tagTextColor:
+                                        AppColors.onSecondaryContainer,
+                                    title: deck['title'] ?? 'Untitled',
+                                    subtitle: 'Tap to view cards',
+                                    progress:
+                                        (deck['progress'] ?? 0.0).toDouble(),
+                                    progressColor: AppColors.primary,
+                                  ),
+                                ),
+                              );
+                            }
                           }
 
-                          // ✅ FILTER & BUILD DECKS
-                          final selectedCategory = _filters[_selectedFilter];
-                          final filteredDocs = selectedCategory == 'All Decks'
-                              ? docs
-                              : docs
-                                  .where((doc) =>
-                                      doc.data()['tag'] == selectedCategory)
-                                  .toList();
-
-                          return SliverPadding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            sliver: SliverList(
-                              delegate: SliverChildBuilderDelegate(
-                                (context, index) {
-                                  final deck = filteredDocs[index].data();
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: _DeckCard(
-                                      deckId: filteredDocs[index].id,
-                                      deckTitle: deck['title'] ?? 'Untitled',
-                                      tag: deck['tag'] ?? 'Other',
-                                      tagColor: AppColors.secondaryContainer,
-                                      tagTextColor:
-                                          AppColors.onSecondaryContainer,
-                                      title: deck['title'] ?? 'Untitled',
-                                      subtitle: 'Tap to view cards',
-                                      progress:
-                                          (deck['progress'] ?? 0.0).toDouble(),
-                                      progressColor: AppColors.primary,
-                                    ),
-                                  );
-                                },
-                                childCount: filteredDocs.length,
-                              ),
-                            ),
+                          return SliverList(
+                            delegate: SliverChildListDelegate(items),
                           );
                         },
                       ),
 
-                      // ✅ 3. BOTTOM SPACING
+                      // ── 3. BOTTOM SPACING ──────────────────────────────
                       const SliverToBoxAdapter(child: SizedBox(height: 140)),
                     ],
                   ),
@@ -259,7 +394,68 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       bottomNavigationBar: const _DeckBottomNavBar(activeIndex: 1),
     );
   }
+
+  Future<void> _confirmDeleteDraft(
+      BuildContext context, String deckId, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: AppColors.surfaceContainerLowest,
+        title: Text(
+          'Delete draft "$title"?',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+          ),
+        ),
+        content: Text(
+          'This will permanently delete this unfinished deck. This action cannot be undone.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            color: AppColors.onSurfaceVariant,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(_, false),
+            child: Text('Cancel',
+                style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(_, true),
+            child: Text('Delete',
+                style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.error, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await DeckService.deleteDeck(deckId);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete draft.',
+                style:
+                    GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          ),
+        );
+      }
+    }
+  }
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TOP BAR
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,7 +470,6 @@ class _DeckTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          // ── Avatar + Brand ───────────────────────────────────────────────
           Container(
             width: 36,
             height: 36,
@@ -300,8 +495,6 @@ class _DeckTopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-
-          // ── Sync status chip ─────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
@@ -491,7 +684,6 @@ class _AIImportCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Icon + Title ─────────────────────────────────────────────────
           Row(
             children: [
               Container(
@@ -530,8 +722,6 @@ class _AIImportCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-
-          // ── Import options ───────────────────────────────────────────────
           Row(
             children: [
               Expanded(
@@ -561,56 +751,38 @@ class _AIImportCard extends StatelessWidget {
 
 Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   try {
-    // 🔹 1. Pick file
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['txt'], // start with TXT first (simpler)
+      allowedExtensions: ['txt'],
       withData: true,
     );
 
-    if (result == null || result.files.single.bytes == null) {
-      print('Parang nothing happened');
-      return;
-    }
+    if (result == null || result.files.single.bytes == null) return;
 
-    // 🔹 2. Extract text (TXT only for now)
     final fileBytes = result.files.single.bytes!;
     final text = utf8.decode(fileBytes);
 
-    if (text.trim().isEmpty) {
-      throw Exception("File is empty");
-    }
+    if (text.trim().isEmpty) throw Exception("File is empty");
 
-    // 🔹 3. Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    // 🔹 4. Call your backend API
     final response = await http.post(
       Uri.parse("https://generatedeck-x2xze3qnza-uc.a.run.app"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"text": text}),
     );
 
-    if (response.statusCode != 200) {
-      throw Exception("Failed to generate deck");
-    }
+    if (response.statusCode != 200) throw Exception("Failed to generate deck");
 
     final data = jsonDecode(response.body);
-
     final cards = List<Map<String, dynamic>>.from(data['cards']);
-
     final title = data['title'] as String? ?? 'AI Generated Deck';
 
-    // 🔹 5. Save to Firestore
     final uid = FirebaseAuth.instance.currentUser!.uid;
-
-    // ✅ Fix: save cards as individual documents in the cards subcollection
     final deckRef = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
@@ -618,11 +790,11 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
         .add({
       "title": title,
       "tag": "AI",
+      "isDraft": false,
       "createdAt": FieldValue.serverTimestamp(),
       "progress": 0.0,
     });
 
-// Write each card as its own document in the subcollection
     final batch = FirebaseFirestore.instance.batch();
     for (final card in cards) {
       final cardRef = deckRef.collection('cards').doc();
@@ -634,16 +806,12 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     }
     await batch.commit();
 
-    // 🔹 6. Close loading
     Navigator.pop(context);
-
-    // 🔹 7. Success message
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Deck created successfully!")),
     );
   } catch (e) {
     Navigator.pop(context);
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Error: $e")),
     );
@@ -709,9 +877,7 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        Navigator.of(context).pushNamed('/create-deck');
-      },
+      onTap: () => Navigator.of(context).pushNamed('/create-deck'),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
@@ -779,7 +945,369 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DECK CARD
+// DRAFT DECK CARD
+// Visually distinct amber-tinted card for unfinished decks.
+// Tapping routes to /create-deck to continue the draft.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DraftDeckCard extends StatelessWidget {
+  const _DraftDeckCard({
+    required this.deckId,
+    required this.data,
+    required this.onContinue,
+    required this.onDelete,
+  });
+
+  final String deckId;
+  final Map<String, dynamic> data;
+  final VoidCallback onContinue;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = data['title'] as String? ?? 'Untitled';
+    final tag = data['tag'] as String? ?? 'Other';
+    final cardCount = (data['cardCount'] ?? 0) as int;
+    final targetCardCount = (data['targetCardCount'] ?? 10) as int;
+    final ratio = targetCardCount > 0
+        ? (cardCount / targetCardCount).clamp(0.0, 1.0)
+        : 0.0;
+
+    return GestureDetector(
+      onTap: onContinue,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          // Warm amber-tinted background to signal "unfinished"
+          color: const Color(0xFFFFFBF0),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: const Color(0xFFFFD95C).withOpacity(0.7),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFFD95C).withOpacity(0.15),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header row: tag + DRAFT badge + menu ────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    // Subject tag
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBA0),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        tag.toUpperCase(),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF856404),
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // DRAFT badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF856404).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                            color: const Color(0xFF856404).withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.hourglass_top_rounded,
+                            size: 10,
+                            color: Color(0xFF856404),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'DRAFT',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF856404),
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                // Delete button (only action available for drafts)
+                GestureDetector(
+                  onTap: () => _showDraftMenu(context),
+                  child: const Icon(Icons.more_vert_rounded,
+                      color: Color(0xFFAA8800), size: 20),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Title ────────────────────────────────────────────────────
+            Text(
+              title,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppColors.onSurface,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Tap to continue building this deck',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: const Color(0xFFAA8800),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Completion progress ──────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'CARDS COMPLETED',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFFAA8800),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                Text(
+                  '$cardCount / $targetCardCount',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFFAA8800),
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 8,
+                backgroundColor: const Color(0xFFFFD95C).withOpacity(0.25),
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(Color(0xFFFFB800)),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ── Continue CTA ─────────────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB800),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.edit_rounded, size: 14, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Continue Draft',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDraftMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DraftOptionsSheet(
+        deckId: deckId,
+        deckTitle: data['title'] ?? 'Untitled',
+        onContinue: onContinue,
+        onDelete: onDelete,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DRAFT OPTIONS SHEET
+// Limited options: Continue Draft + Delete. No quiz/edit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DraftOptionsSheet extends StatelessWidget {
+  const _DraftOptionsSheet({
+    required this.deckId,
+    required this.deckTitle,
+    required this.onContinue,
+    required this.onDelete,
+  });
+
+  final String deckId;
+  final String deckTitle;
+  final VoidCallback onContinue;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.outlineVariant,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            child: Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3CD),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.hourglass_top_rounded,
+                          size: 11, color: Color(0xFF856404)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'DRAFT',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF856404),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    deckTitle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Locked notice
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline_rounded,
+                      size: 16, color: AppColors.outline),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Finish this deck to unlock Quiz & Edit',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          _SheetOption(
+            icon: Icons.edit_rounded,
+            label: 'Continue Draft',
+            color: const Color(0xFFAA8800),
+            onTap: () {
+              Navigator.pop(context);
+              onContinue();
+            },
+          ),
+          _SheetOption(
+            icon: Icons.delete_outline_rounded,
+            label: 'Delete Draft',
+            color: AppColors.error,
+            onTap: () {
+              Navigator.pop(context);
+              onDelete();
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DECK CARD (completed decks only)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DeckCard extends StatelessWidget {
@@ -797,9 +1325,9 @@ class _DeckCard extends StatelessWidget {
 
   final String deckId;
   final String deckTitle;
-  final String tag;
   final Color tagColor;
   final Color tagTextColor;
+  final String tag;
   final String title;
   final String subtitle;
   final double progress;
@@ -828,7 +1356,7 @@ class _DeckCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Tag + More icon ───────────────────────────────────────────
+            // ── Tag + More icon ───────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -858,7 +1386,7 @@ class _DeckCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // ── Title + subtitle ──────────────────────────────────────────
+            // ── Title + subtitle ──────────────────────────────────────
             Text(
               title,
               style: GoogleFonts.plusJakartaSans(
@@ -879,7 +1407,7 @@ class _DeckCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // ── Progress bar ──────────────────────────────────────────────
+            // ── Progress bar ──────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -929,7 +1457,7 @@ class _DeckCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DECK OPTIONS SHEET
+// DECK OPTIONS SHEET (completed decks)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DeckOptionsSheet extends StatelessWidget {
@@ -941,18 +1469,15 @@ class _DeckOptionsSheet extends StatelessWidget {
   final String deckId;
   final String deckTitle;
 
-  // ── Navigate to Edit Deck ─────────────────────────────────────────────────
   void _handleEdit(BuildContext context) {
-    Navigator.pop(context); // close sheet
+    Navigator.pop(context);
     Navigator.of(context).pushNamed(
       '/edit-deck',
       arguments: EditDeckArgs(deckId: deckId, deckTitle: deckTitle),
     );
   }
 
-  // ── Confirm + Delete whole deck ───────────────────────────────────────────
   void _handleDelete(BuildContext context) async {
-    // Show dialog WHILE sheet is still visible so context is valid
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -975,42 +1500,33 @@ class _DeckOptionsSheet extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(_, false),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.plusJakartaSans(
-                color: AppColors.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: Text('Cancel',
+                style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(_, true),
-            child: Text(
-              'Delete',
-              style: GoogleFonts.plusJakartaSans(
-                color: AppColors.error,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+            child: Text('Delete',
+                style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.error, fontWeight: FontWeight.w800)),
           ),
         ],
       ),
     );
 
     if (confirmed != true || !context.mounted) return;
-    Navigator.pop(context); // close sheet
+    Navigator.pop(context);
 
     try {
       await DeckService.deleteDeck(deckId);
-      // The Firestore stream in _DeckHubScaffold auto-refreshes the list.
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Failed to delete deck.',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-            ),
+            content: Text('Failed to delete deck.',
+                style:
+                    GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
             backgroundColor: AppColors.error,
             behavior: SnackBarBehavior.floating,
             shape:
