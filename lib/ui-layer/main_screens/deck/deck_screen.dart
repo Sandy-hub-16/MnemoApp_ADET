@@ -291,7 +291,7 @@ class _DeckTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Text(
-            'Study Buddy',
+            'My Decks',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 19,
               fontWeight: FontWeight.w800,

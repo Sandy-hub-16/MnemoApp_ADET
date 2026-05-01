@@ -572,7 +572,7 @@ class _GoogleSignInButtonState extends State<GoogleSignInButton> {
             // ignore: avoid_print
             print("Logged in: ${user.displayName}");
 
-            Navigator.pushReplacementNamed(context, '/profile');
+            Navigator.pushReplacementNamed(context, '/home');
           } else {
             // ignore: avoid_print
             print("Login Failed");
