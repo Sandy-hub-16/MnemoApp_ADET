@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -535,7 +538,9 @@ class _AIImportCard extends StatelessWidget {
                 child: _ImportOption(
                   icon: Icons.upload_file_rounded,
                   label: 'Upload PDF / TXT',
-                  onTap: () {},
+                  onTap: () async {
+                    await handleUploadAndGenerateDeck(context);
+                  },
                 ),
               ),
               const SizedBox(width: 10),
@@ -550,6 +555,97 @@ class _AIImportCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
+  try {
+    // 🔹 1. Pick file
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['txt'], // start with TXT first (simpler)
+      withData: true,
+    );
+
+    if (result == null || result.files.single.bytes == null) {
+      print('Parang nothing happened');
+      return;
+    }
+
+    // 🔹 2. Extract text (TXT only for now)
+    final fileBytes = result.files.single.bytes!;
+    final text = utf8.decode(fileBytes);
+
+    if (text.trim().isEmpty) {
+      throw Exception("File is empty");
+    }
+
+    // 🔹 3. Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    // 🔹 4. Call your backend API
+    final response = await http.post(
+      Uri.parse("https://generatedeck-x2xze3qnza-uc.a.run.app"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"text": text}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception("Failed to generate deck");
+    }
+
+    final data = jsonDecode(response.body);
+
+    final cards = List<Map<String, dynamic>>.from(data['cards']);
+
+    final title = data['title'] as String? ?? 'AI Generated Deck';
+
+    // 🔹 5. Save to Firestore
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    // ✅ Fix: save cards as individual documents in the cards subcollection
+    final deckRef = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('decks')
+        .add({
+      "title": title,
+      "tag": "AI",
+      "createdAt": FieldValue.serverTimestamp(),
+      "progress": 0.0,
+    });
+
+// Write each card as its own document in the subcollection
+    final batch = FirebaseFirestore.instance.batch();
+    for (final card in cards) {
+      final cardRef = deckRef.collection('cards').doc();
+      batch.set(cardRef, {
+        "question": card['question'],
+        "answer": card['answer'],
+        "type": "identification",
+      });
+    }
+    await batch.commit();
+
+    // 🔹 6. Close loading
+    Navigator.pop(context);
+
+    // 🔹 7. Success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Deck created successfully!")),
+    );
+  } catch (e) {
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error: $e")),
     );
   }
 }
