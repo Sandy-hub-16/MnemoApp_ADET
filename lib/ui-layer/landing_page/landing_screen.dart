@@ -634,7 +634,7 @@ class _Brand extends StatelessWidget {
                   .copyWith(color: AppColors.primary, fontSize: 18)),
         ]),
         const SizedBox(height: 6),
-        Text('© 2024 MnemoApp. Built for the curious.',
+        Text('© 2026 MnemoApp. Built for the curious.',
             style: AppTextStyles.bodyBase.copyWith(fontSize: 13)),
       ],
     );
