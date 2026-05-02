@@ -1,0 +1,92 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MnemoApp — Firestore Security Rules
+//
+// Paths covered:
+//   public_decks/{deckId}                          — public deck catalogue
+//   users/{uid}                                    — user profile documents
+//   users/{uid}/decks/{deckId}                     — private deck documents
+//   users/{uid}/decks/{deckId}/cards/{cardId}      — cards (private + public)
+//   users/{uid}/following/{followeeUid}            — follow graph (outbound)
+//   users/{uid}/followers/{followerUid}            — follow graph (inbound)
+//   users/{uid}/notifications/{notificationId}     — in-app notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User documents ────────────────────────────────────────────────────
+    // Owner has full access.
+    // Any authenticated user may read the profile fields (fullName, username,
+    // photoUrl) so that PublicProfileScreen can display them.
+    match /users/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid;
+
+      // ── Private deck sub-collection ─────────────────────────────────────
+      // Owner has full access.
+      match /decks/{deckId} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == uid;
+
+        // Cards: owner has full access.
+        // Any authenticated user may read (get or list) cards when the parent
+        // deck is public — i.e. a mirror doc exists in public_decks/{deckId}.
+        // The list permission is required for cloneDeck() which queries the
+        // entire cards sub-collection.
+        match /cards/{cardId} {
+          allow read, write: if request.auth != null
+                             && request.auth.uid == uid;
+
+          allow read: if request.auth != null
+                      && exists(/databases/$(database)/documents/public_decks/$(deckId));
+        }
+      }
+
+      // ── Follow graph — outbound (following) ──────────────────────────────
+      match /following/{followeeUid} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid == uid;
+      }
+
+      // ── Follow graph — inbound (followers) ───────────────────────────────
+      // Any authenticated user may read the followers sub-collection so that
+      // PublicProfileScreen can check follow state and count followers.
+      match /followers/{followerUid} {
+        allow read:  if request.auth != null;
+        allow write: if request.auth != null
+                     && request.auth.uid == followerUid;
+      }
+
+      // ── In-app notifications ──────────────────────────────────────────────
+      // Write is open to any authenticated user so that ShareService can
+      // fan-out notification documents into other users' sub-collections.
+      match /notifications/{notificationId} {
+        allow read: if request.auth != null
+                    && request.auth.uid == uid;
+        allow write: if request.auth != null;
+      }
+    }
+
+    // ── Public deck catalogue ─────────────────────────────────────────────
+    match /public_decks/{deckId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.ownerUid;
+
+      // Owner can do full updates (title, tag, etc.).
+      // Any authenticated user can increment cloneCount (clone operation).
+      allow update: if request.auth != null
+                    && (request.auth.uid == resource.data.ownerUid
+                        || (request.resource.data.diff(resource.data).affectedKeys()
+                              .hasOnly(['cloneCount'])));
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+    }
+
+  }
+}

@@ -95,7 +95,7 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
             bottom: false,
             child: Column(
               children: [
-                _HomeTopBar(photoUrl: _photoUrl),
+              _HomeTopBar(photoUrl: _photoUrl),
                 Expanded(
                   child: _loading
                       ? const Center(
@@ -127,6 +127,20 @@ class _HomeTopBar extends StatelessWidget {
   const _HomeTopBar({this.photoUrl});
   final String? photoUrl;
 
+  // ── Unread notification count stream ─────────────────────────────────────
+
+  Stream<int> _unreadCountStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return Stream.value(0);
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('notifications')
+        .where('read', isEqualTo: false)
+        .snapshots()
+        .map((snap) => snap.docs.length);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ClipRect(
@@ -155,30 +169,94 @@ class _HomeTopBar extends StatelessWidget {
                 ),
               ),
 
-              // Avatar → navigates to Profile
-              GestureDetector(
-                onTap: () => Navigator.of(context)
-                    .pushReplacementNamed(AppRoutes.profile),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border:
-                        Border.all(color: AppColors.primaryContainer, width: 2),
-                    color: AppColors.primaryContainer.withOpacity(0.25),
-                    image: photoUrl != null
-                        ? DecorationImage(
-                            image: NetworkImage(photoUrl!),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
+              // Right side: bell icon + avatar
+              Row(
+                children: [
+                  // ── Bell icon with unread badge ───────────────────────────
+                  StreamBuilder<int>(
+                    stream: _unreadCountStream(),
+                    builder: (context, snapshot) {
+                      final unreadCount = snapshot.data ?? 0;
+                      return GestureDetector(
+                        onTap: () => Navigator.of(context)
+                            .pushNamed(AppRoutes.notifications),
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.primaryContainer
+                                    .withValues(alpha: 0.25),
+                              ),
+                              child: const Icon(
+                                Icons.notifications_outlined,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
+                            ),
+                            if (unreadCount > 0)
+                              Positioned(
+                                top: -2,
+                                right: -2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.error,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
+                                  child: Text(
+                                    unreadCount > 99
+                                        ? '99+'
+                                        : '$unreadCount',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  child: photoUrl == null
-                      ? const Icon(Icons.person_rounded,
-                          color: AppColors.primary, size: 20)
-                      : null,
-                ),
+                  const SizedBox(width: 10),
+
+                  // ── Avatar → navigates to Profile ─────────────────────────
+                  GestureDetector(
+                    onTap: () => Navigator.of(context)
+                        .pushReplacementNamed(AppRoutes.profile),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: AppColors.primaryContainer, width: 2),
+                        color: AppColors.primaryContainer.withOpacity(0.25),
+                        image: photoUrl != null
+                            ? DecorationImage(
+                                image: NetworkImage(photoUrl!),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: photoUrl == null
+                          ? const Icon(Icons.person_rounded,
+                              color: AppColors.primary, size: 20)
+                          : null,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -853,6 +931,8 @@ class _HomeBottomNavBar extends StatelessWidget {
     _NavItem(icon: Icons.home_outlined, label: 'Home', route: '/home'),
     _NavItem(icon: Icons.layers_outlined, label: 'Decks', route: '/decks'),
     _NavItem(
+        icon: Icons.explore_outlined, label: 'Discover', route: '/discover'),
+    _NavItem(
         icon: Icons.analytics_outlined, label: 'Progress', route: '/progress'),
     _NavItem(
         icon: Icons.person_outline_rounded,
@@ -863,6 +943,7 @@ class _HomeBottomNavBar extends StatelessWidget {
   static final Map<IconData, IconData> _filledIconMap = {
     Icons.home_outlined: Icons.home_rounded,
     Icons.layers_outlined: Icons.layers_rounded,
+    Icons.explore_outlined: Icons.explore_rounded,
     Icons.analytics_outlined: Icons.analytics_rounded,
     Icons.person_outline_rounded: Icons.person_rounded,
   };
