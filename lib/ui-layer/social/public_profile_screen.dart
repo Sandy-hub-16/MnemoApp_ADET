@@ -31,8 +31,71 @@ class PublicProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final args =
-        ModalRoute.of(context)!.settings.arguments as PublicProfileArgs;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args == null || args is! PublicProfileArgs) {
+      // Navigated without args (e.g. direct URL or missing fromUid)
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                color: AppColors.background.withValues(alpha: 0.80),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: AppColors.onSurface,
+                        size: 20,
+                      ),
+                    ),
+                    Text(
+                      'Profile',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.person_off_rounded,
+                          size: 64,
+                          color: AppColors.outline.withValues(alpha: 0.5),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Profile not found.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return _PublicProfileBody(targetUid: args.targetUid);
   }
 }
@@ -113,6 +176,25 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
       final followerAgg = results[2] as AggregateQuerySnapshot;
       final followingAgg = results[3] as AggregateQuerySnapshot;
 
+      // If the profile is private and the viewer is not the owner, show lock screen
+      if (profile.isPrivate && currentUid != widget.targetUid) {
+        setState(() {
+          _isLoadingProfile = false;
+          _errorMessage = 'This account is private.';
+        });
+        return;
+      }
+
+      // Send a "profile viewed" notification to the owner (fire-and-forget)
+      // Only when viewing someone else's public profile
+      if (currentUid.isNotEmpty && currentUid != widget.targetUid && !profile.isPrivate) {
+        _sendProfileViewedNotification(
+          viewerUid: currentUid,
+          ownerUid: widget.targetUid,
+          ownerUsername: profile.username,
+        );
+      }
+
       setState(() {
         _profile = profile;
         _isFollowing = followDoc.exists;
@@ -127,16 +209,48 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
         _errorMessage = e.message;
       });
     } catch (e) {
+      debugPrint('[PublicProfileScreen._loadProfile] error: $e');
       if (!mounted) return;
-      // FirebaseException with permission-denied means the profile is private
-      final isPermissionDenied = e.toString().contains('permission-denied') ||
-          e.toString().contains('PERMISSION_DENIED');
       setState(() {
         _isLoadingProfile = false;
-        _errorMessage = isPermissionDenied
-            ? 'This account is private.'
-            : 'Failed to load profile. Please try again.';
+        _errorMessage = 'Failed to load profile. Please try again.';
       });
+    }
+  }
+
+  // ── Profile viewed notification ───────────────────────────────────────────
+
+  /// Writes a "profile_viewed" notification to the profile owner so they know
+  /// someone visited their public profile. Fire-and-forget; errors are silent.
+  Future<void> _sendProfileViewedNotification({
+    required String viewerUid,
+    required String ownerUid,
+    required String ownerUsername,
+  }) async {
+    try {
+      // Get the viewer's username for the notification message
+      final viewerSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(viewerUid)
+          .get();
+      final viewerUsername =
+          viewerSnap.data()?['username'] as String? ?? 'Someone';
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(ownerUid)
+          .collection('notifications')
+          .add({
+        'type': 'profile_viewed',
+        'fromUid': viewerUid,
+        'fromUsername': viewerUsername,
+        'deckId': '',
+        'deckTitle': '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+    } catch (_) {
+      // Silently ignore — notification is best-effort
     }
   }
 

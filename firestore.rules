@@ -47,8 +47,9 @@ service cloud.firestore {
 
       // ── Follow graph — outbound (following) ──────────────────────────────
       match /following/{followeeUid} {
-        allow read, write: if request.auth != null
-                           && request.auth.uid == uid;
+        allow read:  if request.auth != null;
+        allow write: if request.auth != null
+                     && request.auth.uid == uid;
       }
 
       // ── Follow graph — inbound (followers) ───────────────────────────────
