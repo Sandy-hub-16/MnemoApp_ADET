@@ -10,6 +10,7 @@ import 'deck-quiz_screen.dart';
 import 'edit_deck_screen.dart';
 import 'create_deck_screen.dart';
 import '../../../business-layer/services/deck_service.dart';
+import '../../../business-layer/services/share_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK HUB SCREEN  —  route: /decks
@@ -47,6 +48,16 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     'Organic Chem',
     'World History',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Silently repair any stale cardCount values on public mirror docs.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      ShareService.repairCardCounts(uid: uid).catchError((_) {});
+    }
+  }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _deckStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -368,6 +379,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     progress:
                                         (deck['progress'] ?? 0.0).toDouble(),
                                     progressColor: AppColors.primary,
+                                    visibility: deck['visibility'] as String? ?? 'private',
                                   ),
                                 ),
                               );
@@ -791,7 +803,11 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
       "title": title,
       "tag": "AI",
       "isDraft": false,
+      "visibility": "private",
+      "cardCount": cards.length,
+      "targetCardCount": cards.length,
       "createdAt": FieldValue.serverTimestamp(),
+      "updatedAt": FieldValue.serverTimestamp(),
       "progress": 0.0,
     });
 
@@ -1310,7 +1326,7 @@ class _DraftOptionsSheet extends StatelessWidget {
 // DECK CARD (completed decks only)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DeckCard extends StatelessWidget {
+class _DeckCard extends StatefulWidget {
   const _DeckCard({
     required this.deckId,
     required this.deckTitle,
@@ -1321,6 +1337,7 @@ class _DeckCard extends StatelessWidget {
     required this.subtitle,
     required this.progress,
     required this.progressColor,
+    required this.visibility,
   });
 
   final String deckId;
@@ -1332,13 +1349,41 @@ class _DeckCard extends StatelessWidget {
   final String subtitle;
   final double progress;
   final Color progressColor;
+  final String visibility;
+
+  @override
+  State<_DeckCard> createState() => _DeckCardState();
+}
+
+class _DeckCardState extends State<_DeckCard> {
+  late String _currentVisibility;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentVisibility = widget.visibility;
+  }
+
+  @override
+  void didUpdateWidget(_DeckCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visibility != widget.visibility) {
+      _currentVisibility = widget.visibility;
+    }
+  }
+
+  void _onVisibilityChanged(String newVisibility) {
+    setState(() => _currentVisibility = newVisibility);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final isPublic = _currentVisibility == 'public';
+
     return GestureDetector(
       onTap: () => Navigator.of(context).pushNamed(
         '/quiz',
-        arguments: QuizArgs(deckId: deckId, deckTitle: deckTitle),
+        arguments: QuizArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
       ),
       child: Container(
         padding: const EdgeInsets.all(20),
@@ -1356,26 +1401,74 @@ class _DeckCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Tag + More icon ───────────────────────────────────────
+            // ── Tag + Visibility chip + More icon ─────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: tagColor,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    tag.toUpperCase(),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                      color: tagTextColor,
-                      letterSpacing: 1.2,
+                Row(
+                  children: [
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: widget.tagColor,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        widget.tag.toUpperCase(),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: widget.tagTextColor,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    // ── Visibility chip ──────────────────────────────
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isPublic
+                            ? AppColors.primary.withOpacity(0.10)
+                            : AppColors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: isPublic
+                              ? AppColors.primary.withOpacity(0.35)
+                              : AppColors.outlineVariant,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isPublic
+                                ? Icons.public_rounded
+                                : Icons.lock_outline_rounded,
+                            size: 11,
+                            color: isPublic
+                                ? AppColors.primary
+                                : AppColors.outline,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isPublic ? 'Public' : 'Private',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: isPublic
+                                  ? AppColors.primary
+                                  : AppColors.outline,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 GestureDetector(
                   onTap: () => _showDeckMenu(context),
@@ -1388,7 +1481,7 @@ class _DeckCard extends StatelessWidget {
 
             // ── Title + subtitle ──────────────────────────────────────
             Text(
-              title,
+              widget.title,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
@@ -1398,7 +1491,7 @@ class _DeckCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              subtitle,
+              widget.subtitle,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 color: AppColors.onSurfaceVariant,
@@ -1421,7 +1514,7 @@ class _DeckCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${(progress * 100).round()}%',
+                  '${(widget.progress * 100).round()}%',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
@@ -1435,10 +1528,11 @@ class _DeckCard extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(999),
               child: LinearProgressIndicator(
-                value: progress,
+                value: widget.progress,
                 minHeight: 8,
                 backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-                valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(widget.progressColor),
               ),
             ),
           ],
@@ -1451,7 +1545,12 @@ class _DeckCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DeckOptionsSheet(deckId: deckId, deckTitle: deckTitle),
+      builder: (_) => _DeckOptionsSheet(
+        deckId: widget.deckId,
+        deckTitle: widget.deckTitle,
+        currentVisibility: _currentVisibility,
+        onVisibilityChanged: _onVisibilityChanged,
+      ),
     );
   }
 }
@@ -1460,20 +1559,31 @@ class _DeckCard extends StatelessWidget {
 // DECK OPTIONS SHEET (completed decks)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DeckOptionsSheet extends StatelessWidget {
+class _DeckOptionsSheet extends StatefulWidget {
   const _DeckOptionsSheet({
     required this.deckId,
     required this.deckTitle,
+    required this.currentVisibility,
+    required this.onVisibilityChanged,
   });
 
   final String deckId;
   final String deckTitle;
+  final String currentVisibility;
+  final ValueChanged<String> onVisibilityChanged;
+
+  @override
+  State<_DeckOptionsSheet> createState() => _DeckOptionsSheetState();
+}
+
+class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
+  bool _isTogglingVisibility = false;
 
   void _handleEdit(BuildContext context) {
     Navigator.pop(context);
     Navigator.of(context).pushNamed(
       '/edit-deck',
-      arguments: EditDeckArgs(deckId: deckId, deckTitle: deckTitle),
+      arguments: EditDeckArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
     );
   }
 
@@ -1484,7 +1594,7 @@ class _DeckOptionsSheet extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         backgroundColor: AppColors.surfaceContainerLowest,
         title: Text(
-          'Delete "$deckTitle"?',
+          'Delete "${widget.deckTitle}"?',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w800,
             color: AppColors.onSurface,
@@ -1519,7 +1629,7 @@ class _DeckOptionsSheet extends StatelessWidget {
     Navigator.pop(context);
 
     try {
-      await DeckService.deleteDeck(deckId);
+      await DeckService.deleteDeck(widget.deckId);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1538,8 +1648,75 @@ class _DeckOptionsSheet extends StatelessWidget {
     }
   }
 
+  // ── Visibility toggle ───────────────────────────────────────────────────
+
+  Future<void> _handleVisibilityToggle(BuildContext context) async {
+    if (_isTogglingVisibility) return;
+
+    final newVisibility =
+        widget.currentVisibility == 'public' ? 'private' : 'public';
+
+    setState(() => _isTogglingVisibility = true);
+
+    try {
+      await ShareService.setVisibility(
+        deckId: widget.deckId,
+        visibility: newVisibility,
+      );
+
+      // Update the card chip immediately via callback
+      widget.onVisibilityChanged(newVisibility);
+
+      if (context.mounted) Navigator.pop(context);
+    } on StateError catch (e) {
+      // Draft deck — cannot be shared
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              e.message,
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          ),
+        );
+      }
+    } on ArgumentError {
+      // Visibility already equals requested value — silently dismiss
+      if (context.mounted) Navigator.pop(context);
+    } catch (e, st) {
+      // FirebaseException or any other network error
+      debugPrint('[ShareService.setVisibility] error: $e\n$st');
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Failed to update visibility. Please try again.',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isTogglingVisibility = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isPublic = widget.currentVisibility == 'public';
+
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1566,7 +1743,8 @@ class _DeckOptionsSheet extends StatelessWidget {
               Navigator.pop(context);
               Navigator.of(context).pushNamed(
                 '/quiz',
-                arguments: QuizArgs(deckId: deckId, deckTitle: deckTitle),
+                arguments:
+                    QuizArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
               );
             },
           ),
@@ -1575,11 +1753,64 @@ class _DeckOptionsSheet extends StatelessWidget {
             label: 'Edit Deck',
             onTap: () => _handleEdit(context),
           ),
-          _SheetOption(
-            icon: Icons.share_outlined,
-            label: 'Share',
-            onTap: () => Navigator.pop(context),
-          ),
+          // ── Visibility toggle option ──────────────────────────────────
+          _isTogglingVisibility
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                )
+              : ListTile(
+                  leading: Icon(
+                    isPublic
+                        ? Icons.lock_outline_rounded
+                        : Icons.public_rounded,
+                    color: isPublic
+                        ? AppColors.onSurfaceVariant
+                        : AppColors.primary,
+                    size: 22,
+                  ),
+                  title: Text(
+                    isPublic ? 'Make Private' : 'Make Public',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: isPublic
+                          ? AppColors.onSurface
+                          : AppColors.primary,
+                    ),
+                  ),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isPublic
+                          ? AppColors.primary.withOpacity(0.10)
+                          : AppColors.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: isPublic
+                            ? AppColors.primary.withOpacity(0.35)
+                            : AppColors.outlineVariant,
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      isPublic ? 'Public' : 'Private',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: isPublic
+                            ? AppColors.primary
+                            : AppColors.outline,
+                      ),
+                    ),
+                  ),
+                  onTap: () => _handleVisibilityToggle(context),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
           _SheetOption(
             icon: Icons.delete_outline_rounded,
             label: 'Delete Deck',
@@ -1665,6 +1896,8 @@ class _DeckBottomNavBar extends StatelessWidget {
     _NavItem(icon: Icons.home_outlined, label: 'Home', route: '/home'),
     _NavItem(icon: Icons.layers_outlined, label: 'Decks', route: '/decks'),
     _NavItem(
+        icon: Icons.explore_outlined, label: 'Discover', route: '/discover'),
+    _NavItem(
         icon: Icons.analytics_outlined, label: 'Progress', route: '/progress'),
     _NavItem(
         icon: Icons.person_outline_rounded,
@@ -1748,6 +1981,7 @@ class _DeckBottomNavBar extends StatelessWidget {
   static final _filledIconMap = {
     Icons.home_outlined: Icons.home_rounded,
     Icons.layers_outlined: Icons.layers_rounded,
+    Icons.explore_outlined: Icons.explore_rounded,
     Icons.analytics_outlined: Icons.analytics_rounded,
     Icons.person_outline_rounded: Icons.person_rounded,
   };

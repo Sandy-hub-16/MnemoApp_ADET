@@ -153,7 +153,7 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
           ),
         ],
       ),
-      bottomNavigationBar: const _ProgressBottomNavBar(activeIndex: 2),
+      bottomNavigationBar: const _ProgressBottomNavBar(activeIndex: 3),
     );
   }
 
@@ -696,6 +696,11 @@ class _ProgressBottomNavBar extends StatelessWidget {
         filled: Icons.layers_rounded,
         label: 'Decks',
         route: '/decks'),
+    _NavItem(
+        icon: Icons.explore_outlined,
+        filled: Icons.explore_rounded,
+        label: 'Discover',
+        route: '/discover'),
     _NavItem(
         icon: Icons.analytics_outlined,
         filled: Icons.analytics_rounded,

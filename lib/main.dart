@@ -15,6 +15,11 @@ import 'ui-layer/main_screens/sub_screens/profile-personal-info_screen.dart';
 import 'ui-layer/main_screens/deck/deck_screen.dart';
 import 'ui-layer/main_screens/deck/deck-quiz_screen.dart';
 import 'ui-layer/main_screens/progress_screen.dart';
+import 'ui-layer/social/notification_screen.dart';
+import 'ui-layer/social/deck_discovery_screen.dart';
+import 'ui-layer/social/shared_deck_detail_screen.dart';
+import 'ui-layer/social/public_profile_screen.dart';
+import 'ui-layer/social/social_feed_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 
@@ -88,9 +93,15 @@ abstract final class AppRoutes {
   static const String accountSettings = '/account-settings';
   static const String decks = '/decks';
   static const String createDeck = '/create-deck';
-  static const String editDeck = '/edit-deck'; // ← NEW
+  static const String editDeck = '/edit-deck';
   static const String quiz = '/quiz';
   static const String progress = '/progress';
+  // ── Social routes (wired fully in Task 14) ────────────────────────────────
+  static const String discover = '/discover';
+  static const String sharedDeckDetail = '/shared-deck-detail';
+  static const String publicProfile = '/public-profile';
+  static const String feed = '/feed';
+  static const String notifications = '/notifications';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +128,11 @@ abstract final class AppRouter {
         ),
       AppRoutes.quiz => const QuizScreen(),
       AppRoutes.progress => const ProgressScreen(),
+      AppRoutes.notifications => const NotificationScreen(),
+      AppRoutes.discover => const DeckDiscoveryScreen(),
+      AppRoutes.sharedDeckDetail => const SharedDeckDetailScreen(),
+      AppRoutes.publicProfile => const PublicProfileScreen(),
+      AppRoutes.feed => const SocialFeedScreen(),
       _ => const HomeScreen(),
     };
 

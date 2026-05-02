@@ -75,7 +75,7 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
           ),
         ],
       ),
-      bottomNavigationBar: const _BottomNavBar(activeIndex: 3),
+      bottomNavigationBar: const _BottomNavBar(activeIndex: 4),
     );
   }
 }
@@ -1113,6 +1113,11 @@ class _BottomNavBar extends StatelessWidget {
         filled: Icons.layers_rounded,
         label: 'Decks',
         route: '/decks'),
+    _NavItem(
+        icon: Icons.explore_outlined,
+        filled: Icons.explore_rounded,
+        label: 'Discover',
+        route: '/discover'),
     _NavItem(
         icon: Icons.analytics_outlined,
         filled: Icons.analytics_rounded,

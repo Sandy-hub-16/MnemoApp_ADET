@@ -29,9 +29,14 @@ import '../../landing_page/app_theme.dart';
 // ── Route argument bag ────────────────────────────────────────────────────────
 
 class QuizArgs {
-  const QuizArgs({required this.deckId, required this.deckTitle});
+  const QuizArgs({
+    required this.deckId,
+    required this.deckTitle,
+    this.ownerUid, // optional: set when quizzing a public deck owned by someone else
+  });
   final String deckId;
   final String deckTitle;
+  final String? ownerUid; // if null, defaults to the current user's own deck
 }
 
 // ── Card model (mirrors Firestore schema from create_deck_screen) ─────────────
@@ -186,17 +191,24 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   Future<void> _loadCards() async {
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
       final id = _deckId;
 
-      if (uid == null || id.isEmpty) {
+      if (currentUid == null || id.isEmpty) {
         setState(() => _phase = _QuizPhase.quiz);
         return;
       }
 
+      // Use ownerUid from args if provided (public deck owned by someone else),
+      // otherwise fall back to the current user's own deck.
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final ownerUid = (args is QuizArgs && args.ownerUid != null)
+          ? args.ownerUid!
+          : currentUid;
+
       final snap = await FirebaseFirestore.instance
           .collection('users')
-          .doc(uid)
+          .doc(ownerUid)
           .collection('decks')
           .doc(id)
           .collection('cards')
