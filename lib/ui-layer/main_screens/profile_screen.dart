@@ -1,11 +1,7 @@
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import '../landing_page/app_theme.dart';
 import '../../business-layer/services/auth_google_service.dart';
 
@@ -213,96 +209,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
     }
   }
 
-  // ── Photo picker & uploader ──────────────────────────────────────────────
-
-  Future<void> _onAvatarTap() async {
-    final source = await _showImageSourceSheet();
-    if (source == null) return;
-    await _pickAndUploadPhoto(source);
-  }
-
-  Future<ImageSource?> _showImageSourceSheet() {
-    return showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _ImageSourceSheet(),
-    );
-  }
-
-  Future<void> _pickAndUploadPhoto(ImageSource source) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-
-    try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
-        source: source,
-        imageQuality: 85,
-        maxWidth: 800,
-        maxHeight: 800,
-      );
-      if (picked == null) return;
-
-      setState(() => _uploadingPhoto = true);
-
-      final ref =
-          FirebaseStorage.instance.ref().child('avatars').child('$uid.jpg');
-
-      if (kIsWeb) {
-        final bytes = await picked.readAsBytes();
-        await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-      } else {
-        await ref.putFile(
-          File(picked.path),
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-      }
-
-      final downloadUrl = await ref.getDownloadURL();
-
-      await FirebaseAuth.instance.currentUser!.updatePhotoURL(downloadUrl);
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .update({'photoUrl': downloadUrl});
-
-      if (mounted) {
-        setState(() {
-          _photoUrl = downloadUrl;
-          _uploadingPhoto = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Profile photo updated!',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: AppColors.primary,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Photo upload error: $e');
-      if (mounted) {
-        setState(() => _uploadingPhoto = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to update photo. Please try again.',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
-    }
-  }
+  // ── Photo picker & uploader moved to profile-personal-info_screen.dart ──
 
   @override
   Widget build(BuildContext context) {
@@ -333,7 +240,6 @@ class _ProfileBodyState extends State<_ProfileBody> {
             subtitle: subtitleLine,
             photoUrl: _photoUrl,
             uploadingPhoto: _uploadingPhoto,
-            onAvatarTap: _onAvatarTap,
           ),
           const SizedBox(height: 32),
 
@@ -404,7 +310,6 @@ class _ProfileHeader extends StatelessWidget {
   const _ProfileHeader({
     required this.fullName,
     required this.subtitle,
-    required this.onAvatarTap,
     this.photoUrl,
     this.uploadingPhoto = false,
   });
@@ -413,90 +318,51 @@ class _ProfileHeader extends StatelessWidget {
   final String subtitle;
   final String? photoUrl;
   final bool uploadingPhoto;
-  final VoidCallback onAvatarTap;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // ── Avatar stack ─────────────────────────────────────────────────
-        GestureDetector(
-          onTap: onAvatarTap,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // Gradient ring
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary.withOpacity(0.25),
-                      AppColors.primaryContainer.withOpacity(0.40),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                padding: const EdgeInsets.all(3),
-                child: _AvatarContent(
-                  photoUrl: photoUrl,
-                  fullName: fullName,
-                  uploading: uploadingPhoto,
+        // ── Avatar (display only — edit is in Personal Information) ──────
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary.withOpacity(0.25),
+                    AppColors.primaryContainer.withOpacity(0.40),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
-
-              // Upload progress overlay
-              if (uploadingPhoto)
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.black.withOpacity(0.4),
-                    ),
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 3,
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Edit pen button (bottom-right)
-              Positioned(
-                bottom: 2,
-                right: 2,
+              padding: const EdgeInsets.all(3),
+              child: _AvatarContent(
+                photoUrl: photoUrl,
+                fullName: fullName,
+                uploading: uploadingPhoto,
+              ),
+            ),
+            if (uploadingPhoto)
+              Positioned.fill(
                 child: Container(
-                  width: 34,
-                  height: 34,
                   decoration: BoxDecoration(
-                    color: AppColors.primary,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.surfaceContainerLowest,
-                      width: 2.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+                    color: Colors.black.withOpacity(0.4),
                   ),
-                  child: Icon(
-                    uploadingPhoto
-                        ? Icons.hourglass_top_rounded
-                        : Icons.edit_rounded,
-                    color: Colors.white,
-                    size: 16,
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 3,
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
 
         const SizedBox(width: 20),
@@ -953,141 +819,6 @@ class _LogOutButton extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IMAGE SOURCE BOTTOM SHEET
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ImageSourceSheet extends StatelessWidget {
-  const _ImageSourceSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle bar
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.outline.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(99),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Update Profile Photo',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Choose a source for your new photo',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SourceOption(
-                    icon: Icons.camera_alt_rounded,
-                    label: 'Camera',
-                    color: AppColors.primary,
-                    bgColor: AppColors.primaryContainer.withOpacity(0.25),
-                    onTap: () => Navigator.of(context).pop(ImageSource.camera),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _SourceOption(
-                    icon: Icons.photo_library_rounded,
-                    label: 'Gallery',
-                    color: AppColors.secondary,
-                    bgColor: AppColors.secondaryContainer.withOpacity(0.25),
-                    onTap: () => Navigator.of(context).pop(ImageSource.gallery),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.outline,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-class _SourceOption extends StatelessWidget {
-  const _SourceOption({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.bgColor,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final Color bgColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 32),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-          ],
         ),
       ),
     );

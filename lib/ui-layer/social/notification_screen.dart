@@ -126,7 +126,19 @@ class _NotificationBodyState extends State<_NotificationBody> {
 
     if (!mounted) return;
 
-    // 2. Check whether the deck still exists in public_decks
+    // 2. Handle by notification type
+    if (notification.type == 'profile_viewed') {
+      // Navigate to the viewer's public profile only if we have a valid UID
+      if (notification.fromUid.isNotEmpty) {
+        Navigator.of(context).pushNamed(
+          AppRoutes.publicProfile,
+          arguments: PublicProfileArgs(targetUid: notification.fromUid),
+        );
+      }
+      return;
+    }
+
+    // 3. new_shared_deck — check whether the deck still exists
     final deckDoc = await FirebaseFirestore.instance
         .collection('public_decks')
         .doc(notification.deckId)
@@ -135,7 +147,6 @@ class _NotificationBodyState extends State<_NotificationBody> {
     if (!mounted) return;
 
     if (deckDoc.exists) {
-      // Navigate to the shared deck detail screen
       Navigator.of(context).pushNamed(
         AppRoutes.sharedDeckDetail,
         arguments: SharedDeckDetailArgs(

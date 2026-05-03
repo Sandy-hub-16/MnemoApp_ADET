@@ -89,9 +89,13 @@ class NotificationTile extends StatelessWidget {
                     : AppColors.surfaceContainerLow,
               ),
               child: Icon(
-                isUnread
-                    ? Icons.notifications_rounded
-                    : Icons.notifications_none_rounded,
+                notification.type == 'profile_viewed'
+                    ? (isUnread
+                        ? Icons.person_rounded
+                        : Icons.person_outline_rounded)
+                    : (isUnread
+                        ? Icons.notifications_rounded
+                        : Icons.notifications_none_rounded),
                 size: 20,
                 color: isUnread ? AppColors.primary : AppColors.outline,
               ),
@@ -119,14 +123,19 @@ class NotificationTile extends StatelessWidget {
                             color: AppColors.onSurface,
                           ),
                         ),
-                        const TextSpan(text: ' shared a new deck: '),
                         TextSpan(
-                          text: notification.deckTitle,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary,
-                          ),
+                          text: notification.type == 'profile_viewed'
+                              ? ' viewed your profile'
+                              : ' shared a new deck: ',
                         ),
+                        if (notification.type != 'profile_viewed')
+                          TextSpan(
+                            text: notification.deckTitle,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
                       ],
                     ),
                   ),

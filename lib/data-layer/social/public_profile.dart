@@ -14,12 +14,14 @@ class PublicProfile {
     required this.fullName,
     required this.username,
     this.photoUrl,
+    this.isPrivate = false,
   });
 
   final String uid;
   final String fullName;
   final String username;
   final String? photoUrl;
+  final bool isPrivate;
 
   // ── Firestore deserialization ─────────────────────────────────────────────
 
@@ -32,6 +34,7 @@ class PublicProfile {
       fullName: data['fullName'] as String? ?? '',
       username: data['username'] as String? ?? '',
       photoUrl: data['photoUrl'] as String?,
+      isPrivate: data['isPrivate'] as bool? ?? false,
     );
   }
 }
