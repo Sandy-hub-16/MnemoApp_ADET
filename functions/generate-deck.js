@@ -1,4 +1,5 @@
 const axios = require("axios");
+const pdfParse = require("pdf-parse");
 const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 
@@ -6,7 +7,7 @@ const groqKey = defineSecret("GROQ_API_KEY");
 const openRouterKey = defineSecret("OPENROUTER_API_KEY");
 
 // --- Groq (Primary) ---
-async function generateWithGroq(text, key) {
+async function generateWithGroq(text, key, count) {
     const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
@@ -14,7 +15,7 @@ async function generateWithGroq(text, key) {
             messages: [
                 {
                     role: "user",
-                    content: `Generate EXACTLY 20 flashcards AND a short deck title based on the content.
+                    content: `Generate EXACTLY ${count} flashcards AND a short deck title based on the content.
 Return JSON ONLY, no markdown, no explanation:
 {"title":"...","cards":[{"question":"...","answer":"..."}]}
 
@@ -39,15 +40,15 @@ ${text}`
 }
 
 // --- OpenRouter (Fallback) ---
-async function generateWithOpenRouter(text, key) {
+async function generateWithOpenRouter(text, key, count) {
     const response = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
         {
-            model: "meta-llama/llama-3.1-8b-instruct:free",
+            model: "openai/gpt-oss-120b:free",
             messages: [
                 {
                     role: "user",
-                    content: `Generate EXACTLY 20 flashcards AND a short deck title based on the content.
+                    content: `Generate EXACTLY ${count} flashcards AND a short deck title based on the content.
 Return JSON ONLY, no markdown, no explanation:
 {"title":"...","cards":[{"question":"...","answer":"..."}]}
 
@@ -72,27 +73,36 @@ ${text}`
     return JSON.parse(content);
 }
 
-exports.generateDeck = onRequest({ secrets: [groqKey, openRouterKey] }, async (req, res) => {
-
-    res.set("Access-Control-Allow-Origin", "*");
-    res.set("Access-Control-Allow-Methods", "POST");
-    res.set("Access-Control-Allow-Headers", "Content-Type");
-
-    if (req.method === "OPTIONS") {
-        return res.status(204).send("");
-    }
-
+exports.generateDeck = onRequest(
+    { secrets: [groqKey, openRouterKey], cors: true },
+    async (req, res) => {
     try {
-        const text = req.body.text;
+        let text;
+
+        if (req.body.fileType === "pdf" && req.body.fileBase64) {
+            const buffer = Buffer.from(req.body.fileBase64, "base64");
+            const parsed = await pdfParse(buffer);
+            text = parsed.text;
+        } else {
+            text = req.body.text;
+        }
+
+        if (!text || text.trim().length === 0) {
+            return res.status(400).json({ error: "No text content could be extracted. Please provide a non-empty text or PDF file." });
+        }
+
+        const parsedCount = parseInt(req.body.questionCount, 10);
+        const count = isNaN(parsedCount) ? 20 : Math.min(30, Math.max(1, parsedCount));
+
         let usedProvider;
 
         let result;
         try {
-            result = await generateWithGroq(text, groqKey.value());
+            result = await generateWithGroq(text, groqKey.value(), count);
             usedProvider = "groq";
         } catch (groqError) {
             console.warn("⚠️ Groq failed, switching to OpenRouter:", groqError?.response?.data || groqError.message);
-            result = await generateWithOpenRouter(text, openRouterKey.value());
+            result = await generateWithOpenRouter(text, openRouterKey.value(), count);
             usedProvider = "openrouter";
         }
 
