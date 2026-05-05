@@ -8,11 +8,19 @@ const openRouterKey = defineSecret("OPENROUTER_API_KEY");
 
 // --- Groq (Primary) ---
 async function generateWithGroq(text, key, count, questionType) {
-    const typeInstruction = questionType === "identification"
-        ? `Each card must have ONLY "question" and "answer" fields.`
-        : questionType === "multiple_choice"
-            ? `Each card MUST have "question", "answer", and "options" fields. "options" must be an array of EXACTLY 4 strings (the correct answer plus 3 plausible distractors). The correct answer must appear somewhere in the "options" array.`
-            : `Mix the cards: roughly half should have "question", "answer", and "options" (4-choice multiple choice), and the other half should have ONLY "question" and "answer" (identification). "options" must be an array of EXACTLY 4 strings when present.`;
+    let typeInstruction;
+    if (questionType === "identification") {
+        typeInstruction = `Each card must have ONLY "question" and "answer" fields. Do NOT include "options".`;
+    } else if (questionType === "multiple_choice") {
+        typeInstruction = `Each card MUST have "question", "answer", and "options" fields. "options" MUST be an array of EXACTLY 4 strings. The correct answer must be one of the 4 options.`;
+    } else {
+        // both: explicit numbered split so the model cannot default to all-identification
+        const mcCount = Math.ceil(count / 2);
+        const idCount = count - mcCount;
+        typeInstruction = `You MUST produce EXACTLY ${mcCount} multiple-choice cards followed by EXACTLY ${idCount} identification cards.
+- Multiple-choice cards MUST have "question", "answer", and "options" fields. "options" MUST be an array of EXACTLY 4 strings. The correct answer must be one of the 4 options.
+- Identification cards MUST have ONLY "question" and "answer" fields. Do NOT include "options" on identification cards.`;
+    }
 
     const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -48,11 +56,18 @@ ${text}`
 
 // --- OpenRouter (Fallback) ---
 async function generateWithOpenRouter(text, key, count, questionType) {
-    const typeInstruction = questionType === "identification"
-        ? `Each card must have ONLY "question" and "answer" fields.`
-        : questionType === "multiple_choice"
-            ? `Each card MUST have "question", "answer", and "options" fields. "options" must be an array of EXACTLY 4 strings (the correct answer plus 3 plausible distractors). The correct answer must appear somewhere in the "options" array.`
-            : `Mix the cards: roughly half should have "question", "answer", and "options" (4-choice multiple choice), and the other half should have ONLY "question" and "answer" (identification). "options" must be an array of EXACTLY 4 strings when present.`;
+    let typeInstruction;
+    if (questionType === "identification") {
+        typeInstruction = `Each card must have ONLY "question" and "answer" fields. Do NOT include "options".`;
+    } else if (questionType === "multiple_choice") {
+        typeInstruction = `Each card MUST have "question", "answer", and "options" fields. "options" MUST be an array of EXACTLY 4 strings. The correct answer must be one of the 4 options.`;
+    } else {
+        const mcCount = Math.ceil(count / 2);
+        const idCount = count - mcCount;
+        typeInstruction = `You MUST produce EXACTLY ${mcCount} multiple-choice cards followed by EXACTLY ${idCount} identification cards.
+- Multiple-choice cards MUST have "question", "answer", and "options" fields. "options" MUST be an array of EXACTLY 4 strings. The correct answer must be one of the 4 options.
+- Identification cards MUST have ONLY "question" and "answer" fields. Do NOT include "options" on identification cards.`;
+    }
 
     const response = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -88,17 +103,45 @@ ${text}`
 }
 
 exports.generateDeck = onRequest(
-    { secrets: [groqKey, openRouterKey], cors: true },
+    { secrets: [groqKey, openRouterKey], cors: true, timeoutSeconds: 300 },
     async (req, res) => {
     try {
         let text;
 
         if (req.body.fileType === "pdf" && req.body.fileBase64) {
-            const buffer = Buffer.from(req.body.fileBase64, "base64");
-            const parsed = await pdfParse(buffer);
+            // Validate base64 payload is not empty
+            if (!req.body.fileBase64 || req.body.fileBase64.trim().length === 0) {
+                return res.status(400).json({ error: "PDF file data is empty. Please try uploading again." });
+            }
+            let buffer;
+            try {
+                buffer = Buffer.from(req.body.fileBase64, "base64");
+            } catch (decodeErr) {
+                return res.status(400).json({ error: "Could not decode the PDF file. The upload may be corrupted." });
+            }
+            if (buffer.length === 0) {
+                return res.status(400).json({ error: "The uploaded PDF file is empty." });
+            }
+            let parsed;
+            try {
+                parsed = await pdfParse(buffer);
+            } catch (parseErr) {
+                console.error("pdf-parse error:", parseErr.message);
+                return res.status(400).json({
+                    error: "Could not read text from this PDF. It may be a scanned image, password-protected, or corrupted. Try a text-based PDF or paste the content as text instead.",
+                });
+            }
             text = parsed.text;
+            // Truncate to 12,000 chars to stay within LLM context limits and avoid timeouts
+            if (text.length > 12000) {
+                text = text.slice(0, 12000);
+            }
         } else {
             text = req.body.text;
+            // Truncate plain text too
+            if (text && text.length > 12000) {
+                text = text.slice(0, 12000);
+            }
         }
 
         if (!text || text.trim().length === 0) {
