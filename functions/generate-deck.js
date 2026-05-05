@@ -7,7 +7,13 @@ const groqKey = defineSecret("GROQ_API_KEY");
 const openRouterKey = defineSecret("OPENROUTER_API_KEY");
 
 // --- Groq (Primary) ---
-async function generateWithGroq(text, key, count) {
+async function generateWithGroq(text, key, count, questionType) {
+    const typeInstruction = questionType === "identification"
+        ? `Each card must have ONLY "question" and "answer" fields.`
+        : questionType === "multiple_choice"
+            ? `Each card MUST have "question", "answer", and "options" fields. "options" must be an array of EXACTLY 4 strings (the correct answer plus 3 plausible distractors). The correct answer must appear somewhere in the "options" array.`
+            : `Mix the cards: roughly half should have "question", "answer", and "options" (4-choice multiple choice), and the other half should have ONLY "question" and "answer" (identification). "options" must be an array of EXACTLY 4 strings when present.`;
+
     const response = await axios.post(
         "https://api.groq.com/openai/v1/chat/completions",
         {
@@ -16,15 +22,16 @@ async function generateWithGroq(text, key, count) {
                 {
                     role: "user",
                     content: `Generate EXACTLY ${count} flashcards AND a short deck title based on the content.
+${typeInstruction}
 Return JSON ONLY, no markdown, no explanation:
-{"title":"...","cards":[{"question":"...","answer":"..."}]}
+{"title":"...","cards":[{"question":"...","answer":"...","options":["...","...","...","..."]}]}
 
 Text:
 ${text}`
                 }
             ],
             temperature: 0.7,
-            max_tokens: 2048
+            max_tokens: 4096
         },
         {
             headers: {
@@ -40,7 +47,13 @@ ${text}`
 }
 
 // --- OpenRouter (Fallback) ---
-async function generateWithOpenRouter(text, key, count) {
+async function generateWithOpenRouter(text, key, count, questionType) {
+    const typeInstruction = questionType === "identification"
+        ? `Each card must have ONLY "question" and "answer" fields.`
+        : questionType === "multiple_choice"
+            ? `Each card MUST have "question", "answer", and "options" fields. "options" must be an array of EXACTLY 4 strings (the correct answer plus 3 plausible distractors). The correct answer must appear somewhere in the "options" array.`
+            : `Mix the cards: roughly half should have "question", "answer", and "options" (4-choice multiple choice), and the other half should have ONLY "question" and "answer" (identification). "options" must be an array of EXACTLY 4 strings when present.`;
+
     const response = await axios.post(
         "https://openrouter.ai/api/v1/chat/completions",
         {
@@ -49,15 +62,16 @@ async function generateWithOpenRouter(text, key, count) {
                 {
                     role: "user",
                     content: `Generate EXACTLY ${count} flashcards AND a short deck title based on the content.
+${typeInstruction}
 Return JSON ONLY, no markdown, no explanation:
-{"title":"...","cards":[{"question":"...","answer":"..."}]}
+{"title":"...","cards":[{"question":"...","answer":"...","options":["...","...","...","..."]}]}
 
 
 Text:
 ${text}`
                 }
             ],
-            max_tokens: 2048
+            max_tokens: 4096
         },
         {
             headers: {
@@ -94,19 +108,27 @@ exports.generateDeck = onRequest(
         const parsedCount = parseInt(req.body.questionCount, 10);
         const count = isNaN(parsedCount) ? 20 : Math.min(30, Math.max(1, parsedCount));
 
+        // Normalise questionType — default to identification if absent/invalid
+        const validTypes = ["identification", "multiple_choice", "both"];
+        const questionType = validTypes.includes(req.body.questionType)
+            ? req.body.questionType
+            : "identification";
+
         let usedProvider;
 
         let result;
         try {
-            result = await generateWithGroq(text, groqKey.value(), count);
+            result = await generateWithGroq(text, groqKey.value(), count, questionType);
             usedProvider = "groq";
         } catch (groqError) {
             console.warn("⚠️ Groq failed, switching to OpenRouter:", groqError?.response?.data || groqError.message);
-            result = await generateWithOpenRouter(text, openRouterKey.value(), count);
+            result = await generateWithOpenRouter(text, openRouterKey.value(), count, questionType);
             usedProvider = "openrouter";
         }
 
-        const { title, cards } = result;
+        const { title } = result;
+        // Hard-cap: never return more cards than requested, regardless of what the LLM produced
+        const cards = Array.isArray(result.cards) ? result.cards.slice(0, count) : [];
         return res.json({ title, cards, provider: usedProvider });
 
     } catch (error) {
