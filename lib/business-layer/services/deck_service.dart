@@ -222,20 +222,62 @@ abstract final class DeckService {
 
   // ── DELETE DECK ───────────────────────────────────────────────────────────
 
-  /// Deletes a deck document and all of its cards in a single batch.
+  /// Deletes a deck document, all of its cards, and all related progress data.
   /// Works for both drafts and completed decks.
+  /// 
+  /// Cleanup includes:
+  /// - All cards in the deck
+  /// - The deck document itself
+  /// - All quiz attempts for this deck
+  /// - The deck progress document
   static Future<void> deleteDeck(String deckId) async {
     final batch = _db.batch();
 
-    // Delete all cards first.
+    // Delete all cards
     final cards = await _cardsRef(deckId).get();
     for (final card in cards.docs) {
       batch.delete(card.reference);
     }
 
-    // Delete the deck doc.
+    // Delete the deck doc
     batch.delete(_decksRef().doc(deckId));
 
     await batch.commit();
+
+    // Clean up progress data (separate batch to avoid size limits)
+    await _cleanupProgressData(deckId);
+  }
+
+  /// Removes all progress data associated with a deleted deck.
+  static Future<void> _cleanupProgressData(String deckId) async {
+    final userRef = _db.collection('users').doc(_uid);
+
+    // Delete all quiz attempts for this deck
+    final attempts = await userRef
+        .collection('quizAttempts')
+        .where('deckId', isEqualTo: deckId)
+        .get();
+
+    if (attempts.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in attempts.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+
+    // Delete the deck progress document
+    final progressDocs = await userRef
+        .collection('deckProgress')
+        .where('deckId', isEqualTo: deckId)
+        .get();
+
+    if (progressDocs.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in progressDocs.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
   }
 }

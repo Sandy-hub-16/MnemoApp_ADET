@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
+import '../../../business-layer/services/progress_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz
@@ -49,6 +50,7 @@ class _QuizCard {
     required this.answer,
     this.choices = const [],
     this.correctIndex = 0,
+    this.showRevealFirst = false,
   });
 
   factory _QuizCard.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -64,6 +66,7 @@ class _QuizCard {
       answer: d['answer'] as String? ?? '',
       choices: choices,
       correctIndex: (d['correctIndex'] as int?) ?? 0,
+      showRevealFirst: Random().nextDouble() < 0.25, // 25% chance
     );
   }
 
@@ -72,7 +75,8 @@ class _QuizCard {
   final String question;
   final String answer;
   final List<String> choices; // only populated for multiple_choice
-  final int correctIndex;    // index into choices[] of the correct answer
+  final int correctIndex; // index into choices[] of the correct answer
+  final bool showRevealFirst; // true = reveal-first mode, false = straight MC
 
   bool get isMultipleChoice => type == 'multiple_choice';
 }
@@ -80,7 +84,14 @@ class _QuizCard {
 // ── Per-card result ───────────────────────────────────────────────────────────
 
 class _CardResult {
-  const _CardResult({required this.correct});
+  const _CardResult({
+    required this.cardId,
+    required this.question,
+    required this.correct,
+  });
+
+  final String cardId;
+  final String question;
   final bool correct;
 }
 
@@ -107,6 +118,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   List<_QuizCard> _cards = [];
   int _currentIndex = 0;
   final List<_CardResult> _results = [];
+  String _deckCategory = 'Other';
+  String? _quizOwnerUid;
+  bool _attemptSaved = false;
 
   // ── Per-card transient state ──────────────────────────────────────────────────
   bool _answered = false;
@@ -114,9 +128,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   // MC-specific
   bool _choicesRevealed = false;
-  int? _selectedShuffledIndex;    // which shuffled slot the user tapped
+  int? _selectedShuffledIndex; // which shuffled slot the user tapped
   List<String> _shuffledChoices = [];
-  List<int> _shuffleMap = [];     // shuffleMap[shuffledPos] = originalIndex
+  List<int> _shuffleMap = []; // shuffleMap[shuffledPos] = originalIndex
 
   // Identification-specific
   final TextEditingController _answerCtrl = TextEditingController();
@@ -132,7 +146,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   // ── Route args helpers ────────────────────────────────────────────────────────
   String get _deckId {
-    if (widget.deckId != null && widget.deckId!.isNotEmpty) return widget.deckId!;
+    if (widget.deckId != null && widget.deckId!.isNotEmpty)
+      return widget.deckId!;
     final args = ModalRoute.of(context)?.settings.arguments;
     return (args is QuizArgs) ? args.deckId : '';
   }
@@ -143,6 +158,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
     final args = ModalRoute.of(context)?.settings.arguments;
     return (args is QuizArgs) ? args.deckTitle : 'Quiz';
+  }
+
+  String? get _routeOwnerUid {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    return (args is QuizArgs) ? args.ownerUid : null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -161,17 +181,20 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     _cardSlideAnim = Tween<Offset>(
       begin: const Offset(0.08, 0),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _cardSlideCtrl, curve: Curves.easeOutCubic));
-    _cardFadeAnim = CurvedAnimation(parent: _cardSlideCtrl, curve: Curves.easeOutCubic);
+    ).animate(
+        CurvedAnimation(parent: _cardSlideCtrl, curve: Curves.easeOutCubic));
+    _cardFadeAnim =
+        CurvedAnimation(parent: _cardSlideCtrl, curve: Curves.easeOutCubic);
 
     // Completion entrance animation
     _completionCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _completionFadeAnim = CurvedAnimation(parent: _completionCtrl, curve: Curves.easeOut);
-    _completionScaleAnim = Tween<double>(begin: 0.90, end: 1.0)
-        .animate(CurvedAnimation(parent: _completionCtrl, curve: Curves.easeOutBack));
+    _completionFadeAnim =
+        CurvedAnimation(parent: _completionCtrl, curve: Curves.easeOut);
+    _completionScaleAnim = Tween<double>(begin: 0.90, end: 1.0).animate(
+        CurvedAnimation(parent: _completionCtrl, curve: Curves.easeOutBack));
 
     // Load after first frame so ModalRoute.of(context) is available
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadCards());
@@ -201,18 +224,22 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
       // Use ownerUid from args if provided (public deck owned by someone else),
       // otherwise fall back to the current user's own deck.
-      final args = ModalRoute.of(context)?.settings.arguments;
-      final ownerUid = (args is QuizArgs && args.ownerUid != null)
-          ? args.ownerUid!
-          : currentUid;
+      final ownerUid = _routeOwnerUid ?? currentUid;
+      _quizOwnerUid = ownerUid;
 
-      final snap = await FirebaseFirestore.instance
+      final deckRef = FirebaseFirestore.instance
           .collection('users')
           .doc(ownerUid)
           .collection('decks')
-          .doc(id)
-          .collection('cards')
-          .get();
+          .doc(id);
+
+      final deckSnap = await deckRef.get();
+      final deckData = deckSnap.data();
+      final rawTag = deckData?['tag'] as String?;
+      final category =
+          rawTag == null || rawTag.trim().isEmpty ? 'Other' : rawTag.trim();
+
+      final snap = await deckRef.collection('cards').get();
 
       final loaded = snap.docs.map(_QuizCard.fromDoc).toList();
 
@@ -222,6 +249,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         _cards = loaded;
+        _deckCategory = category;
         _phase = _QuizPhase.quiz;
         _currentIndex = 0;
       });
@@ -273,7 +301,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       _isCorrect = correct;
       _selectedShuffledIndex = shuffledPos;
     });
-    _results.add(_CardResult(correct: correct));
+    _results.add(_CardResult(
+      cardId: card.id,
+      question: card.question,
+      correct: correct,
+    ));
   }
 
   /// Called when user taps "Check Answer" for identification cards.
@@ -289,7 +321,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ),
           backgroundColor: AppColors.outline,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       );
       return;
@@ -301,7 +334,11 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       _isCorrect = correct;
       if (!correct) _correctAnswerReveal = card.answer;
     });
-    _results.add(_CardResult(correct: correct));
+    _results.add(_CardResult(
+      cardId: card.id,
+      question: card.question,
+      correct: correct,
+    ));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -325,13 +362,65 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _finishQuiz() async {
+    if (_attemptSaved) return;
+    _attemptSaved = true;
+
     setState(() => _phase = _QuizPhase.completed);
     _completionCtrl.forward();
+
+    await _saveQuizAttempt();
 
     // Brief pause so the user can read their score
     await Future.delayed(const Duration(milliseconds: 2800));
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/progress');
+  }
+
+  Future<void> _saveQuizAttempt() async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    
+    debugPrint('🔍 [DEBUG] _saveQuizAttempt called');
+    debugPrint('🔍 [DEBUG] currentUid: $currentUid');
+    debugPrint('🔍 [DEBUG] _deckId: $_deckId');
+    debugPrint('🔍 [DEBUG] _deckTitle: $_deckTitle');
+    debugPrint('🔍 [DEBUG] _quizOwnerUid: $_quizOwnerUid');
+    debugPrint('🔍 [DEBUG] _deckCategory: $_deckCategory');
+    debugPrint('🔍 [DEBUG] _results.length: ${_results.length}');
+    
+    if (currentUid == null || _deckId.isEmpty || _results.isEmpty) {
+      debugPrint('❌ [DEBUG] Early return - validation failed');
+      debugPrint('   currentUid == null: ${currentUid == null}');
+      debugPrint('   _deckId.isEmpty: ${_deckId.isEmpty}');
+      debugPrint('   _results.isEmpty: ${_results.isEmpty}');
+      return;
+    }
+
+    final correct = _results.where((result) => result.correct).length;
+    debugPrint('🔍 [DEBUG] correct: $correct / ${_results.length}');
+
+    try {
+      debugPrint('📤 [DEBUG] Calling ProgressService.saveQuizAttempt...');
+      await ProgressService.saveQuizAttempt(
+        QuizAttemptInput(
+          deckId: _deckId,
+          deckTitle: _deckTitle,
+          ownerUid: _quizOwnerUid ?? currentUid,
+          category: _deckCategory,
+          correctCount: correct,
+          totalCount: _results.length,
+          answers: _results
+              .map((result) => QuizCardAnswer(
+                    cardId: result.cardId,
+                    question: result.question,
+                    correct: result.correct,
+                  ))
+              .toList(),
+        ),
+      );
+      debugPrint('✅ [DEBUG] ProgressService.saveQuizAttempt completed successfully!');
+    } catch (e, st) {
+      debugPrint('❌ [QuizScreen] failed to save progress: $e\n$st');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -469,7 +558,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildMCSection(_QuizCard card) {
-    if (!_choicesRevealed) {
+    // Only show reveal-first gate if card.showRevealFirst is true
+    if (card.showRevealFirst && !_choicesRevealed) {
       // ── Phase 1: Think-first gate ──────────────────────────────────────────
       return Column(
         children: [
@@ -781,8 +871,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
                 // ── Score card ───────────────────────────────────────────────
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 36, vertical: 24),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 36, vertical: 24),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(24),
@@ -969,7 +1059,8 @@ class _ProgressHeader extends StatelessWidget {
               value: value,
               minHeight: 10,
               backgroundColor: AppColors.outlineVariant.withOpacity(0.22),
-              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
             ),
           ),
         ),
@@ -1009,7 +1100,8 @@ class _QuestionCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.secondaryContainer,
                   borderRadius: BorderRadius.circular(999),
@@ -1195,8 +1287,8 @@ class _ChoiceTile extends StatelessWidget {
         bg = AppColors.errorContainer.withOpacity(0.50);
         border = AppColors.error;
         textColor = AppColors.error;
-        trailingIcon = const Icon(Icons.cancel_rounded,
-            color: AppColors.error, size: 22);
+        trailingIcon =
+            const Icon(Icons.cancel_rounded, color: AppColors.error, size: 22);
         break;
       case _ChoiceState.dimmed:
         bg = AppColors.surfaceContainerLowest;
@@ -1280,7 +1372,8 @@ class _IdentificationFeedback extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.primaryContainer.withOpacity(0.30),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.primary.withOpacity(0.40), width: 1.5),
+          border: Border.all(
+              color: AppColors.primary.withOpacity(0.40), width: 1.5),
         ),
         child: Row(
           children: [
@@ -1306,8 +1399,8 @@ class _IdentificationFeedback extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.errorContainer.withOpacity(0.35),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: AppColors.error.withOpacity(0.35), width: 1.5),
+        border:
+            Border.all(color: AppColors.error.withOpacity(0.35), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1329,12 +1422,12 @@ class _IdentificationFeedback extends StatelessWidget {
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: AppColors.primaryContainer.withOpacity(0.40),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.primary.withOpacity(0.35), width: 1.5),
+              border: Border.all(
+                  color: AppColors.primary.withOpacity(0.35), width: 1.5),
             ),
             child: Text(
               correctAnswer,
@@ -1486,8 +1579,8 @@ class _MotivationalBubble extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.primaryContainer,
             shape: BoxShape.circle,
-            border: Border.all(
-                color: AppColors.surfaceContainerLowest, width: 2),
+            border:
+                Border.all(color: AppColors.surfaceContainerLowest, width: 2),
           ),
           child: const Icon(Icons.auto_awesome_rounded,
               color: AppColors.primary, size: 17),
