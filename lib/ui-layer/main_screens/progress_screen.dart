@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+import '../../business-layer/services/progress_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROGRESS SCREEN  —  route: /progress
@@ -33,6 +34,8 @@ class _ProgressScaffold extends StatefulWidget {
 
 class _ProgressScaffoldState extends State<_ProgressScaffold> {
   bool _loading = true;
+  ProgressDashboard _dashboard = ProgressDashboard.empty();
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -41,15 +44,30 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
   }
 
   Future<void> _loadProgress() async {
-    // Simulate brief loading delay for content initialization
-    await Future.delayed(const Duration(milliseconds: 300));
-    if (mounted) {
-      setState(() => _loading = false);
+    try {
+      final dashboard = await ProgressService.loadDashboard();
+      if (!mounted) return;
+      setState(() {
+        _dashboard = dashboard;
+        _errorMessage = null;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _dashboard = ProgressDashboard.empty();
+        _errorMessage = 'Could not load progress yet.';
+        _loading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final subjectStats = _subjectStats(_dashboard);
+    final weakSpots = _weakSpotStats(_dashboard);
+    final forgottenCards = _forgottenCardStats(_dashboard);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       extendBody: true,
@@ -107,6 +125,16 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                       ),
                                     ),
                                     const SizedBox(height: 20),
+                                    if (_errorMessage != null) ...[
+                                      _ProgressErrorBanner(
+                                        message: _errorMessage!,
+                                        onRetry: () {
+                                          setState(() => _loading = true);
+                                          _loadProgress();
+                                        },
+                                      ),
+                                      const SizedBox(height: 12),
+                                    ],
 
                                     // ── Row 1: Mastery + Streak ───────────────────────
                                     IntrinsicHeight(
@@ -117,16 +145,24 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                           Expanded(
                                             flex: 6,
                                             child: _MasteryCard(
-                                              masteryPercent: 0.72,
-                                              masteredTerms: 342,
+                                              masteryPercent:
+                                                  _dashboard.overallMastery,
+                                              correctAnswers:
+                                                  _dashboard.correctAnswers,
+                                              reviewedAnswers:
+                                                  _dashboard.reviewedAnswers,
+                                              hasAttempts:
+                                                  _dashboard.hasAttempts,
                                             ),
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             flex: 4,
                                             child: _StreakCard(
-                                              streakDays: 14,
-                                              personalBest: 21,
+                                              streakDays:
+                                                  _dashboard.currentStreakDays,
+                                              personalBest: _dashboard
+                                                  .personalBestStreakDays,
                                             ),
                                           ),
                                         ],
@@ -136,10 +172,14 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
 
                                     // ── Row 2: Subject Breakdown + Weak Spots ─────────
                                     _SubjectBreakdownCard(
-                                        subjects: _placeholderSubjects),
+                                      subjects: subjectStats,
+                                      totalDecks:
+                                          _dashboard.deckSummaries.length,
+                                    ),
                                     const SizedBox(height: 12),
-                                    _WeakSpotsCard(
-                                        spots: _placeholderWeakSpots),
+                                    _WeakSpotsCard(spots: weakSpots),
+                                    const SizedBox(height: 12),
+                                    _ForgottenCardsCard(cards: forgottenCards),
 
                                     // ── Bottom padding for nav ────────────────────────
                                     const SizedBox(height: 140),
@@ -157,33 +197,54 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
     );
   }
 
-  // ── Placeholder data — replace with real Firestore models ────────────────
+  // ── Firestore dashboard adapters ─────────────────────────────────────────
 
-  static const _placeholderSubjects = [
-    _SubjectStat(label: 'Biology', percent: 0.85, color: AppColors.primary),
-    _SubjectStat(label: 'History', percent: 0.65, color: AppColors.secondary),
-    _SubjectStat(label: 'Physics', percent: 0.40, color: AppColors.tertiary),
-    _SubjectStat(
-        label: 'Spanish', percent: 0.92, color: AppColors.primaryFixedDim),
-  ];
+  List<_SubjectStat> _subjectStats(ProgressDashboard dashboard) {
+    return dashboard.categories.asMap().entries.map((entry) {
+      final summary = entry.value;
+      return _SubjectStat(
+        label: summary.label,
+        percent: summary.mastery,
+        color: _chartColor(entry.key),
+        reviewedCards: summary.answeredTotal,
+        attemptCount: summary.attemptCount,
+      );
+    }).toList();
+  }
 
-  static const _placeholderWeakSpots = [
-    _WeakSpot(
-      topic: 'Thermodynamics',
-      subject: 'Physics',
-      termCount: 12,
-    ),
-    _WeakSpot(
-      topic: 'Cellular Respiration',
-      subject: 'Biology',
-      termCount: 5,
-    ),
-    _WeakSpot(
-      topic: 'Irregular Verbs (Preterite)',
-      subject: 'Spanish',
-      termCount: 8,
-    ),
-  ];
+  List<_WeakSpot> _weakSpotStats(ProgressDashboard dashboard) {
+    return dashboard.weakSpots.map((spot) {
+      return _WeakSpot(
+        topic: spot.question,
+        subject: spot.category,
+        deckTitle: spot.deckTitle,
+        termCount: spot.missCount,
+      );
+    }).toList();
+  }
+
+  List<_ForgottenCard> _forgottenCardStats(ProgressDashboard dashboard) {
+    return dashboard.forgottenCards.map((card) {
+      return _ForgottenCard(
+        topic: card.question,
+        subject: card.category,
+        deckTitle: card.deckTitle,
+        failureCount: card.failureCount,
+      );
+    }).toList();
+  }
+
+  Color _chartColor(int index) {
+    const colors = [
+      AppColors.primary,
+      AppColors.secondary,
+      AppColors.tertiary,
+      AppColors.primaryFixedDim,
+      Color(0xFF9B5DE5),
+      Color(0xFFE85D75),
+    ];
+    return colors[index % colors.length];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,11 +298,15 @@ class _ProgressTopBar extends StatelessWidget {
 class _MasteryCard extends StatelessWidget {
   const _MasteryCard({
     required this.masteryPercent,
-    required this.masteredTerms,
+    required this.correctAnswers,
+    required this.reviewedAnswers,
+    required this.hasAttempts,
   });
 
   final double masteryPercent; // 0.0 – 1.0
-  final int masteredTerms;
+  final int correctAnswers;
+  final int reviewedAnswers;
+  final bool hasAttempts;
 
   @override
   Widget build(BuildContext context) {
@@ -296,7 +361,7 @@ class _MasteryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Keep it up!',
+                      hasAttempts ? 'Keep it up!' : 'No quiz data yet',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -306,7 +371,9 @@ class _MasteryCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'You\'ve mastered $masteredTerms terms across all your decks.',
+                      hasAttempts
+                          ? 'You answered $correctAnswers of $reviewedAnswers cards correctly across all quizzes.'
+                          : 'Complete a quiz to start building your mastery score.',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         color: AppColors.onSurfaceVariant,
@@ -322,7 +389,7 @@ class _MasteryCard extends StatelessWidget {
 
           // CTA button
           GestureDetector(
-            onTap: () {},
+            onTap: () => Navigator.of(context).pushReplacementNamed('/decks'),
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 18),
               decoration: BoxDecoration(
@@ -341,7 +408,7 @@ class _MasteryCard extends StatelessWidget {
                 ],
               ),
               child: Text(
-                'Review Weak Spots',
+                hasAttempts ? 'Review Weak Spots' : 'Study a Deck',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -429,8 +496,13 @@ class _StreakCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SubjectBreakdownCard extends StatelessWidget {
-  const _SubjectBreakdownCard({required this.subjects});
+  const _SubjectBreakdownCard({
+    required this.subjects,
+    required this.totalDecks,
+  });
+
   final List<_SubjectStat> subjects;
+  final int totalDecks;
 
   @override
   Widget build(BuildContext context) {
@@ -441,7 +513,7 @@ class _SubjectBreakdownCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Subject Breakdown',
+            'Category Breakdown',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 17,
               fontWeight: FontWeight.w800,
@@ -450,7 +522,24 @@ class _SubjectBreakdownCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          ...subjects.map((s) => _SubjectRow(stat: s)),
+          if (subjects.isEmpty)
+            const _EmptyProgressMessage(
+              icon: Icons.category_outlined,
+              title: 'No categories yet',
+              message: 'Quiz results will appear here by deck category.',
+            )
+          else ...[
+            Text(
+              '$totalDecks deck${totalDecks == 1 ? '' : 's'} with quiz history',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                color: AppColors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...subjects.map((s) => _SubjectRow(stat: s)),
+          ],
         ],
       ),
     );
@@ -470,14 +559,31 @@ class _SubjectRow extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                stat.label,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.onSurface,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stat.label,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${stat.reviewedCards} reviewed cards across ${stat.attemptCount} quiz${stat.attemptCount == 1 ? '' : 'zes'}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.outline,
+                      ),
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(width: 12),
               Text(
                 '${(stat.percent * 100).round()}%',
                 style: GoogleFonts.plusJakartaSans(
@@ -537,7 +643,14 @@ class _WeakSpotsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          ...spots.map((s) => _WeakSpotTile(spot: s)),
+          if (spots.isEmpty)
+            const _EmptyProgressMessage(
+              icon: Icons.check_circle_outline_rounded,
+              title: 'No weak spots yet',
+              message: 'Missed cards from future quizzes will collect here.',
+            )
+          else
+            ...spots.map((s) => _WeakSpotTile(spot: s)),
         ],
       ),
     );
@@ -610,8 +723,246 @@ class _WeakSpotTile extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FORGOTTEN CARDS CARD
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ForgottenCardsCard extends StatelessWidget {
+  const _ForgottenCardsCard({required this.cards});
+  final List<_ForgottenCard> cards;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _cardDecoration(color: AppColors.surfaceContainerLow),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.history_rounded,
+                  color: AppColors.tertiary, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Forgotten Cards',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Cards you knew in your best session but forgot later',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              color: AppColors.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (cards.isEmpty)
+            const _EmptyProgressMessage(
+              icon: Icons.celebration_outlined,
+              title: 'No forgotten cards',
+              message: 'You haven\'t forgotten anything you once knew!',
+            )
+          else
+            ...cards.map((c) => _ForgottenCardTile(card: c)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ForgottenCardTile extends StatelessWidget {
+  const _ForgottenCardTile({required this.card});
+  final _ForgottenCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: () {},
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.tertiary.withOpacity(0.3),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.onSurface.withOpacity(0.03),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.tertiaryContainer.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.refresh_rounded,
+                    color: AppColors.tertiary,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        card.topic,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${card.subject} · Failed ${card.failureCount}x after mastering',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded,
+                    color: AppColors.outline, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MASTERY RING  —  CustomPainter arc
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _EmptyProgressMessage extends StatelessWidget {
+  const _EmptyProgressMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.outlineVariant.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.outline, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: AppColors.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressErrorBanner extends StatelessWidget {
+  const _ProgressErrorBanner({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.errorContainer.withOpacity(0.65),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.error.withOpacity(0.20)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: AppColors.error, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.error,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            child: Text(
+              'Retry',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w800,
+                color: AppColors.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _MasteryRingPainter extends CustomPainter {
   const _MasteryRingPainter(this.progress);
@@ -660,21 +1011,40 @@ class _SubjectStat {
     required this.label,
     required this.percent,
     required this.color,
+    required this.reviewedCards,
+    required this.attemptCount,
   });
   final String label;
   final double percent;
   final Color color;
+  final int reviewedCards;
+  final int attemptCount;
 }
 
 class _WeakSpot {
   const _WeakSpot({
     required this.topic,
     required this.subject,
+    required this.deckTitle,
     required this.termCount,
   });
   final String topic;
   final String subject;
+  final String deckTitle;
   final int termCount;
+}
+
+class _ForgottenCard {
+  const _ForgottenCard({
+    required this.topic,
+    required this.subject,
+    required this.deckTitle,
+    required this.failureCount,
+  });
+  final String topic;
+  final String subject;
+  final String deckTitle;
+  final int failureCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
