@@ -50,6 +50,7 @@ class _QuizCard {
     required this.answer,
     this.choices = const [],
     this.correctIndex = 0,
+    this.showRevealFirst = false,
   });
 
   factory _QuizCard.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -65,6 +66,7 @@ class _QuizCard {
       answer: d['answer'] as String? ?? '',
       choices: choices,
       correctIndex: (d['correctIndex'] as int?) ?? 0,
+      showRevealFirst: Random().nextDouble() < 0.25, // 25% chance
     );
   }
 
@@ -74,6 +76,7 @@ class _QuizCard {
   final String answer;
   final List<String> choices; // only populated for multiple_choice
   final int correctIndex; // index into choices[] of the correct answer
+  final bool showRevealFirst; // true = reveal-first mode, false = straight MC
 
   bool get isMultipleChoice => type == 'multiple_choice';
 }
@@ -555,7 +558,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildMCSection(_QuizCard card) {
-    if (!_choicesRevealed) {
+    // Only show reveal-first gate if card.showRevealFirst is true
+    if (card.showRevealFirst && !_choicesRevealed) {
       // ── Phase 1: Think-first gate ──────────────────────────────────────────
       return Column(
         children: [

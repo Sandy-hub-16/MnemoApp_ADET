@@ -680,6 +680,62 @@ abstract final class ProgressService {
     if (value is DateTime) return value;
     return null;
   }
+
+  /// Resets all progress data for the current user.
+  /// Deletes all quiz attempts, deck progress, and card progress documents.
+  /// This action is irreversible.
+  static Future<void> resetAllProgress() async {
+    final uid = _uid;
+    if (uid == null) throw StateError('User is not signed in.');
+
+    final userRef = _db.collection('users').doc(uid);
+
+    // Delete all quiz attempts
+    final attempts = await userRef.collection('quizAttempts').get();
+    if (attempts.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in attempts.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+
+    // Delete all deck progress
+    final progress = await userRef.collection('deckProgress').get();
+    if (progress.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in progress.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+
+    // Delete all card progress (NEW)
+    final cardProgress = await userRef.collection('cardProgress').get();
+    if (cardProgress.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in cardProgress.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+
+    // Reset progress field in all user's decks
+    final decks = await userRef.collection('decks').get();
+    if (decks.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in decks.docs) {
+        batch.update(doc.reference, {
+          'progress': 0.0,
+          'quizAttemptCount': 0,
+          'bestScore': 0.0,
+          'lastQuizScore': 0.0,
+          'lastStudiedAt': FieldValue.delete(),
+        });
+      }
+      await batch.commit();
+    }
+  }
 }
 
 class _DeckProgressBucket {

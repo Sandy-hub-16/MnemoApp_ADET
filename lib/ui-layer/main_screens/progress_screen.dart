@@ -193,7 +193,6 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
           ),
         ],
       ),
-      bottomNavigationBar: const _ProgressBottomNavBar(activeIndex: 3),
     );
   }
 
@@ -283,9 +282,537 @@ class _ProgressTopBar extends StatelessWidget {
           ),
           _NavIconButton(
             icon: Icons.tune_rounded,
-            onTap: () {},
+            onTap: () => _showProgressOptions(context),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showProgressOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ProgressOptionsSheet(),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROGRESS OPTIONS SHEET
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ProgressOptionsSheet extends StatelessWidget {
+  const _ProgressOptionsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.outlineVariant,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer.withOpacity(0.5),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.settings_rounded,
+                      color: AppColors.primary, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Progress Options',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _ProgressOption(
+            icon: Icons.refresh_rounded,
+            label: 'Refresh Progress',
+            subtitle: 'Reload your latest statistics',
+            color: AppColors.primary,
+            onTap: () {
+              Navigator.pop(context);
+              final scaffoldState = context.findAncestorStateOfType<_ProgressScaffoldState>();
+              if (scaffoldState != null) {
+                scaffoldState._loadProgress();
+              }
+            },
+          ),
+          _ProgressOption(
+            icon: Icons.file_download_outlined,
+            label: 'Export Progress Report',
+            subtitle: 'Download your study statistics',
+            color: AppColors.secondary,
+            onTap: () {
+              Navigator.pop(context);
+              final scaffoldState = context.findAncestorStateOfType<_ProgressScaffoldState>();
+              if (scaffoldState != null) {
+                _showExportDialog(context, scaffoldState._dashboard);
+              }
+            },
+          ),
+          _ProgressOption(
+            icon: Icons.notifications_outlined,
+            label: 'Study Reminders',
+            subtitle: 'Set daily study notifications',
+            color: AppColors.tertiary,
+            onTap: () {
+              Navigator.pop(context);
+              _showStudyRemindersDialog(context);
+            },
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  void _showExportDialog(BuildContext context, ProgressDashboard dashboard) {
+    final report = _generateProgressReport(dashboard);
+    
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: AppColors.surfaceContainerLowest,
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.secondaryContainer.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.file_download_outlined, color: AppColors.secondary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Progress Report',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w800,
+                color: AppColors.onSurface,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            report,
+            style: GoogleFonts.jetBrainsMono(
+              fontSize: 12,
+              color: AppColors.onSurface,
+              height: 1.5,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Close',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _generateProgressReport(ProgressDashboard dashboard) {
+    final buffer = StringBuffer();
+    final now = DateTime.now();
+    
+    buffer.writeln('═══════════════════════════════════════');
+    buffer.writeln('       KINDRED STUDY PROGRESS REPORT');
+    buffer.writeln('═══════════════════════════════════════');
+    buffer.writeln('Generated: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}');
+    buffer.writeln();
+    
+    buffer.writeln('OVERALL STATISTICS');
+    buffer.writeln('───────────────────────────────────────');
+    buffer.writeln('Mastery Score: ${(dashboard.overallMastery * 100).toStringAsFixed(1)}%');
+    buffer.writeln('Correct Answers: ${dashboard.correctAnswers}/${dashboard.reviewedAnswers}');
+    buffer.writeln('Total Quiz Attempts: ${dashboard.totalAttempts}');
+    buffer.writeln('Current Streak: ${dashboard.currentStreakDays} days');
+    buffer.writeln('Best Streak: ${dashboard.personalBestStreakDays} days');
+    buffer.writeln();
+    
+    if (dashboard.categories.isNotEmpty) {
+      buffer.writeln('CATEGORY BREAKDOWN');
+      buffer.writeln('───────────────────────────────────────');
+      for (final cat in dashboard.categories) {
+        buffer.writeln('${cat.label}:');
+        buffer.writeln('  Mastery: ${(cat.mastery * 100).toStringAsFixed(1)}%');
+        buffer.writeln('  Cards Reviewed: ${cat.answeredTotal}');
+        buffer.writeln('  Quiz Attempts: ${cat.attemptCount}');
+        buffer.writeln();
+      }
+    }
+    
+    if (dashboard.weakSpots.isNotEmpty) {
+      buffer.writeln('WEAK SPOTS (Top ${dashboard.weakSpots.length})');
+      buffer.writeln('───────────────────────────────────────');
+      for (var i = 0; i < dashboard.weakSpots.length; i++) {
+        final spot = dashboard.weakSpots[i];
+        buffer.writeln('${i + 1}. ${spot.question}');
+        buffer.writeln('   ${spot.category} · ${spot.missCount} misses');
+      }
+      buffer.writeln();
+    }
+    
+    if (dashboard.forgottenCards.isNotEmpty) {
+      buffer.writeln('FORGOTTEN CARDS (Top ${dashboard.forgottenCards.length})');
+      buffer.writeln('───────────────────────────────────────');
+      for (var i = 0; i < dashboard.forgottenCards.length; i++) {
+        final card = dashboard.forgottenCards[i];
+        buffer.writeln('${i + 1}. ${card.question}');
+        buffer.writeln('   ${card.category} · ${card.failureCount} failures');
+      }
+      buffer.writeln();
+    }
+    
+    buffer.writeln('═══════════════════════════════════════');
+    buffer.writeln('End of Report');
+    
+    return buffer.toString();
+  }
+
+  void _showStudyRemindersDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => const _StudyRemindersDialog(),
+    );
+  }
+}
+
+class _ProgressOption extends StatelessWidget {
+  const _ProgressOption({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(
+        label,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: AppColors.onSurface,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 12,
+          color: AppColors.onSurfaceVariant,
+        ),
+      ),
+      onTap: onTap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STUDY REMINDERS DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StudyRemindersDialog extends StatefulWidget {
+  const _StudyRemindersDialog();
+
+  @override
+  State<_StudyRemindersDialog> createState() => _StudyRemindersDialogState();
+}
+
+class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
+  bool _enabled = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 19, minute: 0);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.tertiaryContainer.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(Icons.notifications_outlined,
+                      color: AppColors.tertiary, size: 26),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Study Reminders',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Daily study notifications',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Enable Reminders',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Get notified to study daily',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Switch(
+                        value: _enabled,
+                        onChanged: (value) => setState(() => _enabled = value),
+                        activeColor: AppColors.primary,
+                      ),
+                    ],
+                  ),
+                  if (_enabled) ...[
+                    const SizedBox(height: 16),
+                    Divider(color: AppColors.outlineVariant.withOpacity(0.3)),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () async {
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: _reminderTime,
+                        );
+                        if (time != null) {
+                          setState(() => _reminderTime = time);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.outlineVariant),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.access_time_rounded,
+                                    color: AppColors.primary, size: 20),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Reminder Time',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              _reminderTime.format(context),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.20),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.check_rounded,
+                                    color: Colors.white, size: 16),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _enabled
+                                      ? 'Reminder set for ${_reminderTime.format(context)}'
+                                      : 'Reminders disabled',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: const Color(0xFF16A34A),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      'Save Settings',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1047,128 +1574,7 @@ class _ForgottenCard {
   final int failureCount;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BOTTOM NAV BAR  —  shared tab bar (Progress is activeIndex 2)
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _ProgressBottomNavBar extends StatelessWidget {
-  const _ProgressBottomNavBar({required this.activeIndex});
-  final int activeIndex;
-
-  static const _items = [
-    _NavItem(
-        icon: Icons.home_outlined,
-        filled: Icons.home_rounded,
-        label: 'Home',
-        route: '/home'),
-    _NavItem(
-        icon: Icons.layers_outlined,
-        filled: Icons.layers_rounded,
-        label: 'Decks',
-        route: '/decks'),
-    _NavItem(
-        icon: Icons.explore_outlined,
-        filled: Icons.explore_rounded,
-        label: 'Discover',
-        route: '/discover'),
-    _NavItem(
-        icon: Icons.analytics_outlined,
-        filled: Icons.analytics_rounded,
-        label: 'Progress',
-        route: '/progress'),
-    _NavItem(
-        icon: Icons.person_outline_rounded,
-        filled: Icons.person_rounded,
-        label: 'Profile',
-        route: '/profile'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.06),
-            blurRadius: 32,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: _items.asMap().entries.map((entry) {
-              final i = entry.key;
-              final item = entry.value;
-              final active = i == activeIndex;
-
-              return GestureDetector(
-                onTap: () {
-                  if (!active) {
-                    Navigator.of(context).pushReplacementNamed(item.route);
-                  }
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: active
-                        ? AppColors.primaryContainer.withOpacity(0.45)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        active ? item.filled : item.icon,
-                        size: 24,
-                        color: active
-                            ? AppColors.primary
-                            : AppColors.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: active
-                              ? AppColors.primary
-                              : AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem {
-  const _NavItem({
-    required this.icon,
-    required this.filled,
-    required this.label,
-    required this.route,
-  });
-  final IconData icon;
-  final IconData filled;
-  final String label;
-  final String route;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS

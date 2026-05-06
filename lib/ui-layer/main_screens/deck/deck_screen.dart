@@ -243,7 +243,151 @@ class _QuestionTypeOption extends StatelessWidget {
   }
 }
 
-/// Step 2 — Pick number of questions, enforcing [maxCount].
+/// Step 2 — Pick category
+Future<String?> _showCategoryDialog(BuildContext context) {
+  const categories = [
+    'Biology',
+    'Physics',
+    'Organic Chem',
+    'World History',
+    'Other',
+  ];
+
+  return showDialog<String>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ────────────────────────────────────────────────────
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryFixedDim],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.category_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Choose Category',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Organize your deck by subject',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ── Options ───────────────────────────────────────────────────
+            ...categories.map((category) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(ctx, category),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.outlineVariant.withOpacity(0.5),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.label_rounded,
+                                color: AppColors.primary, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              category,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right_rounded,
+                              color: AppColors.outline, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                )),
+
+            // ── Cancel ────────────────────────────────────────────────────
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Step 3 — Pick number of questions, enforcing [maxCount].
 Future<int?> _showQuestionCountDialog(
     BuildContext context, int maxCount) {
   int currentCount = (maxCount >= 10) ? 10 : maxCount;
@@ -600,7 +744,12 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   final questionType = await _showQuestionTypeDialog(context);
   if (questionType == null) return; // user cancelled
 
-  // ── Step 3: Estimate max & show count dialog ───────────────────────────────
+  // ── Step 3: Category dialog ────────────────────────────────────────────────
+  if (!context.mounted) return;
+  final category = await _showCategoryDialog(context);
+  if (category == null) return; // user cancelled
+
+  // ── Step 4: Estimate max & show count dialog ───────────────────────────────
   // For TXT: ~1 question per 300 chars of content, capped at 30.
   // For PDF:  assume up to 30 (can't inspect without parsing).
   int maxQuestions;
@@ -617,7 +766,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
       await _showQuestionCountDialog(context, maxQuestions);
   if (questionCount == null) return; // user cancelled
 
-  // ── Step 4: Show loading overlay ──────────────────────────────────────────
+  // ── Step 5: Show loading overlay ──────────────────────────────────────────
   bool loadingDialogOpen = false;
   if (context.mounted) {
     loadingDialogOpen = true;
@@ -670,7 +819,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   }
 
   try {
-    // ── Step 5: Build request body ───────────────────────────────────────────
+    // ── Step 6: Build request body ───────────────────────────────────────────
     Map<String, dynamic> requestBody;
     if (isPdf) {
       final base64Data = base64Encode(fileBytes);
@@ -691,7 +840,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
       };
     }
 
-    // ── Step 6: Call Cloud Run endpoint ─────────────────────────────────────
+    // ── Step 7: Call Cloud Run endpoint ─────────────────────────────────────
     final response = await http
         .post(
           Uri.parse('https://generatedeck-x2xze3qnza-uc.a.run.app'),
@@ -705,7 +854,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
           'Server returned ${response.statusCode}: ${response.body}');
     }
 
-    // ── Step 7: Parse response ───────────────────────────────────────────────
+    // ── Step 8: Parse response ───────────────────────────────────────────────
     final dynamic decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
       throw Exception('Unexpected response format from server.');
@@ -723,7 +872,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
         ? decoded['title'] as String
         : 'AI Generated Deck';
 
-    // ── Step 8: Write to Firestore ───────────────────────────────────────────
+    // ── Step 9: Write to Firestore ───────────────────────────────────────────
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw Exception('Not signed in.');
 
@@ -733,7 +882,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
         .collection('decks')
         .add({
       'title': title,
-      'tag': 'AI',
+      'tag': category,
       'isDraft': false,
       'visibility': 'private',
       'cardCount': cards.length,
@@ -1254,7 +1403,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
         ],
       ),
       floatingActionButton: const _QuickAddFAB(),
-      bottomNavigationBar: const _DeckBottomNavBar(activeIndex: 1),
     );
   }
 
@@ -1318,63 +1466,23 @@ class _DeckTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withOpacity(0.80),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      color: AppColors.background.withOpacity(0.75),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primaryContainer,
-              border: Border.all(
-                color: AppColors.primary.withOpacity(0.2),
-                width: 2,
-              ),
-            ),
-            child: const Icon(Icons.person_rounded,
-                color: AppColors.primary, size: 20),
+          Icon(
+            Icons.bubble_chart_rounded,
+            color: AppColors.primary,
+            size: 22,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Text(
-            'My Decks',
+            'Kindred Study',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 19,
+              fontSize: 17,
               fontWeight: FontWeight.w800,
               color: AppColors.primary,
-              letterSpacing: -0.4,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(999),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.onSurface.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.cloud_done_outlined,
-                    color: AppColors.primary, size: 18),
-                const SizedBox(width: 5),
-                Text(
-                  'SYNCED',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
+              letterSpacing: -0.3,
             ),
           ),
         ],
@@ -2595,120 +2703,7 @@ class _QuickAddFAB extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BOTTOM NAV BAR
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _DeckBottomNavBar extends StatelessWidget {
-  const _DeckBottomNavBar({required this.activeIndex});
-  final int activeIndex;
-
-  static const _items = [
-    _NavItem(icon: Icons.home_outlined, label: 'Home', route: '/home'),
-    _NavItem(icon: Icons.layers_outlined, label: 'Decks', route: '/decks'),
-    _NavItem(
-        icon: Icons.explore_outlined, label: 'Discover', route: '/discover'),
-    _NavItem(
-        icon: Icons.analytics_outlined,
-        label: 'Progress',
-        route: '/progress'),
-    _NavItem(
-        icon: Icons.person_outline_rounded,
-        label: 'Profile',
-        route: '/profile'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.06),
-            blurRadius: 32,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: _items.asMap().entries.map((entry) {
-              final i = entry.key;
-              final item = entry.value;
-              final active = i == activeIndex;
-
-              return GestureDetector(
-                onTap: () {
-                  if (!active) {
-                    Navigator.of(context).pushReplacementNamed(item.route);
-                  }
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 18, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: active
-                        ? AppColors.primaryContainer.withOpacity(0.45)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        active ? _filledIcon(item.icon) : item.icon,
-                        size: 24,
-                        color: active
-                            ? AppColors.primary
-                            : AppColors.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: active
-                              ? AppColors.primary
-                              : AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static final _filledIconMap = {
-    Icons.home_outlined: Icons.home_rounded,
-    Icons.layers_outlined: Icons.layers_rounded,
-    Icons.explore_outlined: Icons.explore_rounded,
-    Icons.analytics_outlined: Icons.analytics_rounded,
-    Icons.person_outline_rounded: Icons.person_rounded,
-  };
-
-  IconData _filledIcon(IconData icon) => _filledIconMap[icon] ?? icon;
-}
-
-class _NavItem {
-  const _NavItem(
-      {required this.icon, required this.label, required this.route});
-  final IconData icon;
-  final String label;
-  final String route;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS

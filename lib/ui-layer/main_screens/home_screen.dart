@@ -114,7 +114,6 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
           ),
         ],
       ),
-      bottomNavigationBar: const _HomeBottomNavBar(activeIndex: 0),
     );
   }
 }
@@ -919,116 +918,7 @@ class _CommunityPickCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BOTTOM NAV BAR  (activeIndex: 0 = Home)
-// ─────────────────────────────────────────────────────────────────────────────
 
-class _HomeBottomNavBar extends StatelessWidget {
-  const _HomeBottomNavBar({required this.activeIndex});
-  final int activeIndex;
-
-  static const _items = [
-    _NavItem(icon: Icons.home_outlined, label: 'Home', route: '/home'),
-    _NavItem(icon: Icons.layers_outlined, label: 'Decks', route: '/decks'),
-    _NavItem(
-        icon: Icons.explore_outlined, label: 'Discover', route: '/discover'),
-    _NavItem(
-        icon: Icons.analytics_outlined, label: 'Progress', route: '/progress'),
-    _NavItem(
-        icon: Icons.person_outline_rounded,
-        label: 'Profile',
-        route: '/profile'),
-  ];
-
-  static final Map<IconData, IconData> _filledIconMap = {
-    Icons.home_outlined: Icons.home_rounded,
-    Icons.layers_outlined: Icons.layers_rounded,
-    Icons.explore_outlined: Icons.explore_rounded,
-    Icons.analytics_outlined: Icons.analytics_rounded,
-    Icons.person_outline_rounded: Icons.person_rounded,
-  };
-
-  IconData _filledIcon(IconData outline) => _filledIconMap[outline] ?? outline;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.06),
-            blurRadius: 32,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: _items.asMap().entries.map((entry) {
-              final i = entry.key;
-              final item = entry.value;
-              final active = i == activeIndex;
-
-              return GestureDetector(
-                onTap: () {
-                  if (!active) {
-                    Navigator.of(context).pushReplacementNamed(item.route);
-                  }
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: active
-                        ? AppColors.primaryContainer.withOpacity(0.45)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        active ? _filledIcon(item.icon) : item.icon,
-                        size: 24,
-                        color:
-                            active ? AppColors.primary : AppColors.onSurfaceVariant,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color:
-                              active ? AppColors.primary : AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem {
-  const _NavItem(
-      {required this.icon, required this.label, required this.route});
-  final IconData icon;
-  final String label;
-  final String route;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS

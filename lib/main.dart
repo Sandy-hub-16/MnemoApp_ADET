@@ -9,14 +9,11 @@ import 'ui-layer/auth/register/register_step3_screen.dart';
 import 'ui-layer/auth/register/verify_email_screen.dart';
 import 'ui-layer/main_screens/deck/create_deck_screen.dart';
 import 'ui-layer/main_screens/deck/edit_deck_screen.dart';
-import 'ui-layer/main_screens/home_screen.dart';
-import 'ui-layer/main_screens/profile_screen.dart';
+import 'ui-layer/main_screens/main_shell.dart';
 import 'ui-layer/main_screens/sub_screens/profile-personal-info_screen.dart';
-import 'ui-layer/main_screens/deck/deck_screen.dart';
+import 'ui-layer/main_screens/sub_screens/settings_screen.dart';
 import 'ui-layer/main_screens/deck/deck-quiz_screen.dart';
-import 'ui-layer/main_screens/progress_screen.dart';
 import 'ui-layer/social/notification_screen.dart';
-import 'ui-layer/social/deck_discovery_screen.dart';
 import 'ui-layer/social/shared_deck_detail_screen.dart';
 import 'ui-layer/social/public_profile_screen.dart';
 import 'ui-layer/social/social_feed_screen.dart';
@@ -69,7 +66,7 @@ class AuthGate extends StatelessWidget {
       if (!user.emailVerified) {
         return const VerifyEmailScreen();
       } else {
-        return const HomeScreen();
+        return const MainShell();
       }
     }
 
@@ -82,6 +79,7 @@ class AuthGate extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 abstract final class AppRoutes {
+  static const String main = '/main';
   static const String landing = '/';
   static const String signIn = '/sign-in';
   static const String signUp1 = '/sign-up/step-1';
@@ -91,6 +89,7 @@ abstract final class AppRoutes {
   static const String home = '/home';
   static const String profile = '/profile';
   static const String accountSettings = '/account-settings';
+  static const String settings = '/settings';
   static const String decks = '/decks';
   static const String createDeck = '/create-deck';
   static const String editDeck = '/edit-deck';
@@ -111,29 +110,31 @@ abstract final class AppRoutes {
 abstract final class AppRouter {
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     final Widget page = switch (settings.name) {
+      AppRoutes.main => const MainShell(),
       AppRoutes.landing => const LandingScreen(),
       AppRoutes.signIn => const SignInScreen(),
       AppRoutes.signUp1 => const SignUpStep1Screen(),
       AppRoutes.signUp2 => const SignUpStep2Screen(),
       AppRoutes.signUp3 => const SignUpStep3Screen(),
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
-      AppRoutes.home => const HomeScreen(),
-      AppRoutes.profile => const ProfileScreen(),
+      AppRoutes.home => const MainShell(),
+      AppRoutes.profile => const MainShell(initialIndex: 4),
       AppRoutes.accountSettings => const AccountSettingsScreen(),
-      AppRoutes.decks => const DeckHubScreen(),
+      AppRoutes.settings => const SettingsScreen(),
+      AppRoutes.decks => const MainShell(initialIndex: 1),
       AppRoutes.createDeck => const CreateDeckScreen(),
       AppRoutes.editDeck => EditDeckScreen(
           // ← NEW
           args: settings.arguments as EditDeckArgs,
         ),
       AppRoutes.quiz => const QuizScreen(),
-      AppRoutes.progress => const ProgressScreen(),
+      AppRoutes.progress => const MainShell(initialIndex: 3),
       AppRoutes.notifications => const NotificationScreen(),
-      AppRoutes.discover => const DeckDiscoveryScreen(),
+      AppRoutes.discover => const MainShell(initialIndex: 2),
       AppRoutes.sharedDeckDetail => const SharedDeckDetailScreen(),
       AppRoutes.publicProfile => const PublicProfileScreen(),
       AppRoutes.feed => const SocialFeedScreen(),
-      _ => const HomeScreen(),
+      _ => const MainShell(),
     };
 
     return PageRouteBuilder(
