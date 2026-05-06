@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -13,13 +14,886 @@ import '../../../business-layer/services/deck_service.dart';
 import '../../../business-layer/services/share_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DECK HUB SCREEN  —  route: /decks
+// DECK SCREEN  —  route: /decks
 // Displays the main deck library with AI import, filters, and deck cards.
 //
 // SECTIONS:
 //   1. Static content  — hero, search bar, filter chips, AI import, create card
 //   2. Drafts          — unfinished decks (isDraft:true); tap → /create-deck
 //   3. Recent Decks    — completed decks (isDraft:false); tap → /quiz
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QUESTION TYPE ENUM
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum QuestionType {
+  multipleChoice,
+  identification,
+  both;
+
+  String get apiValue {
+    switch (this) {
+      case QuestionType.multipleChoice:
+        return 'multiple_choice';
+      case QuestionType.identification:
+        return 'identification';
+      case QuestionType.both:
+        return 'both';
+    }
+  }
+
+  String get displayName {
+    switch (this) {
+      case QuestionType.multipleChoice:
+        return 'Multiple Choice';
+      case QuestionType.identification:
+        return 'Identification';
+      case QuestionType.both:
+        return 'Both (50/50)';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case QuestionType.multipleChoice:
+        return 'Choose from 4 options per question';
+      case QuestionType.identification:
+        return 'Type the correct answer freely';
+      case QuestionType.both:
+        return 'Mix of both types, split evenly';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case QuestionType.multipleChoice:
+        return Icons.radio_button_checked_rounded;
+      case QuestionType.identification:
+        return Icons.edit_note_rounded;
+      case QuestionType.both:
+        return Icons.auto_awesome_rounded;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI IMPORT DIALOGS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Step 1 — Pick question type
+Future<QuestionType?> _showQuestionTypeDialog(BuildContext context) {
+  return showDialog<QuestionType>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ────────────────────────────────────────────────────
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryFixedDim],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.quiz_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Question Type',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Choose how your cards are tested',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ── Options ───────────────────────────────────────────────────
+            ...QuestionType.values.map((type) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _QuestionTypeOption(
+                    type: type,
+                    onTap: () => Navigator.pop(ctx, type),
+                  ),
+                )),
+
+            // ── Cancel ────────────────────────────────────────────────────
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _QuestionTypeOption extends StatelessWidget {
+  const _QuestionTypeOption({required this.type, required this.onTap});
+
+  final QuestionType type;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.outlineVariant.withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(type.icon, color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    type.displayName,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  Text(
+                    type.description,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      color: AppColors.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.outline, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Step 2 — Pick number of questions, enforcing [maxCount].
+Future<int?> _showQuestionCountDialog(
+    BuildContext context, int maxCount) {
+  int currentCount = (maxCount >= 10) ? 10 : maxCount;
+  final TextEditingController controller =
+      TextEditingController(text: currentCount.toString());
+
+  return showDialog<int>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        void setCount(int value) {
+          currentCount = value.clamp(1, maxCount);
+          controller.text = currentCount.toString();
+          controller.selection = TextSelection.fromPosition(
+            TextPosition(offset: controller.text.length),
+          );
+        }
+
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          backgroundColor: AppColors.surfaceContainerLowest,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header ──────────────────────────────────────────────
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            AppColors.primaryFixedDim
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.format_list_numbered_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Number of Questions',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          Text(
+                            'Max $maxCount based on your content',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // ── Counter display ──────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.outlineVariant.withOpacity(0.4),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Decrement
+                      GestureDetector(
+                        onTap: () {
+                          if (currentCount > 1) {
+                            setState(() => setCount(currentCount - 1));
+                          }
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: currentCount > 1
+                                ? AppColors.primaryContainer
+                                : AppColors.outlineVariant.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.remove_rounded,
+                            size: 22,
+                            color: currentCount > 1
+                                ? AppColors.primary
+                                : AppColors.outline,
+                          ),
+                        ),
+                      ),
+
+                      // Count input
+                      SizedBox(
+                        width: 100,
+                        child: TextField(
+                          controller: controller,
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.onSurface,
+                            letterSpacing: -1,
+                          ),
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          onChanged: (val) {
+                            final parsed = int.tryParse(val);
+                            if (parsed != null) {
+                              setState(() => setCount(parsed));
+                            }
+                          },
+                          onSubmitted: (val) {
+                            final parsed = int.tryParse(val) ?? 1;
+                            setState(() => setCount(parsed));
+                          },
+                        ),
+                      ),
+
+                      // Increment
+                      GestureDetector(
+                        onTap: () {
+                          if (currentCount < maxCount) {
+                            setState(() => setCount(currentCount + 1));
+                          }
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: currentCount < maxCount
+                                ? AppColors.primaryContainer
+                                : AppColors.outlineVariant.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.add_rounded,
+                            size: 22,
+                            color: currentCount < maxCount
+                                ? AppColors.primary
+                                : AppColors.outline,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── Quick select chips ───────────────────────────────────
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: ([5, 10, 15, 20, maxCount]
+                            .where((v) => v <= maxCount)
+                            .toSet()
+                            .toList()
+                          ..sort())
+                        .map((v) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: GestureDetector(
+                                onTap: () => setState(() => setCount(v)),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: currentCount == v
+                                        ? AppColors.primary
+                                        : AppColors.surfaceContainerLow,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: currentCount == v
+                                          ? AppColors.primary
+                                          : AppColors.outlineVariant,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    v == maxCount ? 'Max ($v)' : '$v',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: currentCount == v
+                                          ? AppColors.onPrimary
+                                          : AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Warning if at max ────────────────────────────────────
+                if (currentCount >= maxCount)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3CD),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: const Color(0xFFFFD95C).withOpacity(0.6)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded,
+                            size: 15, color: Color(0xFF856404)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Maximum of $maxCount questions reached for this content.',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              color: const Color(0xFF856404),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // ── Action buttons ───────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppColors.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, currentCount),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Generate $currentCount Cards',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI IMPORT HANDLER  (PDF + TXT, with question type & count dialogs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
+  // ── Step 1: Pick file (PDF or TXT) ────────────────────────────────────────
+  FilePickerResult? result;
+  try {
+    result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['txt', 'pdf'],
+      withData: true,
+    );
+  } catch (_) {
+    if (context.mounted) {
+      _showErrorSnackBar(context, 'Could not open file picker. Please try again.');
+    }
+    return;
+  }
+
+  if (result == null || result.files.single.bytes == null) return;
+
+  final fileBytes = result.files.single.bytes!;
+  final fileName = result.files.single.name.toLowerCase();
+  final isPdf = fileName.endsWith('.pdf');
+
+  // Validate non-empty
+  if (fileBytes.isEmpty) {
+    if (context.mounted) _showErrorSnackBar(context, 'The selected file is empty.');
+    return;
+  }
+
+  // ── Step 2: Question type dialog ──────────────────────────────────────────
+  if (!context.mounted) return;
+  final questionType = await _showQuestionTypeDialog(context);
+  if (questionType == null) return; // user cancelled
+
+  // ── Step 3: Estimate max & show count dialog ───────────────────────────────
+  // For TXT: ~1 question per 300 chars of content, capped at 30.
+  // For PDF:  assume up to 30 (can't inspect without parsing).
+  int maxQuestions;
+  if (isPdf) {
+    maxQuestions = 30;
+  } else {
+    final text = utf8.decode(fileBytes, allowMalformed: true);
+    final estimatedMax = (text.trim().length / 300).ceil().clamp(5, 30);
+    maxQuestions = estimatedMax;
+  }
+
+  if (!context.mounted) return;
+  final questionCount =
+      await _showQuestionCountDialog(context, maxQuestions);
+  if (questionCount == null) return; // user cancelled
+
+  // ── Step 4: Show loading overlay ──────────────────────────────────────────
+  bool loadingDialogOpen = false;
+  if (context.mounted) {
+    loadingDialogOpen = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppColors.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'Generating your deck…',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This may take a moment',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void safePopLoader() {
+    if (loadingDialogOpen && context.mounted) {
+      loadingDialogOpen = false;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  try {
+    // ── Step 5: Build request body ───────────────────────────────────────────
+    Map<String, dynamic> requestBody;
+    if (isPdf) {
+      final base64Data = base64Encode(fileBytes);
+      requestBody = {
+        'fileBase64': base64Data,
+        'fileType': 'pdf',
+        'questionType': questionType.apiValue,
+        'questionCount': questionCount,
+      };
+    } else {
+      final text = utf8.decode(fileBytes, allowMalformed: true);
+      if (text.trim().isEmpty) throw Exception('File is empty');
+      requestBody = {
+        'text': text,
+        'fileType': 'txt',
+        'questionType': questionType.apiValue,
+        'questionCount': questionCount,
+      };
+    }
+
+    // ── Step 6: Call Cloud Run endpoint ─────────────────────────────────────
+    final response = await http
+        .post(
+          Uri.parse('https://generatedeck-x2xze3qnza-uc.a.run.app'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(requestBody),
+        )
+        .timeout(const Duration(seconds: 120));
+
+    if (response.statusCode != 200) {
+      throw Exception(
+          'Server returned ${response.statusCode}: ${response.body}');
+    }
+
+    // ── Step 7: Parse response ───────────────────────────────────────────────
+    final dynamic decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Unexpected response format from server.');
+    }
+
+    final rawCards = decoded['cards'];
+    if (rawCards == null || rawCards is! List) {
+      throw Exception('No cards returned from server.');
+    }
+
+    final cards = List<Map<String, dynamic>>.from(rawCards);
+    if (cards.isEmpty) throw Exception('Server returned 0 cards.');
+
+    final title = (decoded['title'] as String?)?.trim().isNotEmpty == true
+        ? decoded['title'] as String
+        : 'AI Generated Deck';
+
+    // ── Step 8: Write to Firestore ───────────────────────────────────────────
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw Exception('Not signed in.');
+
+    final deckRef = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('decks')
+        .add({
+      'title': title,
+      'tag': 'AI',
+      'isDraft': false,
+      'visibility': 'private',
+      'cardCount': cards.length,
+      'targetCardCount': cards.length,
+      'questionType': questionType.apiValue,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'progress': 0.0,
+    });
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (final card in cards) {
+      final cardRef = deckRef.collection('cards').doc();
+      batch.set(cardRef, {
+        'question': card['question'] ?? '',
+        'answer': card['answer'] ?? '',
+        'type': (card.containsKey('options') && card['options'] is List && (card['options'] as List).isNotEmpty)
+            ? 'multiple_choice'
+            : 'identification',
+        'createdAt': FieldValue.serverTimestamp(),
+        if (card.containsKey('options') && card['options'] is List && (card['options'] as List).isNotEmpty)
+          'choices': card['options'],
+      });
+    }
+    await batch.commit();
+
+    // ── Step 8b: Soft under-delivery warning ─────────────────────────────────
+    final threshold = (questionCount * 0.5).ceil();
+    if (cards.length < threshold && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Only ${cards.length} of $questionCount cards were generated. You can add more cards manually.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFFF59E0B), // amber-500
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+
+    // ── Step 9: Success ──────────────────────────────────────────────────────
+    safePopLoader();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Deck created successfully!',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      '${cards.length} ${questionType.displayName} cards — "$title"',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: Colors.white.withOpacity(0.85),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF16A34A), // green-700
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  } catch (e) {
+    safePopLoader();
+    if (context.mounted) {
+      _showErrorSnackBar(
+          context,
+          e.toString().contains('Exception:')
+              ? e.toString().replaceFirst('Exception: ', '')
+              : 'Something went wrong. Please try again.');
+    }
+  }
+}
+
+void _showErrorSnackBar(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.white, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w600, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+      backgroundColor: AppColors.error,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      duration: const Duration(seconds: 4),
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DECK HUB SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
 class DeckHubScreen extends StatelessWidget {
@@ -52,7 +926,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
   @override
   void initState() {
     super.initState();
-    // Silently repair any stale cardCount values on public mirror docs.
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       ShareService.repairCardCounts(uid: uid).catchError((_) {});
@@ -71,7 +944,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
         .snapshots();
   }
 
-  /// Fetches draft cards then navigates to /create-deck to continue the draft.
   Future<void> _continueDraft(
     BuildContext context,
     String deckId,
@@ -88,7 +960,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     try {
       final savedCards = await DeckService.getDeckCards(deckId);
       if (!context.mounted) return;
-      Navigator.pop(context); // close loader
+      Navigator.pop(context);
 
       Navigator.of(context).pushNamed(
         '/create-deck',
@@ -102,20 +974,8 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       );
     } catch (e) {
       if (!context.mounted) return;
-      Navigator.pop(context); // close loader
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not load draft. Please try again.',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        ),
-      );
+      Navigator.pop(context);
+      _showErrorSnackBar(context, 'Could not load draft. Please try again.');
     }
   }
 
@@ -126,7 +986,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       extendBody: true,
       body: Stack(
         children: [
-          // ── Decorative blobs ─────────────────────────────
           Positioned(
             top: -40,
             right: -80,
@@ -153,7 +1012,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                   child: CustomScrollView(
                     physics: const BouncingScrollPhysics(),
                     slivers: [
-                      // ── 1. STATIC CONTENT ──────────────────────────────
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
                         sliver: SliverList(
@@ -163,7 +1021,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                             _SearchBar(),
                             const SizedBox(height: 16),
 
-                            // FILTERS
                             SizedBox(
                               height: 40,
                               child: ListView.separated(
@@ -196,7 +1053,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                         ),
                       ),
 
-                      // ── 2. DYNAMIC CONTENT (drafts + completed decks) ──
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _deckStream(),
                         builder: (context, snapshot) {
@@ -215,7 +1071,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
 
                           final allDocs = snapshot.data?.docs ?? [];
 
-                          // ── Split into drafts vs completed ──────────────
                           final draftDocs = allDocs
                               .where((d) => d.data()['isDraft'] == true)
                               .toList();
@@ -228,10 +1083,8 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                   : d.data()['tag'] == selectedCategory)
                               .toList();
 
-                          // ── Build list items ────────────────────────────
                           final items = <Widget>[];
 
-                          // DRAFTS SECTION
                           if (draftDocs.isNotEmpty) {
                             items.add(
                               Padding(
@@ -300,7 +1153,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                               );
                             }
 
-                            // Divider between sections
                             items.add(
                               Padding(
                                 padding:
@@ -314,7 +1166,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                             );
                           }
 
-                          // RECENT DECKS HEADER
                           items.add(
                             Padding(
                               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -329,7 +1180,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                             ),
                           );
 
-                          // COMPLETED DECKS or EMPTY STATE
                           if (completedDocs.isEmpty) {
                             items.add(
                               Padding(
@@ -379,7 +1229,9 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     progress:
                                         (deck['progress'] ?? 0.0).toDouble(),
                                     progressColor: AppColors.primary,
-                                    visibility: deck['visibility'] as String? ?? 'private',
+                                    visibility: deck['visibility']
+                                            as String? ??
+                                        'private',
                                   ),
                                 ),
                               );
@@ -392,7 +1244,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                         },
                       ),
 
-                      // ── 3. BOTTOM SPACING ──────────────────────────────
                       const SliverToBoxAdapter(child: SizedBox(height: 140)),
                     ],
                   ),
@@ -451,18 +1302,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       await DeckService.deleteDeck(deckId);
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete draft.',
-                style:
-                    GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          ),
-        );
+        _showErrorSnackBar(context, 'Failed to delete draft.');
       }
     }
   }
@@ -761,79 +1601,6 @@ class _AIImportCard extends StatelessWidget {
   }
 }
 
-Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
-  try {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['txt'],
-      withData: true,
-    );
-
-    if (result == null || result.files.single.bytes == null) return;
-
-    final fileBytes = result.files.single.bytes!;
-    final text = utf8.decode(fileBytes);
-
-    if (text.trim().isEmpty) throw Exception("File is empty");
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    final response = await http.post(
-      Uri.parse("https://generatedeck-x2xze3qnza-uc.a.run.app"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({"text": text}),
-    );
-
-    if (response.statusCode != 200) throw Exception("Failed to generate deck");
-
-    final data = jsonDecode(response.body);
-    final cards = List<Map<String, dynamic>>.from(data['cards']);
-    final title = data['title'] as String? ?? 'AI Generated Deck';
-
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final deckRef = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('decks')
-        .add({
-      "title": title,
-      "tag": "AI",
-      "isDraft": false,
-      "visibility": "private",
-      "cardCount": cards.length,
-      "targetCardCount": cards.length,
-      "createdAt": FieldValue.serverTimestamp(),
-      "updatedAt": FieldValue.serverTimestamp(),
-      "progress": 0.0,
-    });
-
-    final batch = FirebaseFirestore.instance.batch();
-    for (final card in cards) {
-      final cardRef = deckRef.collection('cards').doc();
-      batch.set(cardRef, {
-        "question": card['question'],
-        "answer": card['answer'],
-        "type": "identification",
-      });
-    }
-    await batch.commit();
-
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Deck created successfully!")),
-    );
-  } catch (e) {
-    Navigator.pop(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Error: $e")),
-    );
-  }
-}
-
 class _ImportOption extends StatelessWidget {
   const _ImportOption({
     required this.icon,
@@ -962,8 +1729,6 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DRAFT DECK CARD
-// Visually distinct amber-tinted card for unfinished decks.
-// Tapping routes to /create-deck to continue the draft.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DraftDeckCard extends StatelessWidget {
@@ -994,7 +1759,6 @@ class _DraftDeckCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          // Warm amber-tinted background to signal "unfinished"
           color: const Color(0xFFFFFBF0),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
@@ -1012,13 +1776,11 @@ class _DraftDeckCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header row: tag + DRAFT badge + menu ────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
-                    // Subject tag
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
@@ -1037,7 +1799,6 @@ class _DraftDeckCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // DRAFT badge
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
@@ -1070,7 +1831,6 @@ class _DraftDeckCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Delete button (only action available for drafts)
                 GestureDetector(
                   onTap: () => _showDraftMenu(context),
                   child: const Icon(Icons.more_vert_rounded,
@@ -1080,7 +1840,6 @@ class _DraftDeckCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // ── Title ────────────────────────────────────────────────────
             Text(
               title,
               style: GoogleFonts.plusJakartaSans(
@@ -1101,7 +1860,6 @@ class _DraftDeckCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // ── Completion progress ──────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1138,7 +1896,6 @@ class _DraftDeckCard extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
-            // ── Continue CTA ─────────────────────────────────────────────
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 11),
@@ -1184,7 +1941,6 @@ class _DraftDeckCard extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DRAFT OPTIONS SHEET
-// Limited options: Continue Draft + Delete. No quiz/edit.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DraftOptionsSheet extends StatelessWidget {
@@ -1222,7 +1978,6 @@ class _DraftOptionsSheet extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Title
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
             child: Row(
@@ -1268,7 +2023,6 @@ class _DraftOptionsSheet extends StatelessWidget {
             ),
           ),
 
-          // Locked notice
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Container(
@@ -1401,15 +2155,14 @@ class _DeckCardState extends State<_DeckCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Tag + Visibility chip + More icon ─────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: widget.tagColor,
                         borderRadius: BorderRadius.circular(999),
@@ -1425,7 +2178,6 @@ class _DeckCardState extends State<_DeckCard> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // ── Visibility chip ──────────────────────────────
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
@@ -1479,7 +2231,6 @@ class _DeckCardState extends State<_DeckCard> {
             ),
             const SizedBox(height: 12),
 
-            // ── Title + subtitle ──────────────────────────────────────
             Text(
               widget.title,
               style: GoogleFonts.plusJakartaSans(
@@ -1500,7 +2251,6 @@ class _DeckCardState extends State<_DeckCard> {
             ),
             const SizedBox(height: 16),
 
-            // ── Progress bar ──────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1583,7 +2333,8 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
     Navigator.pop(context);
     Navigator.of(context).pushNamed(
       '/edit-deck',
-      arguments: EditDeckArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
+      arguments:
+          EditDeckArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
     );
   }
 
@@ -1632,23 +2383,10 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
       await DeckService.deleteDeck(widget.deckId);
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to delete deck.',
-                style:
-                    GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          ),
-        );
+        _showErrorSnackBar(context, 'Failed to delete deck.');
       }
     }
   }
-
-  // ── Visibility toggle ───────────────────────────────────────────────────
 
   Future<void> _handleVisibilityToggle(BuildContext context) async {
     if (_isTogglingVisibility) return;
@@ -1664,49 +2402,22 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
         visibility: newVisibility,
       );
 
-      // Update the card chip immediately via callback
       widget.onVisibilityChanged(newVisibility);
 
       if (context.mounted) Navigator.pop(context);
     } on StateError catch (e) {
-      // Draft deck — cannot be shared
       if (context.mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              e.message,
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          ),
-        );
+        _showErrorSnackBar(context, e.message);
       }
     } on ArgumentError {
-      // Visibility already equals requested value — silently dismiss
       if (context.mounted) Navigator.pop(context);
     } catch (e, st) {
-      // FirebaseException or any other network error
       debugPrint('[ShareService.setVisibility] error: $e\n$st');
       if (context.mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Failed to update visibility. Please try again.',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          ),
-        );
+        _showErrorSnackBar(
+            context, 'Failed to update visibility. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _isTogglingVisibility = false);
@@ -1743,8 +2454,8 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
               Navigator.pop(context);
               Navigator.of(context).pushNamed(
                 '/quiz',
-                arguments:
-                    QuizArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
+                arguments: QuizArgs(
+                    deckId: widget.deckId, deckTitle: widget.deckTitle),
               );
             },
           ),
@@ -1753,12 +2464,12 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
             label: 'Edit Deck',
             onTap: () => _handleEdit(context),
           ),
-          // ── Visibility toggle option ──────────────────────────────────
           _isTogglingVisibility
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
+                    child:
+                        CircularProgressIndicator(color: AppColors.primary),
                   ),
                 )
               : ListTile(
@@ -1898,7 +2609,9 @@ class _DeckBottomNavBar extends StatelessWidget {
     _NavItem(
         icon: Icons.explore_outlined, label: 'Discover', route: '/discover'),
     _NavItem(
-        icon: Icons.analytics_outlined, label: 'Progress', route: '/progress'),
+        icon: Icons.analytics_outlined,
+        label: 'Progress',
+        route: '/progress'),
     _NavItem(
         icon: Icons.person_outline_rounded,
         label: 'Profile',
@@ -1938,8 +2651,8 @@ class _DeckBottomNavBar extends StatelessWidget {
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
                     color: active
                         ? AppColors.primaryContainer.withOpacity(0.45)
