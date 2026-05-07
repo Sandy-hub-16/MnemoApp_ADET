@@ -5,12 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../../main.dart';
+import '../../business-layer/services/progress_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SCREEN  —  route: /home
-// The main dashboard shown after a successful login.
-// Fetches user's displayName and username from Firestore, just like
-// profile_screen.dart does.
+// Your Daily Study Hub - personalized command center for quick study actions
 // ─────────────────────────────────────────────────────────────────────────────
 
 class HomeScreen extends StatelessWidget {
@@ -38,14 +37,15 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
   String _fullName = '';
   String _username = '';
   String? _photoUrl;
+  ProgressDashboard _dashboard = ProgressDashboard.empty();
 
   @override
   void initState() {
     super.initState();
-    _loadUser();
+    _loadData();
   }
 
-  Future<void> _loadUser() async {
+  Future<void> _loadData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       setState(() => _loading = false);
@@ -57,11 +57,14 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = doc.data() ?? {};
 
+    final dashboard = await ProgressService.loadDashboard();
+
     if (mounted) {
       setState(() {
         _fullName = data['fullName'] as String? ?? '';
         _username = data['username'] as String? ?? '';
         _photoUrl = authUser.photoURL ?? data['photoUrl'] as String?;
+        _dashboard = dashboard;
         _loading = false;
       });
     }
@@ -95,7 +98,7 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
             bottom: false,
             child: Column(
               children: [
-              _HomeTopBar(photoUrl: _photoUrl),
+                _HomeTopBar(photoUrl: _photoUrl),
                 Expanded(
                   child: _loading
                       ? const Center(
@@ -107,6 +110,7 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
                       : _HomeBody(
                           fullName: _fullName,
                           username: _username,
+                          dashboard: _dashboard,
                         ),
                 ),
               ],
@@ -125,8 +129,6 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
 class _HomeTopBar extends StatelessWidget {
   const _HomeTopBar({this.photoUrl});
   final String? photoUrl;
-
-  // ── Unread notification count stream ─────────────────────────────────────
 
   Stream<int> _unreadCountStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -188,7 +190,7 @@ class _HomeTopBar extends StatelessWidget {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: AppColors.primaryContainer
-                                    .withValues(alpha: 0.25),
+                                    .withOpacity(0.25),
                               ),
                               child: const Icon(
                                 Icons.notifications_outlined,
@@ -270,11 +272,15 @@ class _HomeTopBar extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _HomeBody extends StatelessWidget {
-  const _HomeBody({required this.fullName, required this.username});
+  const _HomeBody({
+    required this.fullName,
+    required this.username,
+    required this.dashboard,
+  });
   final String fullName;
   final String username;
+  final ProgressDashboard dashboard;
 
-  // Derive first name for the greeting
   String get _firstName {
     if (fullName.trim().isEmpty) return 'there';
     return fullName.trim().split(' ').first;
@@ -293,25 +299,18 @@ class _HomeBody extends StatelessWidget {
               _WelcomeSection(firstName: _firstName),
               const SizedBox(height: 24),
 
-              // ── Streak card ────────────────────────────────────────────────
-              const _StreakCard(),
+              // ── Today's Progress ───────────────────────────────────────────
+              _TodayProgressCard(dashboard: dashboard),
+              const SizedBox(height: 16),
+
+              // ── Quick Actions ──────────────────────────────────────────────
+              const _QuickActionsRow(),
               const SizedBox(height: 28),
 
-              // ── Continue Studying ──────────────────────────────────────────
-              _SectionHeader(
-                title: 'Continue Studying',
-                actionLabel: 'View all',
-                onAction: () =>
-                    Navigator.of(context).pushReplacementNamed(AppRoutes.decks),
-              ),
+              // ── Recent Activity ────────────────────────────────────────────
+              _SectionHeader(title: 'Recent Activity'),
               const SizedBox(height: 14),
-              const _ContinueStudyingRow(),
-              const SizedBox(height: 28),
-
-              // ── Community Picks ────────────────────────────────────────────
-              _SectionHeader(title: 'Community Picks'),
-              const SizedBox(height: 14),
-              const _CommunityPicksRow(),
+              _RecentActivityList(dashboard: dashboard),
 
               // ── Bottom clearance for nav bar ────────────────────────────────
               const SizedBox(height: 140),
@@ -360,18 +359,26 @@ class _WelcomeSection extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STREAK CARD
+// TODAY'S PROGRESS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _StreakCard extends StatelessWidget {
-  const _StreakCard();
+class _TodayProgressCard extends StatelessWidget {
+  const _TodayProgressCard({required this.dashboard});
+  final ProgressDashboard dashboard;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primaryContainer.withOpacity(0.3),
+            AppColors.secondaryContainer.withOpacity(0.2),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -381,153 +388,212 @@ class _StreakCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left: streak info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'DAILY STREAK',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                    letterSpacing: 1.5,
+          Row(
+            children: [
+              Text(
+                'TODAY\'S PROGRESS',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const Spacer(),
+              if (dashboard.hasAttempts)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.trending_up_rounded,
+                          size: 14, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${(dashboard.overallMastery * 100).round()}%',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Text(
-                      '14',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 48,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.onSurface,
-                        letterSpacing: -2,
-                        height: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Days',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  "🔥 You're on fire! Keep it up.",
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
-
-          // Right: ring progress
-          const _RingProgress(percent: 0.75, label: '75%'),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.check_circle_rounded,
+                  value: '${dashboard.correctAnswers}',
+                  label: 'Correct',
+                  color: AppColors.primary,
+                ),
+              ),
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.quiz_rounded,
+                  value: '${dashboard.reviewedAnswers}',
+                  label: 'Reviewed',
+                  color: AppColors.secondary,
+                ),
+              ),
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.local_fire_department_rounded,
+                  value: '${dashboard.currentStreakDays}',
+                  label: 'Day Streak',
+                  color: AppColors.tertiary,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _RingProgress extends StatelessWidget {
-  const _RingProgress({required this.percent, required this.label});
-  final double percent;
+class _StatItem extends StatelessWidget {
+  const _StatItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String value;
   final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    const size = 88.0;
-    const stroke = 8.0;
-    const radius = (size / 2) - stroke;
-    final circumference = 2 * 3.14159 * radius;
-    final dashOffset = circumference * (1 - percent);
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Transform.rotate(
-            angle: -1.5708, // -90 deg
-            child: CustomPaint(
-              size: const Size(size, size),
-              painter: _RingPainter(
-                circumference: circumference,
-                dashOffset: dashOffset,
-                stroke: stroke,
-              ),
-            ),
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+            height: 1,
           ),
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.primary,
-            ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.onSurfaceVariant,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _RingPainter extends CustomPainter {
-  const _RingPainter({
-    required this.circumference,
-    required this.dashOffset,
-    required this.stroke,
-  });
-  final double circumference;
-  final double dashOffset;
-  final double stroke;
+// ─────────────────────────────────────────────────────────────────────────────
+// QUICK ACTIONS ROW
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _QuickActionsRow extends StatelessWidget {
+  const _QuickActionsRow();
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - stroke / 2;
-
-    // Track
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..color = AppColors.primaryContainer.withOpacity(0.30)
-        ..strokeWidth = stroke
-        ..style = PaintingStyle.stroke,
-    );
-
-    // Progress arc
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      0,
-      2 * 3.14159 * (1 - dashOffset / circumference),
-      false,
-      Paint()
-        ..color = AppColors.primary
-        ..strokeWidth = stroke
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _QuickActionButton(
+            icon: Icons.add_rounded,
+            label: 'Create Deck',
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryFixedDim],
+            ),
+            onTap: () => Navigator.of(context).pushNamed(AppRoutes.createDeck),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _QuickActionButton(
+            icon: Icons.explore_rounded,
+            label: 'Discover',
+            gradient: LinearGradient(
+              colors: [
+                AppColors.secondary,
+                AppColors.secondaryContainer.withOpacity(0.8)
+              ],
+            ),
+            onTap: () =>
+                Navigator.of(context).pushReplacementNamed(AppRoutes.discover),
+          ),
+        ),
+      ],
     );
   }
+}
+
+class _QuickActionButton extends StatelessWidget {
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Gradient gradient;
+  final VoidCallback onTap;
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.white, size: 28),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -537,380 +603,143 @@ class _RingPainter extends CustomPainter {
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
-    this.actionLabel,
-    this.onAction,
   });
   final String title;
-  final String? actionLabel;
-  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: AppColors.onSurface,
-            letterSpacing: -0.3,
-          ),
-        ),
-        if (actionLabel != null && onAction != null)
-          GestureDetector(
-            onTap: onAction,
-            child: Row(
-              children: [
-                Text(
-                  actionLabel!,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(Icons.arrow_forward_rounded,
-                    size: 15, color: AppColors.primary),
-              ],
-            ),
-          ),
-      ],
+    return Text(
+      title,
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 18,
+        fontWeight: FontWeight.w800,
+        color: AppColors.onSurface,
+        letterSpacing: -0.3,
+      ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONTINUE STUDYING ROW
+// RECENT ACTIVITY LIST
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ContinueStudyingRow extends StatelessWidget {
-  const _ContinueStudyingRow();
+class _RecentActivityList extends StatelessWidget {
+  const _RecentActivityList({required this.dashboard});
+  final ProgressDashboard dashboard;
 
   @override
   Widget build(BuildContext context) {
+    if (dashboard.deckSummaries.isEmpty) {
+      return _EmptyActivityCard();
+    }
+
+    final recentDecks = dashboard.deckSummaries.take(3).toList();
+
     return Column(
-      children: [
-        _StudyCard(
-          icon: Icons.language_rounded,
-          iconBg: AppColors.secondaryContainer,
-          iconFg: AppColors.onSecondaryContainer,
-          title: 'Spanish Verbs',
-          subtitle: 'Last studied 2 hours ago',
-          progress: 0.40,
-          progressColor: AppColors.primary,
-          cardCount: '40/100 Cards',
-        ),
-        const SizedBox(height: 12),
-        _StudyCard(
-          icon: Icons.science_rounded,
-          iconBg: AppColors.tertiaryContainer,
-          iconFg: AppColors.onTertiaryContainer,
-          title: 'Organic Chemistry II',
-          subtitle: 'Last studied yesterday',
-          progress: 0.85,
-          progressColor: AppColors.tertiary,
-          cardCount: '170/200 Cards',
-        ),
-      ],
+      children: recentDecks
+          .map((deck) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _ActivityCard(deck: deck),
+              ))
+          .toList(),
     );
   }
 }
 
-class _StudyCard extends StatelessWidget {
-  const _StudyCard({
-    required this.icon,
-    required this.iconBg,
-    required this.iconFg,
-    required this.title,
-    required this.subtitle,
-    required this.progress,
-    required this.progressColor,
-    required this.cardCount,
-  });
+class _ActivityCard extends StatelessWidget {
+  const _ActivityCard({required this.deck});
+  final DeckProgressSummary deck;
 
-  final IconData icon;
-  final Color iconBg;
-  final Color iconFg;
-  final String title;
-  final String subtitle;
-  final double progress;
-  final Color progressColor;
-  final String cardCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed(AppRoutes.quiz),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.onSurface.withOpacity(0.04),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: iconFg, size: 22),
-                ),
-                const Spacer(),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    cardCount,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: AppColors.onSurface,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                color: AppColors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 14),
-            // Progress bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: AppColors.primaryContainer.withOpacity(0.25),
-                valueColor: AlwaysStoppedAnimation<Color>(progressColor),
-                minHeight: 5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  String _timeAgo(DateTime? date) {
+    if (date == null) return 'Recently';
+    final diff = DateTime.now().difference(date);
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'Just now';
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COMMUNITY PICKS ROW  (horizontal scroll)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CommunityPicksRow extends StatelessWidget {
-  const _CommunityPicksRow();
-
-  static const _picks = [
-    _PickData(
-      title: 'Data Structures 101',
-      description: 'Master the fundamentals of trees, graphs, and hash tables.',
-      rating: '4.9',
-      creator: 'Alex Chen',
-      tagColor: Color(0xFFC2E8FF),
-      tagFg: Color(0xFF004D67),
-      icon: Icons.developer_board_rounded,
-    ),
-    _PickData(
-      title: 'World History: 19th Century',
-      description: 'Key events, figures, and dates from the 1800s.',
-      rating: '4.8',
-      creator: 'Emma L.',
-      tagColor: Color(0xFFFFE087),
-      tagFg: Color(0xFF574500),
-      icon: Icons.public_rounded,
-    ),
-    _PickData(
-      title: 'Calculus Essentials',
-      description: 'Derivatives, integrals, and limits explained simply.',
-      rating: '4.7',
-      creator: 'Raj M.',
-      tagColor: Color(0xFF57FDC8),
-      tagFg: Color(0xFF002116),
-      icon: Icons.functions_rounded,
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 210,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: _picks.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, i) => _CommunityPickCard(pick: _picks[i]),
-      ),
-    );
+  Color _categoryColor(String category) {
+    final colors = {
+      'Science': AppColors.tertiary,
+      'Math': AppColors.primary,
+      'Language': AppColors.secondary,
+      'History': const Color(0xFFE85D75),
+      'Technology': const Color(0xFF9B5DE5),
+    };
+    return colors[category] ?? AppColors.primary;
   }
-}
-
-class _PickData {
-  const _PickData({
-    required this.title,
-    required this.description,
-    required this.rating,
-    required this.creator,
-    required this.tagColor,
-    required this.tagFg,
-    required this.icon,
-  });
-  final String title;
-  final String description;
-  final String rating;
-  final String creator;
-  final Color tagColor;
-  final Color tagFg;
-  final IconData icon;
-}
-
-class _CommunityPickCard extends StatelessWidget {
-  const _CommunityPickCard({required this.pick});
-  final _PickData pick;
 
   @override
   Widget build(BuildContext context) {
+    final masteryPercent = (deck.mastery * 100).round();
+    final color = _categoryColor(deck.category);
+
     return Container(
-      width: 230,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+            color: AppColors.onSurface.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          // Icon + rating
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: pick.tagColor.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(pick.icon, color: pick.tagFg, size: 22),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.tertiaryContainer.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.star_rounded,
-                        size: 13, color: AppColors.tertiary),
-                    const SizedBox(width: 3),
-                    Text(
-                      pick.rating,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.onTertiaryContainer,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            pick.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.onSurface,
-              height: 1.3,
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Icon(Icons.book_rounded, color: color, size: 22),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(width: 14),
           Expanded(
-            child: Text(
-              pick.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                color: AppColors.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: pick.tagColor,
-                ),
-                child: Icon(Icons.person_rounded, size: 13, color: pick.tagFg),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  pick.creator,
-                  overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  deck.deckTitle,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${deck.category} • ${_timeAgo(deck.lastStudiedAt)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
                     color: AppColors.onSurfaceVariant,
                   ),
                 ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '$masteryPercent%',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color,
               ),
-              GestureDetector(
-                onTap: () {},
-                child: const Icon(Icons.bookmark_add_outlined,
-                    color: AppColors.primary, size: 20),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -918,7 +747,48 @@ class _CommunityPickCard extends StatelessWidget {
   }
 }
 
-
+class _EmptyActivityCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.outlineVariant.withOpacity(0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.history_rounded,
+            size: 48,
+            color: AppColors.outline.withOpacity(0.5),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No activity yet',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Complete a quiz to see your progress here',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS
@@ -938,4 +808,3 @@ class _Blob extends StatelessWidget {
     );
   }
 }
-
