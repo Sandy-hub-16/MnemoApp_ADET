@@ -896,15 +896,28 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     final batch = FirebaseFirestore.instance.batch();
     for (final card in cards) {
       final cardRef = deckRef.collection('cards').doc();
+
+      final hasOptions = card.containsKey('options') &&
+                         card['options'] is List &&
+                         (card['options'] as List).isNotEmpty;
+
+      int? correctIndex;
+      if (hasOptions) {
+        final options = card['options'] as List;
+        final answer = (card['answer'] as String? ?? '').trim().toLowerCase();
+        correctIndex = options.indexWhere(
+          (opt) => opt.toString().trim().toLowerCase() == answer,
+        );
+        if (correctIndex == -1) correctIndex = 0;
+      }
+
       batch.set(cardRef, {
         'question': card['question'] ?? '',
         'answer': card['answer'] ?? '',
-        'type': (card.containsKey('options') && card['options'] is List && (card['options'] as List).isNotEmpty)
-            ? 'multiple_choice'
-            : 'identification',
+        'type': hasOptions ? 'multiple_choice' : 'identification',
         'createdAt': FieldValue.serverTimestamp(),
-        if (card.containsKey('options') && card['options'] is List && (card['options'] as List).isNotEmpty)
-          'choices': card['options'],
+        if (hasOptions) 'choices': card['options'],
+        if (hasOptions && correctIndex != null) 'correctIndex': correctIndex,
       });
     }
     await batch.commit();
