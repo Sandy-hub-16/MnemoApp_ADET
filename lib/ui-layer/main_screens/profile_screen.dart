@@ -217,77 +217,81 @@ class _ProfileBodyState extends State<_ProfileBody> {
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 120),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Profile Header ─────────────────────────────────────────────
+          // ── Profile Header (centered) ──────────────────────────────────
           _ProfileHeader(
             fullName: _fullName,
             subtitle: subtitleLine,
             photoUrl: _photoUrl,
             uploadingPhoto: _uploadingPhoto,
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 28),
 
-          // ── Stats Bento ────────────────────────────────────────────────
-          _StatsBento(
+          // ── Stats Row (horizontal) ─────────────────────────────────────
+          _StatsRow(
             deckCount: _deckCount,
             cardCount: _cardCount,
             draftCount: _draftCount,
           ),
           const SizedBox(height: 32),
 
-          // ── Settings label ─────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 12),
-            child: Text(
-              'Account Settings',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.onSurfaceVariant,
-                letterSpacing: 1.4,
-              ),
+          // ── Settings Card ──────────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.onSurface.withOpacity(0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _SettingsTile(
+                  icon: Icons.manage_accounts_outlined,
+                  iconBg: AppColors.secondaryContainer.withOpacity(0.5),
+                  iconColor: AppColors.onSecondaryContainer,
+                  label: 'Personal Information',
+                  isFirst: true,
+                  onTap: () async {
+                    await Navigator.of(context).pushNamed('/account-settings');
+                    _loadProfile();
+                  },
+                ),
+                _SettingsDivider(),
+                _SettingsTile(
+                  icon: Icons.settings_outlined,
+                  iconBg: AppColors.primaryContainer.withOpacity(0.5),
+                  iconColor: AppColors.primary,
+                  label: 'Settings',
+                  onTap: () => Navigator.of(context).pushNamed('/settings'),
+                ),
+                _SettingsDivider(),
+                _SettingsTile(
+                  icon: Icons.notifications_outlined,
+                  iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+                  iconColor: AppColors.onTertiaryContainer,
+                  label: 'Notifications',
+                  onTap: () {},
+                ),
+                _SettingsDivider(),
+                _SettingsTile(
+                  icon: Icons.palette_outlined,
+                  iconBg: AppColors.primaryContainer.withOpacity(0.3),
+                  iconColor: AppColors.primary,
+                  label: 'Appearance',
+                  isLast: true,
+                  onTap: () {},
+                ),
+              ],
             ),
           ),
-
-          // ── Settings List ──────────────────────────────────────────────
-          _SettingsTile(
-            icon: Icons.manage_accounts_outlined,
-            iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-            iconColor: AppColors.onSecondaryContainer,
-            label: 'Personal Information',
-            onTap: () async {
-              await Navigator.of(context).pushNamed('/account-settings');
-              _loadProfile();
-            },
-          ),
-          const SizedBox(height: 10),
-          _SettingsTile(
-            icon: Icons.settings_outlined,
-            iconBg: AppColors.primaryContainer.withOpacity(0.5),
-            iconColor: AppColors.primary,
-            label: 'Settings',
-            onTap: () => Navigator.of(context).pushNamed('/settings'),
-          ),
-          const SizedBox(height: 10),
-          _SettingsTile(
-            icon: Icons.notifications_outlined,
-            iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-            iconColor: AppColors.onTertiaryContainer,
-            label: 'Notifications',
-            onTap: () {},
-          ),
-          const SizedBox(height: 10),
-          _SettingsTile(
-            icon: Icons.palette_outlined,
-            iconBg: AppColors.primaryContainer.withOpacity(0.3),
-            iconColor: AppColors.primary,
-            label: 'Appearance',
-            onTap: () {},
-          ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 16),
 
           // ── Log Out ────────────────────────────────────────────────────
           _LogOutButton(),
@@ -316,10 +320,9 @@ class _ProfileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
       children: [
-        // ── Avatar (display only — edit is in Personal Information) ──────
+        // ── Avatar (centered) ─────────────────────────────────────────────
         Stack(
           clipBehavior: Clip.none,
           children: [
@@ -359,40 +362,34 @@ class _ProfileHeader extends StatelessWidget {
               ),
           ],
         ),
+        const SizedBox(height: 16),
 
-        const SizedBox(width: 20),
-
-        // ── Name + subtitle ───────────────────────────────────────────────
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                fullName,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                  color: AppColors.onSurface,
-                  height: 1.1,
-                ),
-              ),
-              if (subtitle.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13,
-                    height: 1.55,
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ],
+        // ── Name + subtitle (centered) ────────────────────────────────────
+        Text(
+          fullName,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+            color: AppColors.onSurface,
+            height: 1.1,
           ),
+          textAlign: TextAlign.center,
         ),
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              height: 1.5,
+              color: AppColors.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ],
     );
   }
@@ -504,11 +501,11 @@ class _FallbackAvatar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STATS BENTO  — container wrapping the 3 stat cards
+// STATS ROW  — horizontal stats display
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _StatsBento extends StatelessWidget {
-  const _StatsBento({
+class _StatsRow extends StatelessWidget {
+  const _StatsRow({
     required this.deckCount,
     required this.cardCount,
     required this.draftCount,
@@ -520,182 +517,73 @@ class _StatsBento extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Label
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-            child: Text(
-              'Learning Stats',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.onSurfaceVariant,
-                letterSpacing: 1.4,
-              ),
-            ),
+    return Row(
+      children: [
+        Expanded(
+          child: _StatItem(
+            value: '$deckCount',
+            label: 'Decks',
           ),
-
-          // Top card — Decks Built (wider, accent blob)
-          _DecksBuiltCard(count: deckCount),
-          const SizedBox(height: 10),
-
-          // Bottom row — Cards Saved + Drafts
-          Row(
-            children: [
-              Expanded(
-                child: _StatCard(
-                  icon: Icons.bookmark_rounded,
-                  iconColor: AppColors.secondary,
-                  value: '$cardCount',
-                  label: 'Cards Saved',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _StatCard(
-                  icon: Icons.note_rounded,
-                  iconColor: AppColors.tertiary,
-                  value: '$draftCount',
-                  label: 'Drafts',
-                ),
-              ),
-            ],
+        ),
+        Container(
+          width: 1,
+          height: 40,
+          color: AppColors.outlineVariant.withOpacity(0.3),
+        ),
+        Expanded(
+          child: _StatItem(
+            value: '$cardCount',
+            label: 'Cards',
           ),
-        ],
-      ),
+        ),
+        Container(
+          width: 1,
+          height: 40,
+          color: AppColors.outlineVariant.withOpacity(0.3),
+        ),
+        Expanded(
+          child: _StatItem(
+            value: '$draftCount',
+            label: 'Drafts',
+          ),
+        ),
+      ],
     );
   }
 }
 
-class _DecksBuiltCard extends StatelessWidget {
-  const _DecksBuiltCard({required this.count});
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Accent blob in top-right
-          Positioned(
-            top: -16,
-            right: -16,
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: AppColors.primaryContainer.withOpacity(0.30),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.layers_rounded,
-                color: AppColors.primary,
-                size: 28,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '$count',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 36,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.onSurface,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Decks Built',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  color: AppColors.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({
-    required this.icon,
-    required this.iconColor,
+class _StatItem extends StatelessWidget {
+  const _StatItem({
     required this.value,
     required this.label,
   });
 
-  final IconData icon;
-  final Color iconColor;
   final String value;
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+    return Column(
+      children: [
+        Text(
+          value,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+            height: 1,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: iconColor, size: 26),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-              color: AppColors.onSurface,
-              height: 1,
-            ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.onSurfaceVariant,
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -711,6 +599,8 @@ class _SettingsTile extends StatelessWidget {
     required this.iconColor,
     required this.label,
     required this.onTap,
+    this.isFirst = false,
+    this.isLast = false,
   });
 
   final IconData icon;
@@ -718,27 +608,31 @@ class _SettingsTile extends StatelessWidget {
   final Color iconColor;
   final String label;
   final VoidCallback onTap;
+  final bool isFirst;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surfaceContainerLowest,
-      borderRadius: BorderRadius.circular(20),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.vertical(
+          top: isFirst ? const Radius.circular(24) : Radius.zero,
+          bottom: isLast ? const Radius.circular(24) : Radius.zero,
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: iconBg,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: iconColor, size: 21),
+                child: Icon(icon, color: iconColor, size: 20),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -764,6 +658,19 @@ class _SettingsTile extends StatelessWidget {
   }
 }
 
+class _SettingsDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 76),
+      child: Container(
+        height: 1,
+        color: AppColors.outlineVariant.withOpacity(0.2),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LOG OUT BUTTON
 // ─────────────────────────────────────────────────────────────────────────────
@@ -773,43 +680,55 @@ class _LogOutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.error.withOpacity(0.08),
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: () => _showLogoutConfirmation(context),
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.2),
-                  shape: BoxShape.circle,
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showLogoutConfirmation(context),
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.logout_rounded,
+                      color: AppColors.error, size: 20),
                 ),
-                child: Icon(Icons.logout_rounded,
-                    color: AppColors.error, size: 21),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  'Log Out',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.error,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    'Log Out',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.error,
+                    ),
                   ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.error.withOpacity(0.6),
-                size: 22,
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.error.withOpacity(0.6),
+                  size: 22,
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -13,6 +13,7 @@ import 'ui-layer/main_screens/main_shell.dart';
 import 'ui-layer/main_screens/sub_screens/profile-personal-info_screen.dart';
 import 'ui-layer/main_screens/sub_screens/settings_screen.dart';
 import 'ui-layer/main_screens/deck/deck-quiz_screen.dart';
+import 'ui-layer/main_screens/deck/deck-quiz_results_screen.dart';
 import 'ui-layer/social/notification_screen.dart';
 import 'ui-layer/social/shared_deck_detail_screen.dart';
 import 'ui-layer/social/public_profile_screen.dart';
@@ -94,6 +95,7 @@ abstract final class AppRoutes {
   static const String createDeck = '/create-deck';
   static const String editDeck = '/edit-deck';
   static const String quiz = '/quiz';
+  static const String quizResults = '/quiz-results';
   static const String progress = '/progress';
   // ── Social routes (wired fully in Task 14) ────────────────────────────────
   static const String discover = '/discover';
@@ -128,6 +130,7 @@ abstract final class AppRouter {
           args: settings.arguments as EditDeckArgs,
         ),
       AppRoutes.quiz => const QuizScreen(),
+      AppRoutes.quizResults => const QuizResultsScreen(),
       AppRoutes.progress => const MainShell(initialIndex: 3),
       AppRoutes.notifications => const NotificationScreen(),
       AppRoutes.discover => const MainShell(initialIndex: 2),

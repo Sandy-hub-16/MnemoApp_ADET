@@ -6,17 +6,26 @@ class QuizCardAnswer {
     required this.cardId,
     required this.question,
     required this.correct,
+    this.repetitionsNeeded = 1,
+    this.firstAttemptCorrect = true,
+    this.skipped = false,
   });
 
   final String cardId;
   final String question;
   final bool correct;
+  final int repetitionsNeeded;
+  final bool firstAttemptCorrect;
+  final bool skipped;
 
   Map<String, dynamic> toMap() {
     return {
       'cardId': cardId,
       'question': question,
       'correct': correct,
+      'repetitionsNeeded': repetitionsNeeded,
+      'firstAttemptCorrect': firstAttemptCorrect,
+      'skipped': skipped,
     };
   }
 }
@@ -53,6 +62,12 @@ class DeckProgressSummary {
     required this.mastery,
     required this.lastScore,
     this.lastStudiedAt,
+    this.firstTryAccuracy,
+    this.averageRepetitions,
+    this.totalSkipped,
+    this.masteryScore,
+    this.highestMasteryScore,
+    this.lastMasteryTest,
   });
 
   final String deckId;
@@ -65,6 +80,12 @@ class DeckProgressSummary {
   final double mastery;
   final double lastScore;
   final DateTime? lastStudiedAt;
+  final double? firstTryAccuracy;
+  final double? averageRepetitions;
+  final int? totalSkipped;
+  final int? masteryScore; // 0-100 from most recent mastery test
+  final int? highestMasteryScore; // Personal best mastery score
+  final DateTime? lastMasteryTest; // When last mastery test was taken
 }
 
 class CategoryProgressSummary {
@@ -263,6 +284,14 @@ abstract final class ProgressService {
         });
         print('   ✅ Set quizAttempts document');
 
+        // Calculate enhanced statistics from answers
+        final answers = input.answers;
+        final firstTryCorrect = answers.where((a) => a.firstAttemptCorrect).length;
+        final firstTryAccuracy = answers.isEmpty ? 0.0 : firstTryCorrect / answers.length;
+        final totalRepetitions = answers.fold<int>(0, (sum, a) => sum + a.repetitionsNeeded);
+        final averageRepetitions = answers.isEmpty ? 0.0 : totalRepetitions / answers.length;
+        final totalSkipped = answers.where((a) => a.skipped).length;
+
         // Update deck progress with best score only
         transaction.set(
           progressRef,
@@ -280,6 +309,9 @@ abstract final class ProgressService {
             'lastScore': score,
             'lastCorrectCount': correctCount,
             'lastTotalCount': totalCount,
+            'firstTryAccuracy': firstTryAccuracy,
+            'averageRepetitions': averageRepetitions,
+            'totalSkipped': totalSkipped,
             'lastStudiedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           },
@@ -326,18 +358,31 @@ abstract final class ProgressService {
           .orderBy('createdAt', descending: true)
           .limit(attemptLimit)
           .get(),
+      userRef.collection('decks').get(), // Load deck documents for mastery scores
     ]);
 
     final deckProgressSnap = results[0];
     final attemptsSnap = results[1];
+    final decksSnap = results[2];
+    
+    // Create map of deck mastery scores
+    final deckMasteryScores = <String, Map<String, dynamic>>{};
+    for (final doc in decksSnap.docs) {
+      final data = doc.data();
+      deckMasteryScores[doc.id] = {
+        'masteryScore': _readInt(data['masteryScore']),
+        'highestMasteryScore': _readInt(data['highestMasteryScore']),
+        'lastMasteryTest': _readDate(data['lastMasteryTest']),
+      };
+    }
 
     var deckSummaries = deckProgressSnap.docs
-        .map((doc) => _deckSummaryFromMap(doc.data()))
+        .map((doc) => _deckSummaryFromMap(doc.data(), deckMasteryScores))
         .where((summary) => summary.answeredTotal > 0)
         .toList();
 
     if (deckSummaries.isEmpty && attemptsSnap.docs.isNotEmpty) {
-      deckSummaries = _deckSummariesFromAttempts(attemptsSnap.docs);
+      deckSummaries = _deckSummariesFromAttempts(attemptsSnap.docs, deckMasteryScores);
     }
 
     deckSummaries.sort((a, b) {
@@ -374,15 +419,21 @@ abstract final class ProgressService {
     );
   }
 
-  static DeckProgressSummary _deckSummaryFromMap(Map<String, dynamic> data) {
+  static DeckProgressSummary _deckSummaryFromMap(
+    Map<String, dynamic> data,
+    Map<String, Map<String, dynamic>> deckMasteryScores,
+  ) {
     final bestCorrectCount = _readInt(data['bestCorrectCount']);
     final bestTotalCount = _readInt(data['bestTotalCount']);
     final mastery = bestTotalCount == 0
         ? _readDouble(data['mastery'])
         : bestCorrectCount / bestTotalCount;
+    
+    final deckId = data['deckId'] as String? ?? '';
+    final masteryData = deckMasteryScores[deckId];
 
     return DeckProgressSummary(
-      deckId: data['deckId'] as String? ?? '',
+      deckId: deckId,
       ownerUid: data['ownerUid'] as String? ?? '',
       deckTitle: _cleanLabel(data['deckTitle'] as String?, 'Untitled Deck'),
       category: _cleanLabel(data['category'] as String?, 'Other'),
@@ -392,11 +443,18 @@ abstract final class ProgressService {
       mastery: mastery,
       lastScore: _readDouble(data['lastScore']),
       lastStudiedAt: _readDate(data['lastStudiedAt']),
+      firstTryAccuracy: _readDouble(data['firstTryAccuracy']),
+      averageRepetitions: _readDouble(data['averageRepetitions']),
+      totalSkipped: _readInt(data['totalSkipped']),
+      masteryScore: masteryData != null ? _readInt(masteryData['masteryScore']) : null,
+      highestMasteryScore: masteryData != null ? _readInt(masteryData['highestMasteryScore']) : null,
+      lastMasteryTest: masteryData != null ? masteryData['lastMasteryTest'] as DateTime? : null,
     );
   }
 
   static List<DeckProgressSummary> _deckSummariesFromAttempts(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    Map<String, Map<String, dynamic>> deckMasteryScores,
   ) {
     final buckets = <String, _DeckProgressBucket>{};
 
@@ -430,7 +488,7 @@ abstract final class ProgressService {
       }
     }
 
-    return buckets.values.map((bucket) => bucket.toSummary()).toList();
+    return buckets.values.map((bucket) => bucket.toSummary(deckMasteryScores)).toList();
   }
 
   static List<CategoryProgressSummary> _categorySummaries(
@@ -756,7 +814,9 @@ class _DeckProgressBucket {
   double lastScore = 0.0;
   DateTime? lastStudiedAt;
 
-  DeckProgressSummary toSummary() {
+  DeckProgressSummary toSummary(Map<String, Map<String, dynamic>> deckMasteryScores) {
+    final masteryData = deckMasteryScores[deckId];
+    
     return DeckProgressSummary(
       deckId: deckId,
       ownerUid: ownerUid,
@@ -768,6 +828,9 @@ class _DeckProgressBucket {
       mastery: answeredTotal == 0 ? 0.0 : correctTotal / answeredTotal,
       lastScore: lastScore,
       lastStudiedAt: lastStudiedAt,
+      masteryScore: masteryData != null ? ProgressService._readInt(masteryData['masteryScore']) : null,
+      highestMasteryScore: masteryData != null ? ProgressService._readInt(masteryData['highestMasteryScore']) : null,
+      lastMasteryTest: masteryData != null ? masteryData['lastMasteryTest'] as DateTime? : null,
     );
   }
 }

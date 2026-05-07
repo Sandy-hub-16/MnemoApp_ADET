@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
+import 'deck-quiz_results_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz
@@ -34,10 +35,12 @@ class QuizArgs {
     required this.deckId,
     required this.deckTitle,
     this.ownerUid, // optional: set when quizzing a public deck owned by someone else
+    this.isMasteryTest = false, // true = mastery test mode, false = learning mode
   });
   final String deckId;
   final String deckTitle;
   final String? ownerUid; // if null, defaults to the current user's own deck
+  final bool isMasteryTest; // Determines quiz behavior
 }
 
 // ── Card model (mirrors Firestore schema from create_deck_screen) ─────────────
@@ -81,18 +84,35 @@ class _QuizCard {
   bool get isMultipleChoice => type == 'multiple_choice';
 }
 
-// ── Per-card result ───────────────────────────────────────────────────────────
+// ── Per-card result with repetition tracking ─────────────────────────────────
 
 class _CardResult {
-  const _CardResult({
+  _CardResult({
     required this.cardId,
     required this.question,
     required this.correct,
-  });
+    int? repetitionsNeeded,
+    bool? firstAttemptCorrect,
+    bool? skipped,
+    int? correctStreak,
+    bool? mastered,
+    int? wrongAttempts,
+  })  : repetitionsNeeded = repetitionsNeeded ?? 1,
+        firstAttemptCorrect = firstAttemptCorrect ?? true,
+        skipped = skipped ?? false,
+        correctStreak = correctStreak ?? 0,
+        mastered = mastered ?? false,
+        wrongAttempts = wrongAttempts ?? 0;
 
   final String cardId;
   final String question;
-  final bool correct;
+  bool correct;
+  int repetitionsNeeded;
+  bool firstAttemptCorrect;
+  bool skipped;
+  int correctStreak;
+  bool mastered;
+  int wrongAttempts;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,11 +122,12 @@ class _CardResult {
 enum _QuizPhase { loading, quiz, completed }
 
 class QuizScreen extends StatefulWidget {
-  const QuizScreen({super.key, this.deckId, this.deckTitle});
+  const QuizScreen({super.key, this.deckId, this.deckTitle, this.isMasteryTest = false});
 
   /// Prefer passing via constructor; falls back to route arguments (QuizArgs).
   final String? deckId;
   final String? deckTitle;
+  final bool isMasteryTest;
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
@@ -115,16 +136,25 @@ class QuizScreen extends StatefulWidget {
 class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ── Core state ────────────────────────────────────────────────────────────────
   _QuizPhase _phase = _QuizPhase.loading;
-  List<_QuizCard> _cards = [];
-  int _currentIndex = 0;
-  final List<_CardResult> _results = [];
+  List<_QuizCard> _cards = []; // All cards in deck (original)
+  List<_QuizCard> _cardQueue = []; // Active queue of cards to study
+  int _currentQueueIndex = 0;
+  final Map<String, _CardResult> _cardResults = {}; // cardId -> result
+  final Map<String, int> _cardAttempts = {}; // cardId -> attempt count
+  int _totalCardsInDeck = 0;
   String _deckCategory = 'Other';
   String? _quizOwnerUid;
   bool _attemptSaved = false;
+  
+  // ── Progress tracking (new system) ────────────────────────────────────────────
+  int _cardsSeenCount = 0; // How many unique cards have been seen (1-10)
+  final Set<String> _seenCardIds = {}; // Track which cards have been seen
+  int get _cardsNeedingReview => _cardQueue.where((c) => _seenCardIds.contains(c.id)).length;
 
   // ── Per-card transient state ──────────────────────────────────────────────────
   bool _answered = false;
   bool _isCorrect = false;
+  bool _canSkip = false; // Shows skip button after 2 failed attempts
 
   // MC-specific
   bool _choicesRevealed = false;
@@ -163,6 +193,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   String? get _routeOwnerUid {
     final args = ModalRoute.of(context)?.settings.arguments;
     return (args is QuizArgs) ? args.ownerUid : null;
+  }
+  
+  bool get _isMasteryTest {
+    if (widget.isMasteryTest) return true;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    return (args is QuizArgs) ? args.isMasteryTest : false;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -249,11 +285,13 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         _cards = loaded;
+        _cardQueue = List.from(loaded); // Initialize queue with all cards
+        _totalCardsInDeck = loaded.length;
         _deckCategory = category;
         _phase = _QuizPhase.quiz;
-        _currentIndex = 0;
+        _currentQueueIndex = 0;
       });
-      _setupCard(0);
+      _setupCard();
       _cardSlideCtrl.forward();
     } catch (e) {
       debugPrint('❌ QuizScreen._loadCards error: $e');
@@ -267,16 +305,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // CARD SETUP  — called whenever we move to a new card
   // ─────────────────────────────────────────────────────────────────────────────
 
-  void _setupCard(int index) {
+  void _setupCard() {
+    if (_currentQueueIndex >= _cardQueue.length) return;
+    
+    final card = _cardQueue[_currentQueueIndex];
+    final attempts = _cardAttempts[card.id] ?? 0;
+    
     _answered = false;
     _isCorrect = false;
+    _canSkip = attempts >= 2; // Show skip after 2 failed attempts
     _choicesRevealed = false;
     _selectedShuffledIndex = null;
     _correctAnswerReveal = '';
     _answerCtrl.clear();
 
-    if (index < _cards.length && _cards[index].isMultipleChoice) {
-      final card = _cards[index];
+    if (card.isMultipleChoice) {
       // 🔀 Shuffle the order choices appear in — different every card visit
       final positions = List<int>.generate(card.choices.length, (i) => i);
       positions.shuffle(Random());
@@ -292,20 +335,46 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   /// Called when user taps a multiple-choice option.
   /// Immediate evaluation — no "Next" required to confirm.
   void _onChoiceTapped(int shuffledPos) {
-    if (_answered) return; // 1 chance only
-    final card = _cards[_currentIndex];
+    if (_answered) return;
+    
+    final card = _cardQueue[_currentQueueIndex];
     final originalIdx = _shuffleMap[shuffledPos];
     final correct = originalIdx == card.correctIndex;
+    
+    // Track attempts
+    _cardAttempts[card.id] = (_cardAttempts[card.id] ?? 0) + 1;
+    
+    // Get or create result
+    final result = _cardResults.putIfAbsent(
+      card.id,
+      () => _CardResult(
+        cardId: card.id,
+        question: card.question,
+        correct: false,
+        firstAttemptCorrect: correct,
+      ),
+    );
+    
+    result.repetitionsNeeded = _cardAttempts[card.id]!;
+    
+    // Track wrong attempts
+    if (!correct) {
+      result.wrongAttempts++;
+    }
+    
     setState(() {
       _answered = true;
       _isCorrect = correct;
       _selectedShuffledIndex = shuffledPos;
     });
-    _results.add(_CardResult(
-      cardId: card.id,
-      question: card.question,
-      correct: correct,
-    ));
+    
+    if (correct) {
+      result.correct = true;
+      result.mastered = true;
+    } else {
+      result.correct = false;
+      result.mastered = false;
+    }
   }
 
   /// Called when user taps "Check Answer" for identification cards.
@@ -327,18 +396,44 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       );
       return;
     }
-    final card = _cards[_currentIndex];
+    
+    final card = _cardQueue[_currentQueueIndex];
     final correct = typed.toLowerCase() == card.answer.trim().toLowerCase();
+    
+    // Track attempts
+    _cardAttempts[card.id] = (_cardAttempts[card.id] ?? 0) + 1;
+    
+    // Get or create result
+    final result = _cardResults.putIfAbsent(
+      card.id,
+      () => _CardResult(
+        cardId: card.id,
+        question: card.question,
+        correct: false,
+        firstAttemptCorrect: correct,
+      ),
+    );
+    
+    result.repetitionsNeeded = _cardAttempts[card.id]!;
+    
+    // Track wrong attempts
+    if (!correct) {
+      result.wrongAttempts++;
+    }
+    
     setState(() {
       _answered = true;
       _isCorrect = correct;
       if (!correct) _correctAnswerReveal = card.answer;
     });
-    _results.add(_CardResult(
-      cardId: card.id,
-      question: card.question,
-      correct: correct,
-    ));
+    
+    if (correct) {
+      result.correct = true;
+      result.mastered = true;
+    } else {
+      result.correct = false;
+      result.mastered = false;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -346,34 +441,146 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Future<void> _advance() async {
-    final isLast = _currentIndex >= _cards.length - 1;
-    if (isLast) {
-      await _finishQuiz();
-      return;
+    final card = _cardQueue[_currentQueueIndex];
+    final result = _cardResults[card.id]!;
+    
+    // Track if this is the first time seeing this card
+    final isFirstTimeSeeingCard = !_seenCardIds.contains(card.id);
+    if (isFirstTimeSeeingCard) {
+      _seenCardIds.add(card.id);
+      _cardsSeenCount++;
     }
-
-    // Animate current card out, then bring in the next
+    
+    // LEARNING MODE: Loop wrong answers until correct
+    // MASTERY TEST: Fail-fast - end immediately on wrong answer
+    if (_isMasteryTest) {
+      // Mastery test - fail immediately on wrong answer
+      if (!result.correct) {
+        // Wrong answer = test ends immediately
+        await _finishQuiz();
+        return;
+      }
+      
+      // Correct - move to next card
+      _cardQueue.removeAt(_currentQueueIndex);
+      
+      if (_cardQueue.isEmpty) {
+        await _finishQuiz();
+        return;
+      }
+      
+      if (_currentQueueIndex >= _cardQueue.length) {
+        _currentQueueIndex = 0;
+      }
+    } else {
+      // Learning mode - loop wrong answers
+      if (result.correct) {
+        // Correct - remove from queue
+        _cardQueue.removeAt(_currentQueueIndex);
+        
+        if (_cardQueue.isEmpty) {
+          await _finishQuiz();
+          return;
+        }
+        
+        if (_currentQueueIndex >= _cardQueue.length) {
+          _currentQueueIndex = 0;
+        }
+      } else {
+        // Wrong - move to end of queue for review
+        _cardQueue.removeAt(_currentQueueIndex);
+        _cardQueue.add(card);
+        
+        if (_currentQueueIndex >= _cardQueue.length) {
+          _currentQueueIndex = 0;
+        }
+      }
+    }
+    
+    // Animate to next card
     await _cardSlideCtrl.reverse();
     setState(() {
-      _currentIndex++;
-      _setupCard(_currentIndex);
+      _setupCard();
     });
     _cardSlideCtrl.forward();
+  }
+  
+  void _onSkipCard() {
+    final card = _cardQueue[_currentQueueIndex];
+    
+    // Track if this is the first time seeing this card
+    final isFirstTimeSeeingCard = !_seenCardIds.contains(card.id);
+    if (isFirstTimeSeeingCard) {
+      _seenCardIds.add(card.id);
+      _cardsSeenCount++;
+    }
+    
+    // Mark as skipped
+    final result = _cardResults[card.id]!;
+    result.skipped = true;
+    result.correct = false; // Counts as wrong
+    
+    // Remove from queue
+    _cardQueue.removeAt(_currentQueueIndex);
+    
+    if (_cardQueue.isEmpty) {
+      _finishQuiz();
+      return;
+    }
+    
+    if (_currentQueueIndex >= _cardQueue.length) {
+      _currentQueueIndex = 0;
+    }
+    
+    _advance();
   }
 
   Future<void> _finishQuiz() async {
     if (_attemptSaved) return;
     _attemptSaved = true;
 
-    setState(() => _phase = _QuizPhase.completed);
-    _completionCtrl.forward();
-
     await _saveQuizAttempt();
+    
+    // Update mastery score if this was a mastery test
+    if (_isMasteryTest) {
+      await _updateMasteryScore();
+    }
+    
+    // Calculate mastery test eligibility
+    final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
+    final hasCardsWithThreePlusWrongAttempts = _cardResults.values.any((r) => r.wrongAttempts >= 3);
+    final isMasteryTestEligible = !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
 
-    // Brief pause so the user can read their score
-    await Future.delayed(const Duration(milliseconds: 2800));
+    // Navigate to results screen with detailed breakdown
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed('/progress');
+    Navigator.of(context).pushReplacementNamed(
+      '/quiz-results',
+      arguments: QuizResultsArgs(
+        deckId: _deckId,
+        deckTitle: _deckTitle,
+        ownerUid: _quizOwnerUid,
+        correctCount: _cardResults.values.where((r) => r.correct).length,
+        totalCount: _totalCardsInDeck,
+        isMasteryTest: _isMasteryTest,
+        isMasteryTestEligible: isMasteryTestEligible,
+        cardResults: _cardResults.values
+            .map((r) => CardResultData(
+                  question: r.question,
+                  correct: r.correct,
+                  repetitionsNeeded: r.repetitionsNeeded,
+                  firstAttemptCorrect: r.firstAttemptCorrect,
+                  skipped: r.skipped,
+                ))
+            .toList(),
+      ),
+    );
+  }
+  
+  // Helper method to check mastery test eligibility
+  bool get _isMasteryTestEligible {
+    final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
+    final hasCardsWithThreePlusWrongAttempts = _cardResults.values.any((r) => r.wrongAttempts >= 3);
+    return !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
   }
 
   Future<void> _saveQuizAttempt() async {
@@ -385,18 +592,18 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     debugPrint('🔍 [DEBUG] _deckTitle: $_deckTitle');
     debugPrint('🔍 [DEBUG] _quizOwnerUid: $_quizOwnerUid');
     debugPrint('🔍 [DEBUG] _deckCategory: $_deckCategory');
-    debugPrint('🔍 [DEBUG] _results.length: ${_results.length}');
+    debugPrint('🔍 [DEBUG] _cardResults.length: ${_cardResults.length}');
     
-    if (currentUid == null || _deckId.isEmpty || _results.isEmpty) {
+    if (currentUid == null || _deckId.isEmpty || _cardResults.isEmpty) {
       debugPrint('❌ [DEBUG] Early return - validation failed');
       debugPrint('   currentUid == null: ${currentUid == null}');
       debugPrint('   _deckId.isEmpty: ${_deckId.isEmpty}');
-      debugPrint('   _results.isEmpty: ${_results.isEmpty}');
+      debugPrint('   _cardResults.isEmpty: ${_cardResults.isEmpty}');
       return;
     }
 
-    final correct = _results.where((result) => result.correct).length;
-    debugPrint('🔍 [DEBUG] correct: $correct / ${_results.length}');
+    final correct = _cardResults.values.where((result) => result.correct).length;
+    debugPrint('🔍 [DEBUG] correct: $correct / ${_totalCardsInDeck}');
 
     try {
       debugPrint('📤 [DEBUG] Calling ProgressService.saveQuizAttempt...');
@@ -407,12 +614,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ownerUid: _quizOwnerUid ?? currentUid,
           category: _deckCategory,
           correctCount: correct,
-          totalCount: _results.length,
-          answers: _results
+          totalCount: _totalCardsInDeck,
+          answers: _cardResults.values
               .map((result) => QuizCardAnswer(
                     cardId: result.cardId,
                     question: result.question,
                     correct: result.correct,
+                    repetitionsNeeded: result.repetitionsNeeded,
+                    firstAttemptCorrect: result.firstAttemptCorrect,
+                    skipped: result.skipped,
                   ))
               .toList(),
         ),
@@ -420,6 +630,41 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       debugPrint('✅ [DEBUG] ProgressService.saveQuizAttempt completed successfully!');
     } catch (e, st) {
       debugPrint('❌ [QuizScreen] failed to save progress: $e\n$st');
+    }
+  }
+  
+  Future<void> _updateMasteryScore() async {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUid == null || _deckId.isEmpty) return;
+    
+    try {
+      final correct = _cardResults.values.where((r) => r.correct).length;
+      final masteryScore = _totalCardsInDeck > 0 
+          ? (correct / _totalCardsInDeck * 100).round() 
+          : 0;
+      
+      // Determine which user's deck to update (own deck vs public deck)
+      final ownerUid = _quizOwnerUid ?? currentUid;
+      
+      final deckRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(ownerUid)
+          .collection('decks')
+          .doc(_deckId);
+      
+      // Get current highest score
+      final deckSnap = await deckRef.get();
+      final currentHighest = deckSnap.data()?['highestMasteryScore'] as int? ?? 0;
+      
+      await deckRef.update({
+        'masteryScore': masteryScore,
+        'lastMasteryTest': FieldValue.serverTimestamp(),
+        'highestMasteryScore': masteryScore > currentHighest ? masteryScore : currentHighest,
+      });
+      
+      debugPrint('✅ Updated mastery score: $masteryScore% (highest: ${masteryScore > currentHighest ? masteryScore : currentHighest}%)');
+    } catch (e) {
+      debugPrint('❌ Failed to update mastery score: $e');
     }
   }
 
@@ -490,15 +735,19 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   Widget _buildQuiz() {
     if (_cards.isEmpty) return _buildEmptyDeck();
+    if (_cardQueue.isEmpty) {
+      // All cards mastered during quiz - shouldn't happen but safety check
+      _finishQuiz();
+      return _buildLoading();
+    }
 
-    final card = _cards[_currentIndex];
-    final isLast = _currentIndex >= _cards.length - 1;
+    final card = _cardQueue[_currentQueueIndex];
 
     return SafeArea(
       child: Column(
         children: [
           // Top bar (fixed)
-          _QuizTopBar(deckTitle: _deckTitle),
+          _QuizTopBar(deckTitle: _deckTitle, isMasteryTest: _isMasteryTest),
 
           // Scrollable body
           Expanded(
@@ -514,8 +763,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                     children: [
                       // ── Progress ──────────────────────────────────────────
                       _ProgressHeader(
-                        current: _currentIndex + 1,
-                        total: _cards.length,
+                        cardsSeenCount: _cardsSeenCount,
+                        totalCards: _totalCardsInDeck,
+                        cardsNeedingReview: _cardsNeedingReview,
                       ),
                       const SizedBox(height: 24),
 
@@ -536,7 +786,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeOutCubic,
                         child: _answered
-                            ? _NextDoneButton(isLast: isLast, onTap: _advance)
+                            ? Column(
+                                children: [
+                                  _NextDoneButton(
+                                    isLast: _cardQueue.length == 1,
+                                    isCorrect: _isCorrect,
+                                    isMasteryTest: _isMasteryTest,
+                                    showEligibilitySparkle: !_isMasteryTest && _cardQueue.length == 1 && _isCorrect && _isMasteryTestEligible,
+                                    onTap: _advance,
+                                  ),
+                                  if (_canSkip && !_isCorrect && !_isMasteryTest) ...[
+                                    const SizedBox(height: 12),
+                                    _SkipButton(onTap: _onSkipCard),
+                                  ],
+                                ],
+                              )
                             : const SizedBox.shrink(),
                       ),
 
@@ -731,7 +995,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     return SafeArea(
       child: Column(
         children: [
-          _QuizTopBar(deckTitle: _deckTitle),
+          _QuizTopBar(deckTitle: _deckTitle, isMasteryTest: _isMasteryTest),
           Expanded(
             child: Center(
               child: Padding(
@@ -802,8 +1066,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildCompletion() {
-    final correct = _results.where((r) => r.correct).length;
-    final total = _results.length;
+    final correct = _cardResults.values.where((r) => r.correct).length;
+    final total = _totalCardsInDeck;
     final pct = total > 0 ? (correct / total * 100).round() : 0;
 
     final emoji = pct >= 80
@@ -939,12 +1203,60 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SKIP BUTTON (appears after 2 failed attempts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SkipButton extends StatelessWidget {
+  const _SkipButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.errorContainer.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.error.withOpacity(0.3),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.skip_next_rounded,
+              color: AppColors.error,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Give Up on This Card',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.error,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // QUIZ TOP BAR
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _QuizTopBar extends StatelessWidget {
-  const _QuizTopBar({required this.deckTitle});
+  const _QuizTopBar({required this.deckTitle, this.isMasteryTest = false});
   final String deckTitle;
+  final bool isMasteryTest;
 
   @override
   Widget build(BuildContext context) {
@@ -983,24 +1295,29 @@ class _QuizTopBar extends StatelessWidget {
             ),
           ),
 
-          // Focus mode badge
+          // Mode badge (Focus for learning, Mastery for test)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withOpacity(0.5),
+              color: isMasteryTest 
+                  ? AppColors.tertiaryContainer.withOpacity(0.6)
+                  : AppColors.primaryContainer.withOpacity(0.5),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Row(
               children: [
-                const Icon(Icons.center_focus_strong_rounded,
-                    color: AppColors.primary, size: 14),
+                Icon(
+                  isMasteryTest ? Icons.emoji_events_rounded : Icons.center_focus_strong_rounded,
+                  color: isMasteryTest ? AppColors.tertiary : AppColors.primary,
+                  size: 14,
+                ),
                 const SizedBox(width: 5),
                 Text(
-                  'FOCUS',
+                  isMasteryTest ? 'MASTERY' : 'FOCUS',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
+                    color: isMasteryTest ? AppColors.tertiary : AppColors.primary,
                     letterSpacing: 1,
                   ),
                 ),
@@ -1018,19 +1335,27 @@ class _QuizTopBar extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProgressHeader extends StatelessWidget {
-  const _ProgressHeader({required this.current, required this.total});
-  final int current;
-  final int total;
+  const _ProgressHeader({
+    required this.cardsSeenCount,
+    required this.totalCards,
+    required this.cardsNeedingReview,
+  });
+  
+  final int cardsSeenCount;
+  final int totalCards;
+  final int cardsNeedingReview;
 
   @override
   Widget build(BuildContext context) {
+    final progressPercent = totalCards > 0 ? (cardsSeenCount / totalCards * 100).round() : 0;
+    
     return Column(
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Card $current of $total',
+              'Card $cardsSeenCount of $totalCards',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -1038,33 +1363,142 @@ class _ProgressHeader extends StatelessWidget {
                 letterSpacing: 0.8,
               ),
             ),
-            Text(
-              '${((current / total) * 100).round()}% done',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: AppColors.onSurfaceVariant,
+            if (cardsNeedingReview > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.secondaryContainer.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: AppColors.secondary.withOpacity(0.3),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.repeat_rounded,
+                      color: AppColors.secondary,
+                      size: 12,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$cardsNeedingReview to review',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Text(
+                '$progressPercent% done',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _DualProgressBar(
+          cardsSeenCount: cardsSeenCount,
+          totalCards: totalCards,
+          cardsNeedingReview: cardsNeedingReview,
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DUAL PROGRESS BAR (shows completed + needs review)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DualProgressBar extends StatelessWidget {
+  const _DualProgressBar({
+    required this.cardsSeenCount,
+    required this.totalCards,
+    required this.cardsNeedingReview,
+  });
+  
+  final int cardsSeenCount;
+  final int totalCards;
+  final int cardsNeedingReview;
+
+  @override
+  Widget build(BuildContext context) {
+    if (totalCards == 0) {
+      return const SizedBox.shrink();
+    }
+    
+    final cardsMastered = cardsSeenCount - cardsNeedingReview;
+    final masteredProgress = cardsMastered / totalCards;
+    final reviewProgress = cardsNeedingReview / totalCards;
+    
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: 10,
+        child: Stack(
+          children: [
+            // Background (not yet seen)
+            Container(
+              width: double.infinity,
+              color: AppColors.outlineVariant.withOpacity(0.22),
+            ),
+            
+            // Animated progress
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: masteredProgress + reviewProgress),
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              builder: (_, totalValue, __) => Row(
+                children: [
+                  // Mastered cards (green/primary)
+                  if (masteredProgress > 0)
+                    Expanded(
+                      flex: (masteredProgress * 1000).round(),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, value, __) => Container(
+                          color: AppColors.primary.withOpacity(value),
+                        ),
+                      ),
+                    ),
+                  
+                  // Cards needing review (orange/secondary)
+                  if (reviewProgress > 0)
+                    Expanded(
+                      flex: (reviewProgress * 1000).round(),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 500),
+                        curve: Curves.easeOutCubic,
+                        builder: (_, value, __) => Container(
+                          color: AppColors.secondary.withOpacity(value * 0.8),
+                        ),
+                      ),
+                    ),
+                  
+                  // Remaining space
+                  if (masteredProgress + reviewProgress < 1)
+                    Expanded(
+                      flex: ((1 - masteredProgress - reviewProgress) * 1000).round(),
+                      child: const SizedBox.shrink(),
+                    ),
+                ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: current / total),
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeOutCubic,
-            builder: (_, value, __) => LinearProgressIndicator(
-              value: value,
-              minHeight: 10,
-              backgroundColor: AppColors.outlineVariant.withOpacity(0.22),
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(AppColors.primary),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1500,12 +1934,67 @@ class _CheckAnswerButton extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NextDoneButton extends StatelessWidget {
-  const _NextDoneButton({required this.isLast, required this.onTap});
+  const _NextDoneButton({
+    required this.isLast,
+    required this.isCorrect,
+    required this.onTap,
+    this.isMasteryTest = false,
+    this.showEligibilitySparkle = false,
+  });
   final bool isLast;
+  final bool isCorrect;
   final VoidCallback onTap;
+  final bool isMasteryTest;
+  final bool showEligibilitySparkle;
 
   @override
   Widget build(BuildContext context) {
+    // Determine button text and style
+    String buttonText;
+    IconData buttonIcon;
+    List<Color> gradientColors;
+    
+    if (isMasteryTest) {
+      // MASTERY TEST MODE
+      if (isCorrect) {
+        // Correct answer
+        if (isLast) {
+          buttonText = 'Finish Quiz';
+          buttonIcon = Icons.flag_rounded;
+          gradientColors = [AppColors.tertiary, const Color(0xFFEBC23E)];
+        } else {
+          buttonText = 'Next Card';
+          buttonIcon = Icons.arrow_forward_rounded;
+          gradientColors = [AppColors.tertiary, const Color(0xFFEBC23E)];
+        }
+      } else {
+        // Wrong answer - test failed
+        buttonText = 'View Results';
+        buttonIcon = Icons.assessment_rounded;
+        gradientColors = [AppColors.error, const Color(0xFFD32F2F)];
+      }
+    } else {
+      // LEARNING MODE
+      if (isLast) {
+        if (isCorrect) {
+          // Last card + correct = Finish
+          buttonText = 'Finish Quiz';
+          buttonIcon = Icons.flag_rounded;
+          gradientColors = [AppColors.tertiary, const Color(0xFFEBC23E)];
+        } else {
+          // Last card + wrong = Retry
+          buttonText = 'Retry';
+          buttonIcon = Icons.refresh_rounded;
+          gradientColors = [AppColors.secondary, AppColors.secondaryFixedDim];
+        }
+      } else {
+        // Not last card = Next
+        buttonText = 'Next Card';
+        buttonIcon = Icons.navigate_next_rounded;
+        gradientColors = [AppColors.secondary, AppColors.secondaryFixedDim];
+      }
+    }
+    
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1513,39 +2002,65 @@ class _NextDoneButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: isLast
-                ? [AppColors.tertiary, const Color(0xFFEBC23E)]
-                : [AppColors.secondary, AppColors.secondaryFixedDim],
+            colors: gradientColors,
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
           ),
           borderRadius: BorderRadius.circular(999),
           boxShadow: [
             BoxShadow(
-              color: (isLast ? AppColors.tertiary : AppColors.secondary)
-                  .withOpacity(0.25),
+              color: gradientColors[0].withOpacity(0.25),
               blurRadius: 20,
               offset: const Offset(0, 8),
             ),
           ],
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
           children: [
-            Text(
-              isLast ? 'Finish Quiz' : 'Next Card',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
+            // Main button content (centered)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  buttonText,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Icon(
+                  buttonIcon,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ],
+            ),
+            // Sparkle at the right edge (learning mode eligibility indicator)
+            if (showEligibilitySparkle)
+              Positioned(
+                right: 20,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOutBack,
+                    builder: (context, value, child) {
+                      return Transform.scale(
+                        scale: value,
+                        child: Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Colors.white.withOpacity(0.9),
+                          size: 18,
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Icon(
-              isLast ? Icons.flag_rounded : Icons.navigate_next_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
           ],
         ),
       ),
