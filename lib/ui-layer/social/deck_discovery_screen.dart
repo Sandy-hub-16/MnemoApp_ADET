@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../landing_page/app_theme.dart';
 import '../../data-layer/social/public_deck_summary.dart';
 import '../../data-layer/social/social_route_args.dart';
+import '../../business-layer/services/deck_search_engine.dart';
 import 'widgets/public_deck_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,6 +44,10 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
   // ── State ─────────────────────────────────────────────────────────────────
 
   final TextEditingController _searchController = TextEditingController();
+  final DeckSearchEngine<PublicDeckSummary> _engine = DeckSearchEngine();
+  Timer? _debounce;
+  String _searchQuery = '';
+  List<PublicDeckSummary>? _cachedResults;
   String? _activeTag;
   bool _isLoading = false;
   bool _isLoadingMore = false;
@@ -66,13 +73,56 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
     _loadFirstPage();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────────
+
+  static String _summaryKey(PublicDeckSummary s) =>
+      '${s.title} ${s.tag} ${s.ownerUsername}'.toLowerCase();
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), () async {
+      final keyword = _searchController.text.trim().toLowerCase();
+      if (_engine.length < 500) {
+        if (mounted) {
+          setState(() {
+            _searchQuery = keyword;
+            _cachedResults = null;
+          });
+        }
+      } else {
+        try {
+          await compute(runIsolateQuery, (
+            index: _engine.snapshot(tagOf: (s) => s.tag),
+            keyword: keyword,
+            tagFilter: _activeTag,
+          ));
+          if (mounted) {
+            setState(() {
+              _searchQuery = keyword;
+              _cachedResults = null;
+            });
+          }
+        } catch (_) {
+          if (mounted) {
+            setState(() {
+              _searchQuery = keyword;
+              _cachedResults = null;
+            });
+          }
+        }
+      }
+    });
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -113,6 +163,7 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
         _hasMore = docs.length == _pageSize;
         _isLoading = false;
       });
+      _engine.rebuild(_decks, _summaryKey);
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -133,13 +184,17 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
           .get();
       final docs = snapshot.docs;
 
+      final newDecks = docs
+          .map((d) => PublicDeckSummary.fromFirestore(
+              d as DocumentSnapshot<Map<String, dynamic>>))
+          .toList();
       setState(() {
-        _decks.addAll(docs.map((d) => PublicDeckSummary.fromFirestore(
-            d as DocumentSnapshot<Map<String, dynamic>>)));
+        _decks.addAll(newDecks);
         _lastDoc = docs.isNotEmpty ? docs.last : _lastDoc;
         _hasMore = docs.length == _pageSize;
         _isLoadingMore = false;
       });
+      _engine.extend(newDecks, _summaryKey);
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingMore = false);
@@ -150,13 +205,15 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
 
   // ── Filtering ─────────────────────────────────────────────────────────────
 
-  /// Returns the subset of [_decks] matching the current search keyword.
+  /// Returns the subset of [_decks] matching the current search keyword and tag.
   List<PublicDeckSummary> get _filteredDecks {
-    final keyword = _searchController.text.trim().toLowerCase();
-    if (keyword.isEmpty) return _decks;
-    return _decks
-        .where((d) => d.title.toLowerCase().contains(keyword))
-        .toList();
+    if (_cachedResults != null) return _cachedResults!;
+    if (_searchQuery.isEmpty && _activeTag == null) return _decks;
+    return _engine.query(
+      _searchQuery,
+      tagFilter: _activeTag,
+      tagOf: (s) => s.tag,
+    );
   }
 
   /// Activates or deactivates a tag filter and reloads from Firestore.
@@ -237,7 +294,7 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                     children: [
                       _SearchField(
                         controller: _searchController,
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (_) {},
                       ),
                       const SizedBox(height: 14),
                       _TagFilterRow(
@@ -264,6 +321,8 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                           hasMore: _hasMore,
                           onLoadMore: _loadNextPage,
                           onTap: _openDeckDetail,
+                          searchQuery: _searchQuery,
+                          activeTag: _activeTag,
                         ),
                 ),
               ],
@@ -508,6 +567,8 @@ class _DeckList extends StatefulWidget {
     required this.hasMore,
     required this.onLoadMore,
     required this.onTap,
+    required this.searchQuery,
+    this.activeTag,
   });
 
   final List<PublicDeckSummary> decks;
@@ -515,6 +576,8 @@ class _DeckList extends StatefulWidget {
   final bool hasMore;
   final VoidCallback onLoadMore;
   final ValueChanged<PublicDeckSummary> onTap;
+  final String searchQuery;
+  final String? activeTag;
 
   @override
   State<_DeckList> createState() => _DeckListState();
@@ -545,7 +608,10 @@ class _DeckListState extends State<_DeckList> {
   @override
   Widget build(BuildContext context) {
     if (widget.decks.isEmpty) {
-      return _EmptyState();
+      return _EmptyState(
+        searchQuery: widget.searchQuery,
+        activeTag: widget.activeTag,
+      );
     }
 
     return ListView.builder(
@@ -582,8 +648,26 @@ class _DeckListState extends State<_DeckList> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
+  const _EmptyState({this.searchQuery = '', this.activeTag});
+
+  final String searchQuery;
+  final String? activeTag;
+
   @override
   Widget build(BuildContext context) {
+    final String subtitle;
+    if (searchQuery.isNotEmpty && activeTag != null) {
+      subtitle =
+          'No decks match "$searchQuery" in the "$activeTag" category.';
+    } else if (searchQuery.isNotEmpty) {
+      subtitle =
+          'No public decks match "$searchQuery". Try a different keyword.';
+    } else if (activeTag != null) {
+      subtitle = 'No public decks found for the "$activeTag" tag.';
+    } else {
+      subtitle = 'Try a different search term or tag filter.';
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -606,7 +690,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Try a different search term or tag filter.',
+              subtitle,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,

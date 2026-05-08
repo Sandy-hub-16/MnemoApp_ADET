@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
@@ -12,6 +14,7 @@ import 'edit_deck_screen.dart';
 import 'create_deck_screen.dart';
 import '../../../business-layer/services/deck_service.dart';
 import '../../../business-layer/services/share_service.dart';
+import '../../../business-layer/services/deck_search_engine.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK SCREEN  —  route: /decks
@@ -1085,6 +1088,13 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     'World History',
   ];
 
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  String _searchQuery = '';
+  List<QueryDocumentSnapshot<Map<String, dynamic>>>? _cachedResults;
+  final DeckSearchEngine<QueryDocumentSnapshot<Map<String, dynamic>>> _engine =
+      DeckSearchEngine();
+
   @override
   void initState() {
     super.initState();
@@ -1092,6 +1102,53 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     if (uid != null) {
       ShareService.repairCardCounts(uid: uid).catchError((_) {});
     }
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), () async {
+      final keyword = _searchController.text.trim().toLowerCase();
+      if (_engine.length < 500) {
+        if (mounted) {
+          setState(() {
+            _searchQuery = keyword;
+            _cachedResults = null;
+          });
+        }
+      } else {
+        final activeTag =
+            _selectedFilter == 0 ? null : _filters[_selectedFilter];
+        try {
+          await compute(runIsolateQuery, (
+            index: _engine.snapshot(
+                tagOf: (doc) => doc.data()['tag'] as String? ?? ''),
+            keyword: keyword,
+            tagFilter: activeTag,
+          ));
+          if (mounted) {
+            setState(() {
+              _searchQuery = keyword;
+              _cachedResults = null;
+            });
+          }
+        } catch (_) {
+          if (mounted) {
+            setState(() {
+              _searchQuery = keyword;
+              _cachedResults = null;
+            });
+          }
+        }
+      }
+    });
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _deckStream() {
@@ -1180,7 +1237,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           delegate: SliverChildListDelegate([
                             _HeroGreeting(),
                             const SizedBox(height: 20),
-                            _SearchBar(),
+                            _SearchBar(controller: _searchController),
                             const SizedBox(height: 16),
 
                             SizedBox(
@@ -1233,16 +1290,36 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
 
                           final allDocs = snapshot.data?.docs ?? [];
 
-                          final draftDocs = allDocs
+                          // Rebuild the search index on every Firestore emission
+                          _engine.rebuild(
+                            allDocs,
+                            (doc) =>
+                                '${doc.data()['title'] ?? ''} ${doc.data()['tag'] ?? ''}'
+                                    .toLowerCase(),
+                          );
+
+                          final selectedCategory = _filters[_selectedFilter];
+                          final String? tagFilter = selectedCategory == 'All Decks'
+                              ? null
+                              : selectedCategory;
+
+                          // Apply search + tag filter via the engine
+                          final filteredDocs = (_cachedResults != null &&
+                                  _engine.length >= 500)
+                              ? _cachedResults!
+                              : _engine.query(
+                                  _searchQuery,
+                                  tagFilter: tagFilter,
+                                  tagOf: (doc) =>
+                                      doc.data()['tag'] as String? ?? '',
+                                );
+
+                          final draftDocs = filteredDocs
                               .where((d) => d.data()['isDraft'] == true)
                               .toList();
 
-                          final selectedCategory = _filters[_selectedFilter];
-                          final completedDocs = allDocs
+                          final completedDocs = filteredDocs
                               .where((d) => d.data()['isDraft'] != true)
-                              .where((d) => selectedCategory == 'All Decks'
-                                  ? true
-                                  : d.data()['tag'] == selectedCategory)
                               .toList();
 
                           final items = <Widget>[];
@@ -1343,33 +1420,73 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           );
 
                           if (completedDocs.isEmpty) {
+                            final hasDecksButFiltered = allDocs
+                                .any((d) => d.data()['isDraft'] != true);
                             items.add(
                               Padding(
                                 padding: const EdgeInsets.all(40),
-                                child: Column(
-                                  children: [
-                                    Icon(Icons.layers_outlined,
-                                        size: 64, color: AppColors.outline),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'No decks yet',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.onSurface,
+                                child: hasDecksButFiltered
+                                    ? Column(
+                                        children: [
+                                          Icon(
+                                            Icons.search_off_rounded,
+                                            size: 64,
+                                            color: AppColors.outline
+                                                .withOpacity(0.5),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            'No decks found',
+                                            style:
+                                                GoogleFonts.plusJakartaSans(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.onSurface,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _searchQuery.isNotEmpty
+                                                ? 'No decks match "$_searchQuery". Try a different keyword or clear the filter.'
+                                                : 'No decks match the active filter.',
+                                            style:
+                                                GoogleFonts.plusJakartaSans(
+                                              fontSize: 14,
+                                              color:
+                                                  AppColors.onSurfaceVariant,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      )
+                                    : Column(
+                                        children: [
+                                          Icon(Icons.layers_outlined,
+                                              size: 64,
+                                              color: AppColors.outline),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            'No decks yet',
+                                            style:
+                                                GoogleFonts.plusJakartaSans(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.onSurface,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Create your first deck to get started!',
+                                            style:
+                                                GoogleFonts.plusJakartaSans(
+                                              fontSize: 14,
+                                              color:
+                                                  AppColors.onSurfaceVariant,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Create your first deck to get started!',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 14,
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
                               ),
                             );
                           } else {
@@ -1543,6 +1660,10 @@ class _HeroGreeting extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SearchBar extends StatelessWidget {
+  const _SearchBar({required this.controller});
+
+  final TextEditingController controller;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1558,6 +1679,7 @@ class _SearchBar extends StatelessWidget {
         ],
       ),
       child: TextField(
+        controller: controller,
         style: GoogleFonts.plusJakartaSans(
           fontSize: 15,
           color: AppColors.onSurface,
@@ -1572,6 +1694,20 @@ class _SearchBar extends StatelessWidget {
             padding: EdgeInsets.only(left: 6),
             child:
                 Icon(Icons.search_rounded, color: AppColors.outline, size: 22),
+          ),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (_, value, __) {
+              if (value.text.isEmpty) return const SizedBox.shrink();
+              return IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppColors.outline,
+                  size: 20,
+                ),
+                onPressed: () => controller.clear(),
+              );
+            },
           ),
           border: InputBorder.none,
           contentPadding:
