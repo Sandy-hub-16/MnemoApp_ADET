@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
@@ -11,7 +13,9 @@ import 'deck-quiz_screen.dart';
 import 'edit_deck_screen.dart';
 import 'create_deck_screen.dart';
 import '../../../business-layer/services/deck_service.dart';
+import '../../../business-layer/services/export_service.dart';
 import '../../../business-layer/services/share_service.dart';
+import '../../../business-layer/services/deck_search_engine.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK SCREEN  —  route: /decks
@@ -388,8 +392,7 @@ Future<String?> _showCategoryDialog(BuildContext context) {
 }
 
 /// Step 3 — Pick number of questions, enforcing [maxCount].
-Future<int?> _showQuestionCountDialog(
-    BuildContext context, int maxCount) {
+Future<int?> _showQuestionCountDialog(BuildContext context, int maxCount) {
   int currentCount = (maxCount >= 10) ? 10 : maxCount;
   final TextEditingController controller =
       TextEditingController(text: currentCount.toString());
@@ -722,7 +725,8 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     );
   } catch (_) {
     if (context.mounted) {
-      _showErrorSnackBar(context, 'Could not open file picker. Please try again.');
+      _showErrorSnackBar(
+          context, 'Could not open file picker. Please try again.');
     }
     return;
   }
@@ -735,7 +739,8 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
 
   // Validate non-empty
   if (fileBytes.isEmpty) {
-    if (context.mounted) _showErrorSnackBar(context, 'The selected file is empty.');
+    if (context.mounted)
+      _showErrorSnackBar(context, 'The selected file is empty.');
     return;
   }
 
@@ -762,8 +767,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   }
 
   if (!context.mounted) return;
-  final questionCount =
-      await _showQuestionCountDialog(context, maxQuestions);
+  final questionCount = await _showQuestionCountDialog(context, maxQuestions);
   if (questionCount == null) return; // user cancelled
 
   // ── Step 5: Show loading overlay ──────────────────────────────────────────
@@ -898,8 +902,8 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
       final cardRef = deckRef.collection('cards').doc();
 
       final hasOptions = card.containsKey('options') &&
-                         card['options'] is List &&
-                         (card['options'] as List).isNotEmpty;
+          card['options'] is List &&
+          (card['options'] as List).isNotEmpty;
 
       int? correctIndex;
       if (hasOptions) {
@@ -1085,6 +1089,13 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     'World History',
   ];
 
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _debounce;
+  String _searchQuery = '';
+  List<QueryDocumentSnapshot<Map<String, dynamic>>>? _cachedResults;
+  final DeckSearchEngine<QueryDocumentSnapshot<Map<String, dynamic>>> _engine =
+      DeckSearchEngine();
+
   @override
   void initState() {
     super.initState();
@@ -1092,6 +1103,53 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
     if (uid != null) {
       ShareService.repairCardCounts(uid: uid).catchError((_) {});
     }
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 150), () async {
+      final keyword = _searchController.text.trim().toLowerCase();
+      if (_engine.length < 500) {
+        if (mounted) {
+          setState(() {
+            _searchQuery = keyword;
+            _cachedResults = null;
+          });
+        }
+      } else {
+        final activeTag =
+            _selectedFilter == 0 ? null : _filters[_selectedFilter];
+        try {
+          await compute(runIsolateQuery, (
+            index: _engine.snapshot(
+                tagOf: (doc) => doc.data()['tag'] as String? ?? ''),
+            keyword: keyword,
+            tagFilter: activeTag,
+          ));
+          if (mounted) {
+            setState(() {
+              _searchQuery = keyword;
+              _cachedResults = null;
+            });
+          }
+        } catch (_) {
+          if (mounted) {
+            setState(() {
+              _searchQuery = keyword;
+              _cachedResults = null;
+            });
+          }
+        }
+      }
+    });
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> _deckStream() {
@@ -1164,7 +1222,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
               color: AppColors.secondaryContainer.withOpacity(0.25),
             ),
           ),
-
           SafeArea(
             bottom: false,
             child: Column(
@@ -1180,9 +1237,8 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           delegate: SliverChildListDelegate([
                             _HeroGreeting(),
                             const SizedBox(height: 20),
-                            _SearchBar(),
+                            _SearchBar(controller: _searchController),
                             const SizedBox(height: 16),
-
                             SizedBox(
                               height: 40,
                               child: ListView.separated(
@@ -1214,7 +1270,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           ]),
                         ),
                       ),
-
                       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                         stream: _deckStream(),
                         builder: (context, snapshot) {
@@ -1233,16 +1288,37 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
 
                           final allDocs = snapshot.data?.docs ?? [];
 
-                          final draftDocs = allDocs
+                          // Rebuild the search index on every Firestore emission
+                          _engine.rebuild(
+                            allDocs,
+                            (doc) =>
+                                '${doc.data()['title'] ?? ''} ${doc.data()['tag'] ?? ''}'
+                                    .toLowerCase(),
+                          );
+
+                          final selectedCategory = _filters[_selectedFilter];
+                          final String? tagFilter =
+                              selectedCategory == 'All Decks'
+                                  ? null
+                                  : selectedCategory;
+
+                          // Apply search + tag filter via the engine
+                          final filteredDocs =
+                              (_cachedResults != null && _engine.length >= 500)
+                                  ? _cachedResults!
+                                  : _engine.query(
+                                      _searchQuery,
+                                      tagFilter: tagFilter,
+                                      tagOf: (doc) =>
+                                          doc.data()['tag'] as String? ?? '',
+                                    );
+
+                          final draftDocs = filteredDocs
                               .where((d) => d.data()['isDraft'] == true)
                               .toList();
 
-                          final selectedCategory = _filters[_selectedFilter];
-                          final completedDocs = allDocs
+                          final completedDocs = filteredDocs
                               .where((d) => d.data()['isDraft'] != true)
-                              .where((d) => selectedCategory == 'All Decks'
-                                  ? true
-                                  : d.data()['tag'] == selectedCategory)
                               .toList();
 
                           final items = <Widget>[];
@@ -1343,33 +1419,67 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           );
 
                           if (completedDocs.isEmpty) {
+                            final hasDecksButFiltered =
+                                allDocs.any((d) => d.data()['isDraft'] != true);
                             items.add(
                               Padding(
                                 padding: const EdgeInsets.all(40),
-                                child: Column(
-                                  children: [
-                                    Icon(Icons.layers_outlined,
-                                        size: 64, color: AppColors.outline),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'No decks yet',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.onSurface,
+                                child: hasDecksButFiltered
+                                    ? Column(
+                                        children: [
+                                          Icon(
+                                            Icons.search_off_rounded,
+                                            size: 64,
+                                            color: AppColors.outline
+                                                .withOpacity(0.5),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            'No decks found',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.onSurface,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _searchQuery.isNotEmpty
+                                                ? 'No decks match "$_searchQuery". Try a different keyword or clear the filter.'
+                                                : 'No decks match the active filter.',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 14,
+                                              color: AppColors.onSurfaceVariant,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      )
+                                    : Column(
+                                        children: [
+                                          Icon(Icons.layers_outlined,
+                                              size: 64,
+                                              color: AppColors.outline),
+                                          const SizedBox(height: 16),
+                                          Text(
+                                            'No decks yet',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700,
+                                              color: AppColors.onSurface,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Create your first deck to get started!',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 14,
+                                              color: AppColors.onSurfaceVariant,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Create your first deck to get started!',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 14,
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
                               ),
                             );
                           } else {
@@ -1391,8 +1501,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     progress:
                                         (deck['progress'] ?? 0.0).toDouble(),
                                     progressColor: AppColors.primary,
-                                    visibility: deck['visibility']
-                                            as String? ??
+                                    visibility: deck['visibility'] as String? ??
                                         'private',
                                   ),
                                 ),
@@ -1405,7 +1514,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           );
                         },
                       ),
-
                       const SliverToBoxAdapter(child: SizedBox(height: 140)),
                     ],
                   ),
@@ -1543,6 +1651,10 @@ class _HeroGreeting extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SearchBar extends StatelessWidget {
+  const _SearchBar({required this.controller});
+
+  final TextEditingController controller;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1558,6 +1670,7 @@ class _SearchBar extends StatelessWidget {
         ],
       ),
       child: TextField(
+        controller: controller,
         style: GoogleFonts.plusJakartaSans(
           fontSize: 15,
           color: AppColors.onSurface,
@@ -1572,6 +1685,20 @@ class _SearchBar extends StatelessWidget {
             padding: EdgeInsets.only(left: 6),
             child:
                 Icon(Icons.search_rounded, color: AppColors.outline, size: 22),
+          ),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (_, value, __) {
+              if (value.text.isEmpty) return const SizedBox.shrink();
+              return IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppColors.outline,
+                  size: 20,
+                ),
+                onPressed: () => controller.clear(),
+              );
+            },
           ),
           border: InputBorder.none,
           contentPadding:
@@ -1960,7 +2087,6 @@ class _DraftDeckCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-
             Text(
               title,
               style: GoogleFonts.plusJakartaSans(
@@ -1980,7 +2106,6 @@ class _DraftDeckCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -2016,7 +2141,6 @@ class _DraftDeckCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 11),
@@ -2098,7 +2222,6 @@ class _DraftOptionsSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
             child: Row(
@@ -2143,7 +2266,6 @@ class _DraftOptionsSheet extends StatelessWidget {
               ],
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Container(
@@ -2171,7 +2293,6 @@ class _DraftOptionsSheet extends StatelessWidget {
               ),
             ),
           ),
-
           _SheetOption(
             icon: Icons.edit_rounded,
             label: 'Continue Draft',
@@ -2351,7 +2472,6 @@ class _DeckCardState extends State<_DeckCard> {
               ],
             ),
             const SizedBox(height: 12),
-
             Text(
               widget.title,
               style: GoogleFonts.plusJakartaSans(
@@ -2371,7 +2491,6 @@ class _DeckCardState extends State<_DeckCard> {
               ),
             ),
             const SizedBox(height: 16),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -2402,8 +2521,7 @@ class _DeckCardState extends State<_DeckCard> {
                 value: widget.progress,
                 minHeight: 8,
                 backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(widget.progressColor),
+                valueColor: AlwaysStoppedAnimation<Color>(widget.progressColor),
               ),
             ),
           ],
@@ -2421,6 +2539,16 @@ class _DeckCardState extends State<_DeckCard> {
         deckTitle: widget.deckTitle,
         currentVisibility: _currentVisibility,
         onVisibilityChanged: _onVisibilityChanged,
+        onExport: () async {
+          final format = await _showExportFormatDialog(context);
+          if (format == null || !context.mounted) return;
+          await ExportService.exportDeck(
+            context: context,
+            deckId: widget.deckId,
+            deckTitle: widget.deckTitle,
+            format: format,
+          );
+        },
       ),
     );
   }
@@ -2436,12 +2564,14 @@ class _DeckOptionsSheet extends StatefulWidget {
     required this.deckTitle,
     required this.currentVisibility,
     required this.onVisibilityChanged,
+    required this.onExport,
   });
 
   final String deckId;
   final String deckTitle;
   final String currentVisibility;
   final ValueChanged<String> onVisibilityChanged;
+  final VoidCallback onExport;
 
   @override
   State<_DeckOptionsSheet> createState() => _DeckOptionsSheetState();
@@ -2589,8 +2719,7 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   child: Center(
-                    child:
-                        CircularProgressIndicator(color: AppColors.primary),
+                    child: CircularProgressIndicator(color: AppColors.primary),
                   ),
                 )
               : ListTile(
@@ -2608,14 +2737,12 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: isPublic
-                          ? AppColors.onSurface
-                          : AppColors.primary,
+                      color: isPublic ? AppColors.onSurface : AppColors.primary,
                     ),
                   ),
                   trailing: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: isPublic
                           ? AppColors.primary.withOpacity(0.10)
@@ -2633,9 +2760,7 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: isPublic
-                            ? AppColors.primary
-                            : AppColors.outline,
+                        color: isPublic ? AppColors.primary : AppColors.outline,
                       ),
                     ),
                   ),
@@ -2643,6 +2768,14 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16)),
                 ),
+          _SheetOption(
+            icon: Icons.ios_share_rounded,
+            label: 'Export Deck',
+            onTap: () {
+              Navigator.pop(context); // close options sheet
+              widget.onExport();
+            },
+          ),
           _SheetOption(
             icon: Icons.delete_outline_rounded,
             label: 'Delete Deck',
@@ -2655,6 +2788,139 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXPORT FORMAT DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<ExportFormat?> _showExportFormatDialog(BuildContext context) {
+  return showModalBottomSheet<ExportFormat>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const _ExportFormatDialog(),
+  );
+}
+
+class _ExportFormatDialog extends StatelessWidget {
+  const _ExportFormatDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          // ── Drag handle ──────────────────────────────────────────────────
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.outlineVariant,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Header ───────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryFixedDim],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.ios_share_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Export Deck',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.onSurface,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    Text(
+                      'Choose a format',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ── PDF option ───────────────────────────────────────────────────
+          _SheetOption(
+            icon: Icons.picture_as_pdf_rounded,
+            label: 'Save as PDF',
+            onTap: () => Navigator.pop(context, ExportFormat.pdf),
+          ),
+
+          // ── Plain Text option ────────────────────────────────────────────
+          _SheetOption(
+            icon: Icons.text_snippet_outlined,
+            label: 'Save as Plain Text (.txt)',
+            onTap: () => Navigator.pop(context, ExportFormat.plainText),
+          ),
+
+          // ── Cancel ───────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, null),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHEET OPTION (shared by deck options and export format dialog)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _SheetOption extends StatelessWidget {
   const _SheetOption({
@@ -2715,8 +2981,6 @@ class _QuickAddFAB extends StatelessWidget {
     );
   }
 }
-
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS
