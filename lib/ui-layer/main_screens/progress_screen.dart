@@ -1436,6 +1436,53 @@ class _DetailedBreakdownSection extends StatefulWidget {
 class _DetailedBreakdownSectionState
     extends State<_DetailedBreakdownSection> {
   int _selectedTab = 0;
+  String _sortBy = 'lowest'; // Default: lowest score first
+
+  List<DeckProgressSummary> _sortDecks(List<DeckProgressSummary> decks) {
+    final sorted = List<DeckProgressSummary>.from(decks);
+    switch (_sortBy) {
+      case 'lowest':
+        sorted.sort((a, b) => a.mastery.compareTo(b.mastery));
+        break;
+      case 'highest':
+        sorted.sort((a, b) => b.mastery.compareTo(a.mastery));
+        break;
+      case 'recent':
+        sorted.sort((a, b) {
+          final aDate = a.lastStudiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate = b.lastStudiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bDate.compareTo(aDate);
+        });
+        break;
+      case 'quizzes':
+        sorted.sort((a, b) => b.attemptCount.compareTo(a.attemptCount));
+        break;
+      case 'alphabetical':
+        sorted.sort((a, b) => a.deckTitle.toLowerCase().compareTo(b.deckTitle.toLowerCase()));
+        break;
+    }
+    return sorted;
+  }
+
+  List<_SubjectStat> _sortSubjects(List<_SubjectStat> subjects) {
+    final sorted = List<_SubjectStat>.from(subjects);
+    switch (_sortBy) {
+      case 'lowest':
+        sorted.sort((a, b) => a.percent.compareTo(b.percent));
+        break;
+      case 'highest':
+        sorted.sort((a, b) => b.percent.compareTo(a.percent));
+        break;
+      case 'recent':
+      case 'quizzes':
+        sorted.sort((a, b) => b.attemptCount.compareTo(a.attemptCount));
+        break;
+      case 'alphabetical':
+        sorted.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+        break;
+    }
+    return sorted;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1445,14 +1492,56 @@ class _DetailedBreakdownSectionState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Detailed Breakdown',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: AppColors.onSurface,
-              letterSpacing: -0.2,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Detailed Breakdown',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              // Sort dropdown
+              PopupMenuButton<String>(
+                initialValue: _sortBy,
+                onSelected: (value) => setState(() => _sortBy = value),
+                offset: const Offset(0, 40),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                color: AppColors.surfaceContainerLowest,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.sort_rounded, color: AppColors.primary, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        _getSortLabel(),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                itemBuilder: (context) => [
+                  _buildSortMenuItem('lowest', 'Lowest Score First', Icons.arrow_downward_rounded),
+                  _buildSortMenuItem('highest', 'Highest Score First', Icons.arrow_upward_rounded),
+                  _buildSortMenuItem('recent', 'Recently Studied', Icons.schedule_rounded),
+                  _buildSortMenuItem('quizzes', 'Most Quizzes', Icons.quiz_rounded),
+                  _buildSortMenuItem('alphabetical', 'Alphabetical', Icons.sort_by_alpha_rounded),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Container(
@@ -1482,15 +1571,61 @@ class _DetailedBreakdownSectionState
           ),
           const SizedBox(height: 18),
           if (_selectedTab == 0)
-            _DeckBreakdownContent(decks: widget.dashboard.deckSummaries)
+            _DeckBreakdownContent(decks: _sortDecks(widget.dashboard.deckSummaries))
           else
             _CategoryBreakdownContent(
-              subjects: widget.subjectStats,
+              subjects: _sortSubjects(widget.subjectStats),
               totalDecks: widget.dashboard.deckSummaries.length,
             ),
         ],
       ),
     );
+  }
+
+  PopupMenuItem<String> _buildSortMenuItem(String value, String label, IconData icon) {
+    final isSelected = _sortBy == value;
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: isSelected ? AppColors.primary : AppColors.onSurfaceVariant,
+            size: 18,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              color: isSelected ? AppColors.primary : AppColors.onSurface,
+            ),
+          ),
+          if (isSelected) ...[
+            const Spacer(),
+            Icon(Icons.check_rounded, color: AppColors.primary, size: 18),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _getSortLabel() {
+    switch (_sortBy) {
+      case 'lowest':
+        return 'Lowest';
+      case 'highest':
+        return 'Highest';
+      case 'recent':
+        return 'Recent';
+      case 'quizzes':
+        return 'Quizzes';
+      case 'alphabetical':
+        return 'A-Z';
+      default:
+        return 'Sort';
+    }
   }
 }
 
@@ -1580,7 +1715,7 @@ class _DeckProgressRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final masteryPercent = (deck.mastery * 100).round();
-    final color = _categoryColor(deck.category);
+    final color = _getPerformanceColor(deck.mastery);
 
     return GestureDetector(
       onTap: () => _showDeckProgressSheet(context, deck),
@@ -1650,7 +1785,7 @@ class _DeckProgressRow extends StatelessWidget {
                 value: deck.mastery,
                 minHeight: 8,
                 backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-                valueColor: AlwaysStoppedAnimation<Color>(color),
+                valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(deck.mastery)),
               ),
             ),
           ],
@@ -1761,7 +1896,7 @@ class _SubjectRow extends StatelessWidget {
               value: stat.percent,
               minHeight: 10,
               backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-              valueColor: AlwaysStoppedAnimation<Color>(stat.color),
+              valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(stat.percent)),
             ),
           ),
         ],
@@ -2144,14 +2279,14 @@ class _MasteryRingPainter extends CustomPainter {
         ..strokeWidth = strokeW,
     );
 
-    // Progress arc
+    // Progress arc with performance color
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
       -math.pi / 2, // start at top
       2 * math.pi * progress.clamp(0.0, 1.0),
       false,
       Paint()
-        ..color = AppColors.primary
+        ..color = _getPerformanceColor(progress)
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeW
         ..strokeCap = StrokeCap.round,
@@ -2212,6 +2347,13 @@ class _ForgottenCard {
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns color based on performance: green (high ≥70%), yellow (mid 40-69%), red (low <40%)
+Color _getPerformanceColor(double percent) {
+  if (percent >= 0.7) return const Color(0xFF16A34A); // Green
+  if (percent >= 0.4) return const Color(0xFFF59E0B); // Amber/Yellow
+  return const Color(0xFFDC2626); // Red
+}
 
 BoxDecoration _cardDecoration({Color? color, Gradient? gradient}) {
   return BoxDecoration(
