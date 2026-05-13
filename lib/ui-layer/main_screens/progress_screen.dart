@@ -116,12 +116,21 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                   delegate: SliverChildListDelegate([
                                     // ── Section heading ──────────────────────────────
                                     Text(
-                                      'Your Progress',
+                                      'Track Your Journey',
                                       style: GoogleFonts.plusJakartaSans(
                                         fontSize: 28,
                                         fontWeight: FontWeight.w800,
                                         color: AppColors.onSurface,
                                         letterSpacing: -0.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Monitor your learning progress and achievements',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.onSurfaceVariant,
                                       ),
                                     ),
                                     const SizedBox(height: 16),
@@ -256,13 +265,37 @@ class _ProgressTopBar extends StatelessWidget {
                 size: 22,
               ),
               const SizedBox(width: 8),
-              Text(
-                'Kindred Study',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                  letterSpacing: -0.3,
+              ShaderMask(
+                shaderCallback: (bounds) => const LinearGradient(
+                  colors: [AppColors.primary, AppColors.secondary],
+                ).createShader(bounds),
+                child: Text(
+                  'Mnemo',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.secondary],
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'PROGRESS',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 1.2,
+                  ),
                 ),
               ),
             ],
@@ -1437,15 +1470,16 @@ class _DetailedBreakdownSectionState
     extends State<_DetailedBreakdownSection> {
   int _selectedTab = 0;
   String _sortBy = 'lowest'; // Default: lowest score first
+  String _viewMode = 'current'; // 'current', 'best', 'average'
 
   List<DeckProgressSummary> _sortDecks(List<DeckProgressSummary> decks) {
     final sorted = List<DeckProgressSummary>.from(decks);
     switch (_sortBy) {
       case 'lowest':
-        sorted.sort((a, b) => a.mastery.compareTo(b.mastery));
+        sorted.sort((a, b) => a.getMetricByViewMode(_viewMode).compareTo(b.getMetricByViewMode(_viewMode)));
         break;
       case 'highest':
-        sorted.sort((a, b) => b.mastery.compareTo(a.mastery));
+        sorted.sort((a, b) => b.getMetricByViewMode(_viewMode).compareTo(a.getMetricByViewMode(_viewMode)));
         break;
       case 'recent':
         sorted.sort((a, b) {
@@ -1493,52 +1527,122 @@ class _DetailedBreakdownSectionState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Detailed Breakdown',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
-                  letterSpacing: -0.2,
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Detailed Breakdown',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.onSurface,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    Text(
+                      'Performance by deck and category',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              // Sort dropdown
-              PopupMenuButton<String>(
-                initialValue: _sortBy,
-                onSelected: (value) => setState(() => _sortBy = value),
-                offset: const Offset(0, 40),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                color: AppColors.surfaceContainerLowest,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryContainer.withOpacity(0.3),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.sort_rounded, color: AppColors.primary, size: 16),
-                      const SizedBox(width: 4),
-                      Text(
-                        _getSortLabel(),
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+              const SizedBox(width: 8),
+              Row(
+                children: [
+                  // View mode dropdown
+                  PopupMenuButton<String>(
+                    initialValue: _viewMode,
+                    onSelected: (value) => setState(() => _viewMode = value),
+                    offset: const Offset(0, 40),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    color: AppColors.surfaceContainerLowest,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondaryContainer.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.secondary.withOpacity(0.3),
                         ),
                       ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.visibility_rounded, color: AppColors.secondary, size: 16),
+                          const SizedBox(width: 4),
+                          Text(
+                            _getViewModeLabel(),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.secondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    itemBuilder: (context) => [
+                      _buildViewModeMenuItem('current', 'Current Mastery', Icons.trending_up_rounded),
+                      _buildViewModeMenuItem('best', 'Best Performance', Icons.emoji_events_rounded),
+                      _buildViewModeMenuItem('average', 'Average (Last 5)', Icons.analytics_rounded),
                     ],
                   ),
-                ),
-                itemBuilder: (context) => [
-                  _buildSortMenuItem('lowest', 'Lowest Score First', Icons.arrow_downward_rounded),
-                  _buildSortMenuItem('highest', 'Highest Score First', Icons.arrow_upward_rounded),
-                  _buildSortMenuItem('recent', 'Recently Studied', Icons.schedule_rounded),
-                  _buildSortMenuItem('quizzes', 'Most Quizzes', Icons.quiz_rounded),
-                  _buildSortMenuItem('alphabetical', 'Alphabetical', Icons.sort_by_alpha_rounded),
+                  const SizedBox(width: 8),
+                  // Sort dropdown
+                  PopupMenuButton<String>(
+                    initialValue: _sortBy,
+                    onSelected: (value) => setState(() => _sortBy = value),
+                    offset: const Offset(0, 40),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    color: AppColors.surfaceContainerLowest,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryContainer.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.primary.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.sort_rounded, color: AppColors.primary, size: 16),
+                          const SizedBox(width: 4),
+                          Text(
+                            _getSortLabel(),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    itemBuilder: (context) => [
+                      _buildSortMenuItem('lowest', 'Lowest Score First', Icons.arrow_downward_rounded),
+                      _buildSortMenuItem('highest', 'Highest Score First', Icons.arrow_upward_rounded),
+                      _buildSortMenuItem('recent', 'Recently Studied', Icons.schedule_rounded),
+                      _buildSortMenuItem('quizzes', 'Most Quizzes', Icons.quiz_rounded),
+                      _buildSortMenuItem('alphabetical', 'Alphabetical', Icons.sort_by_alpha_rounded),
+                    ],
+                  ),
                 ],
               ),
             ],
@@ -1571,11 +1675,16 @@ class _DetailedBreakdownSectionState
           ),
           const SizedBox(height: 18),
           if (_selectedTab == 0)
-            _DeckBreakdownContent(decks: _sortDecks(widget.dashboard.deckSummaries))
+            _DeckBreakdownContent(
+              decks: _sortDecks(widget.dashboard.deckSummaries),
+              viewMode: _viewMode,
+            )
           else
             _CategoryBreakdownContent(
               subjects: _sortSubjects(widget.subjectStats),
               totalDecks: widget.dashboard.deckSummaries.length,
+              decks: widget.dashboard.deckSummaries,
+              viewMode: _viewMode,
             ),
         ],
       ),
@@ -1611,6 +1720,35 @@ class _DetailedBreakdownSectionState
     );
   }
 
+  PopupMenuItem<String> _buildViewModeMenuItem(String value, String label, IconData icon) {
+    final isSelected = _viewMode == value;
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: isSelected ? AppColors.secondary : AppColors.onSurfaceVariant,
+            size: 18,
+          ),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              color: isSelected ? AppColors.secondary : AppColors.onSurface,
+            ),
+          ),
+          if (isSelected) ...[
+            const Spacer(),
+            Icon(Icons.check_rounded, color: AppColors.secondary, size: 18),
+          ],
+        ],
+      ),
+    );
+  }
+
   String _getSortLabel() {
     switch (_sortBy) {
       case 'lowest':
@@ -1625,6 +1763,19 @@ class _DetailedBreakdownSectionState
         return 'A-Z';
       default:
         return 'Sort';
+    }
+  }
+
+  String _getViewModeLabel() {
+    switch (_viewMode) {
+      case 'current':
+        return 'Current';
+      case 'best':
+        return 'Best';
+      case 'average':
+        return 'Average';
+      default:
+        return 'View';
     }
   }
 }
@@ -1678,8 +1829,9 @@ class _TabButton extends StatelessWidget {
 }
 
 class _DeckBreakdownContent extends StatelessWidget {
-  const _DeckBreakdownContent({required this.decks});
+  const _DeckBreakdownContent({required this.decks, required this.viewMode});
   final List<DeckProgressSummary> decks;
+  final String viewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -1692,14 +1844,15 @@ class _DeckBreakdownContent extends StatelessWidget {
     }
 
     return Column(
-      children: decks.map((deck) => _DeckProgressRow(deck: deck)).toList(),
+      children: decks.map((deck) => _DeckProgressRow(deck: deck, viewMode: viewMode)).toList(),
     );
   }
 }
 
 class _DeckProgressRow extends StatelessWidget {
-  const _DeckProgressRow({required this.deck});
+  const _DeckProgressRow({required this.deck, required this.viewMode});
   final DeckProgressSummary deck;
+  final String viewMode;
 
   Color _categoryColor(String category) {
     const colors = {
@@ -1714,8 +1867,9 @@ class _DeckProgressRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final masteryPercent = (deck.mastery * 100).round();
-    final color = _getPerformanceColor(deck.mastery);
+    final displayMetric = deck.getMetricByViewMode(viewMode);
+    final masteryPercent = (displayMetric * 100).round();
+    final color = _getPerformanceColor(displayMetric);
 
     return GestureDetector(
       onTap: () => _showDeckProgressSheet(context, deck),
@@ -1782,10 +1936,10 @@ class _DeckProgressRow extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(999),
               child: LinearProgressIndicator(
-                value: deck.mastery,
+                value: displayMetric,
                 minHeight: 8,
                 backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-                valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(deck.mastery)),
+                valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(displayMetric)),
               ),
             ),
           ],
@@ -1808,10 +1962,14 @@ class _CategoryBreakdownContent extends StatelessWidget {
   const _CategoryBreakdownContent({
     required this.subjects,
     required this.totalDecks,
+    required this.decks,
+    required this.viewMode,
   });
 
   final List<_SubjectStat> subjects;
   final int totalDecks;
+  final List<DeckProgressSummary> decks;
+  final String viewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -1835,18 +1993,25 @@ class _CategoryBreakdownContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        ...subjects.map((s) => _SubjectRow(stat: s)),
+        ...subjects.map((s) => _SubjectRow(stat: s, decks: decks, viewMode: viewMode)),
       ],
     );
   }
 }
 
 class _SubjectRow extends StatelessWidget {
-  const _SubjectRow({required this.stat});
+  const _SubjectRow({required this.stat, required this.decks, required this.viewMode});
   final _SubjectStat stat;
+  final List<DeckProgressSummary> decks;
+  final String viewMode;
 
   @override
   Widget build(BuildContext context) {
+    final categoryDecks = decks.where((d) => d.category == stat.label).toList();
+    final displayMetric = categoryDecks.isEmpty
+        ? stat.percent
+        : categoryDecks.map((d) => d.getMetricByViewMode(viewMode)).reduce((a, b) => a + b) / categoryDecks.length;
+    
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -1880,7 +2045,7 @@ class _SubjectRow extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                '${(stat.percent * 100).round()}%',
+                '${(displayMetric * 100).round()}%',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
@@ -1893,10 +2058,10 @@ class _SubjectRow extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
-              value: stat.percent,
+              value: displayMetric,
               minHeight: 10,
               backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-              valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(stat.percent)),
+              valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(displayMetric)),
             ),
           ),
         ],
@@ -2398,8 +2563,8 @@ class _NavIconButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: AppColors.primaryContainer.withOpacity(0.15),
-          shape: BoxShape.circle,
+          color: AppColors.primaryContainer.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: AppColors.primary, size: 22),
       ),

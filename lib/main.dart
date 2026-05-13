@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'ui-layer/landing_page/landing_screen.dart';
 import 'ui-layer/landing_page/app_theme.dart';
@@ -20,8 +21,9 @@ import 'ui-layer/social/public_profile_screen.dart';
 import 'ui-layer/social/social_feed_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'business-layer/services/connectivity_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +40,16 @@ Future<void> main() async {
       appId: dotenv.env['FIREBASE_APP_ID']!,
     ),
   );
+
+  // Enable offline persistence for all Firestore data
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
+  // Initialize connectivity monitoring
+  ConnectivityService().initialize();
+
   runApp(const MnemoApp());
 }
 

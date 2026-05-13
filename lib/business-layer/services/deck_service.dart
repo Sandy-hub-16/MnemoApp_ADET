@@ -230,6 +230,7 @@ abstract final class DeckService {
   /// - The deck document itself
   /// - All quiz attempts for this deck
   /// - The deck progress document
+  /// - The public deck mirror (if the deck was public)
   static Future<void> deleteDeck(String deckId) async {
     final batch = _db.batch();
 
@@ -241,6 +242,11 @@ abstract final class DeckService {
 
     // Delete the deck doc
     batch.delete(_decksRef().doc(deckId));
+
+    // Delete the public deck mirror if it exists
+    // (This removes the deck from Discover for all users)
+    final publicDeckRef = _db.collection('public_decks').doc(deckId);
+    batch.delete(publicDeckRef);
 
     await batch.commit();
 

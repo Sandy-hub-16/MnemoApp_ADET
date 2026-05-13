@@ -263,19 +263,19 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
         children: [
           // ── Decorative blobs ─────────────────────────────────────────────
           Positioned(
-            top: -40,
-            right: -80,
+            top: -60,
+            right: -100,
             child: _Blob(
-              size: 300,
-              color: AppColors.primaryContainer.withValues(alpha: 0.22),
+              size: 340,
+              color: AppColors.primaryContainer.withValues(alpha: 0.20),
             ),
           ),
           Positioned(
-            bottom: 200,
-            left: -100,
+            bottom: 180,
+            left: -120,
             child: _Blob(
-              size: 260,
-              color: AppColors.secondaryContainer.withValues(alpha: 0.25),
+              size: 300,
+              color: AppColors.secondaryContainer.withValues(alpha: 0.22),
             ),
           ),
 
@@ -286,9 +286,40 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                 // ── Top bar ───────────────────────────────────────────────
                 const _DiscoveryTopBar(),
 
+                // ── Header section ────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Explore Community',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.5,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Discover and learn from thousands of public decks',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
                 // ── Search + filters ──────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -296,7 +327,27 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                         controller: _searchController,
                         onChanged: (_) {},
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.filter_list_rounded,
+                            size: 16,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'FILTER BY CATEGORY',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurfaceVariant,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
                       _TagFilterRow(
                         tags: _tags,
                         activeTag: _activeTag,
@@ -305,7 +356,7 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 // ── Deck list ─────────────────────────────────────────────
                 Expanded(
@@ -313,6 +364,7 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                       ? const Center(
                           child: CircularProgressIndicator(
                             color: AppColors.primary,
+                            strokeWidth: 2.5,
                           ),
                         )
                       : _DeckList(
@@ -344,63 +396,52 @@ class _DiscoveryTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withValues(alpha: 0.80),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primaryContainer,
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.2),
-                width: 2,
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryFixedDim],
+            ).createShader(bounds),
+            child: Text(
+              'Mnemo',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                fontStyle: FontStyle.italic,
+                color: Colors.white,
+                letterSpacing: -0.5,
               ),
-            ),
-            child: const Icon(
-              Icons.explore_rounded,
-              color: AppColors.primary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            'Discover',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-              letterSpacing: -0.4,
             ),
           ),
           const Spacer(),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest,
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.15),
+                  AppColors.secondary.withValues(alpha: 0.10),
+                ],
+              ),
               borderRadius: BorderRadius.circular(999),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.onSurface.withValues(alpha: 0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.2),
+                width: 1.5,
+              ),
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.public_rounded,
+                Icon(
+                  Icons.explore_rounded,
                   color: AppColors.primary,
-                  size: 18,
+                  size: 16,
                 ),
-                const SizedBox(width: 5),
+                const SizedBox(width: 6),
                 Text(
-                  'COMMUNITY',
+                  'DISCOVER',
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
+                    fontSize: 10,
                     fontWeight: FontWeight.w800,
                     color: AppColors.primary,
                     letterSpacing: 1.2,
@@ -432,13 +473,17 @@ class _SearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.3),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.onSurface.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -447,19 +492,21 @@ class _SearchField extends StatelessWidget {
         onChanged: onChanged,
         style: GoogleFonts.plusJakartaSans(
           fontSize: 15,
+          fontWeight: FontWeight.w500,
           color: AppColors.onSurface,
         ),
         decoration: InputDecoration(
-          hintText: 'Search public decks...',
+          hintText: 'Search decks, topics, or creators...',
           hintStyle: GoogleFonts.plusJakartaSans(
             fontSize: 15,
-            color: AppColors.outline.withValues(alpha: 0.6),
+            fontWeight: FontWeight.w500,
+            color: AppColors.onSurfaceVariant.withValues(alpha: 0.6),
           ),
-          prefixIcon: const Padding(
-            padding: EdgeInsets.only(left: 6),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 12),
             child: Icon(
               Icons.search_rounded,
-              color: AppColors.outline,
+              color: AppColors.primary,
               size: 22,
             ),
           ),
@@ -468,9 +515,9 @@ class _SearchField extends StatelessWidget {
             builder: (_, value, __) {
               if (value.text.isEmpty) return const SizedBox.shrink();
               return IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.close_rounded,
-                  color: AppColors.outline,
+                  color: AppColors.onSurfaceVariant,
                   size: 20,
                 ),
                 onPressed: () {
@@ -482,7 +529,7 @@ class _SearchField extends StatelessWidget {
           ),
           border: InputBorder.none,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
       ),
     );
@@ -507,7 +554,7 @@ class _TagFilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 36,
+      height: 38,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: tags.length,
@@ -519,32 +566,56 @@ class _TagFilterRow extends StatelessWidget {
             onTap: () => onTagSelected(tag),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
               padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
               decoration: BoxDecoration(
-                color: active
-                    ? AppColors.primary
-                    : AppColors.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(999),
+                gradient: active
+                    ? const LinearGradient(
+                        colors: [AppColors.primary, AppColors.primaryFixedDim],
+                      )
+                    : null,
+                color: active ? null : AppColors.surfaceContainerLowest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: active
+                      ? AppColors.primary.withValues(alpha: 0.3)
+                      : AppColors.outlineVariant.withValues(alpha: 0.3),
+                  width: 1.5,
+                ),
                 boxShadow: active
                     ? [
                         BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.25),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
                         ),
                       ]
                     : [],
               ),
-              child: Text(
-                tag,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: active
-                      ? AppColors.onPrimary
-                      : AppColors.onSurfaceVariant,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (active)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  Text(
+                    tag,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: active
+                          ? Colors.white
+                          : AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -621,18 +692,37 @@ class _DeckListState extends State<_DeckList> {
       itemCount: widget.decks.length + (widget.isLoadingMore ? 1 : 0),
       itemBuilder: (context, i) {
         if (i == widget.decks.length) {
-          // Loading more indicator at the bottom
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
             child: Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Loading more decks...',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         }
 
         final deck = widget.decks[i];
         return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: 14),
           child: PublicDeckCard(
             deck: deck,
             onTap: () => widget.onTap(deck),
@@ -655,17 +745,28 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String title;
     final String subtitle;
+    final IconData icon;
+
     if (searchQuery.isNotEmpty && activeTag != null) {
+      title = 'No Results Found';
       subtitle =
-          'No decks match "$searchQuery" in the "$activeTag" category.';
+          'No decks match "$searchQuery" in the "$activeTag" category. Try adjusting your filters.';
+      icon = Icons.search_off_rounded;
     } else if (searchQuery.isNotEmpty) {
+      title = 'No Matching Decks';
       subtitle =
-          'No public decks match "$searchQuery". Try a different keyword.';
+          'We couldn\'t find any decks matching "$searchQuery". Try a different keyword or browse by category.';
+      icon = Icons.search_off_rounded;
     } else if (activeTag != null) {
-      subtitle = 'No public decks found for the "$activeTag" tag.';
+      title = 'No Decks in Category';
+      subtitle = 'No public decks found for "$activeTag". Try a different category or clear the filter.';
+      icon = Icons.category_outlined;
     } else {
-      subtitle = 'Try a different search term or tag filter.';
+      title = 'No Decks Available';
+      subtitle = 'There are no public decks to display at the moment. Check back later!';
+      icon = Icons.explore_off_rounded;
     }
 
     return Center(
@@ -674,27 +775,40 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 72,
-              color: AppColors.outline.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'No decks found',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: AppColors.onSurface,
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLowest,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.outlineVariant.withValues(alpha: 0.3),
+                  width: 2,
+                ),
+              ),
+              child: Icon(
+                icon,
+                size: 56,
+                color: AppColors.outline.withValues(alpha: 0.5),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 24),
+            Text(
+              title,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.onSurface,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 10),
             Text(
               subtitle,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 color: AppColors.onSurfaceVariant,
+                height: 1.5,
               ),
               textAlign: TextAlign.center,
             ),

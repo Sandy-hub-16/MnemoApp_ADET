@@ -144,6 +144,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   int _totalCardsInDeck = 0;
   String _deckCategory = 'Other';
   String? _quizOwnerUid;
+  String? _clonedFromUsername;
   bool _attemptSaved = false;
   
   // ── Progress tracking (new system) ────────────────────────────────────────────
@@ -274,6 +275,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       final rawTag = deckData?['tag'] as String?;
       final category =
           rawTag == null || rawTag.trim().isEmpty ? 'Other' : rawTag.trim();
+      _clonedFromUsername = deckData?['clonedFromUsername'] as String?;
 
       final snap = await deckRef.collection('cards').get();
 
@@ -494,6 +496,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         if (_currentQueueIndex >= _cardQueue.length) {
           _currentQueueIndex = 0;
         }
+        
+        // 🚨 NEW LOGIC: Check if user has seen all cards and scored ≤20%
+        // If so, end the quiz early with encouragement to review
+        if (_cardsSeenCount >= _totalCardsInDeck) {
+          final correctCount = _cardResults.values.where((r) => r.correct).length;
+          final scorePercent = _totalCardsInDeck > 0 
+              ? (correctCount / _totalCardsInDeck * 100) 
+              : 0;
+          
+          if (scorePercent <= 20) {
+            // Score too low - end quiz and encourage review
+            await _finishQuiz();
+            return;
+          }
+        }
       }
     }
     
@@ -550,6 +567,13 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
     final hasCardsWithThreePlusWrongAttempts = _cardResults.values.any((r) => r.wrongAttempts >= 3);
     final isMasteryTestEligible = !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
+    
+    // Check if this was a low-score early exit (≤20%)
+    final correctCount = _cardResults.values.where((r) => r.correct).length;
+    final scorePercent = _totalCardsInDeck > 0 
+        ? (correctCount / _totalCardsInDeck * 100) 
+        : 0;
+    final isLowScoreExit = !_isMasteryTest && _cardsSeenCount >= _totalCardsInDeck && scorePercent <= 20;
 
     // Navigate to results screen with detailed breakdown
     if (!mounted) return;
@@ -559,10 +583,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         deckId: _deckId,
         deckTitle: _deckTitle,
         ownerUid: _quizOwnerUid,
-        correctCount: _cardResults.values.where((r) => r.correct).length,
+        correctCount: correctCount,
         totalCount: _totalCardsInDeck,
         isMasteryTest: _isMasteryTest,
         isMasteryTestEligible: isMasteryTestEligible,
+        isLowScoreExit: isLowScoreExit,
+        clonedFromUsername: _clonedFromUsername,
         cardResults: _cardResults.values
             .map((r) => CardResultData(
                   question: r.question,
@@ -581,6 +607,139 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
     final hasCardsWithThreePlusWrongAttempts = _cardResults.values.any((r) => r.wrongAttempts >= 3);
     return !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
+  }
+
+  // ── Exit confirmation dialog ────────────────────────────────────────────────
+  Future<void> _showExitConfirmation() async {
+    final allCardsRevealed = _cardsSeenCount >= _totalCardsInDeck;
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: AppColors.surfaceContainerLowest,
+        title: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: allCardsRevealed 
+                    ? AppColors.primaryContainer.withOpacity(0.5)
+                    : AppColors.errorContainer.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                allCardsRevealed ? Icons.save_rounded : Icons.warning_rounded,
+                color: allCardsRevealed ? AppColors.primary : AppColors.error,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                allCardsRevealed ? 'End Quiz & Save Progress?' : 'Exit Without Saving?',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                  fontSize: 18,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              allCardsRevealed
+                  ? 'You\'ve revealed all cards in this deck! Your current progress will be saved. You can continue improving your score by studying more, or end the quiz now.'
+                  : 'You haven\'t revealed all cards in this deck yet. Your progress will NOT be saved if you exit now.\n\nTo save your progress, you must reveal the entire deck at least once.',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                color: AppColors.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+            if (!allCardsRevealed) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.3),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Cards revealed: $_cardsSeenCount/$_totalCardsInDeck',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Keep Studying',
+              style: GoogleFonts.plusJakartaSans(
+                color: AppColors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: allCardsRevealed ? AppColors.primary : AppColors.error,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: Text(
+              allCardsRevealed ? 'Save & Exit' : 'Exit Anyway',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    
+    if (result == true) {
+      if (allCardsRevealed) {
+        // Save progress and exit
+        await _finishQuiz();
+      } else {
+        // Exit without saving
+        if (!mounted) return;
+        Navigator.of(context).pop();
+      }
+    }
   }
 
   Future<void> _saveQuizAttempt() async {
@@ -603,7 +762,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     final correct = _cardResults.values.where((result) => result.correct).length;
+    final allCardsRevealed = _cardsSeenCount >= _totalCardsInDeck;
     debugPrint('🔍 [DEBUG] correct: $correct / ${_totalCardsInDeck}');
+    debugPrint('🔍 [DEBUG] allCardsRevealed: $allCardsRevealed');
 
     try {
       debugPrint('📤 [DEBUG] Calling ProgressService.saveQuizAttempt...');
@@ -615,6 +776,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           category: _deckCategory,
           correctCount: correct,
           totalCount: _totalCardsInDeck,
+          isComplete: allCardsRevealed,
           answers: _cardResults.values
               .map((result) => QuizCardAnswer(
                     cardId: result.cardId,
@@ -1260,23 +1422,38 @@ class _QuizTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final quizState = context.findAncestorStateOfType<_QuizScreenState>();
+    final allCardsRevealed = quizState != null && 
+        quizState._cardsSeenCount >= quizState._totalCardsInDeck;
+    
     return Container(
       color: AppColors.background.withOpacity(0.88),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          // Close button
+          // Close button with dynamic color
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () {
+              if (quizState != null) {
+                quizState._showExitConfirmation();
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
             child: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLow,
+                color: allCardsRevealed
+                    ? AppColors.primaryContainer.withOpacity(0.5)
+                    : AppColors.errorContainer.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.close_rounded,
-                  color: AppColors.onSurfaceVariant, size: 20),
+              child: Icon(
+                allCardsRevealed ? Icons.check_circle_rounded : Icons.close_rounded,
+                color: allCardsRevealed ? AppColors.primary : AppColors.error,
+                size: 20,
+              ),
             ),
           ),
           const SizedBox(width: 12),

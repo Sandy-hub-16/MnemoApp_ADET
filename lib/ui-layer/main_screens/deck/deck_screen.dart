@@ -1503,6 +1503,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     progressColor: AppColors.primary,
                                     visibility: deck['visibility'] as String? ??
                                         'private',
+                                    clonedFromUsername: deck['clonedFromUsername'] as String?,
                                   ),
                                 ),
                               );
@@ -1523,7 +1524,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
           ),
         ],
       ),
-      floatingActionButton: const _QuickAddFAB(),
+
     );
   }
 
@@ -1587,23 +1588,58 @@ class _DeckTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withOpacity(0.75),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          Icon(
-            Icons.bubble_chart_rounded,
-            color: AppColors.primary,
-            size: 22,
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryFixedDim],
+            ).createShader(bounds),
+            child: Text(
+              'Mnemo',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                fontStyle: FontStyle.italic,
+                color: Colors.white,
+                letterSpacing: -0.5,
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            'Kindred Study',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-              letterSpacing: -0.3,
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.tertiary.withOpacity(0.15),
+                  AppColors.primary.withOpacity(0.10),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: AppColors.tertiary.withOpacity(0.2),
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.layers_rounded,
+                  color: AppColors.tertiary,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'LIBRARY',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.tertiary,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -1623,7 +1659,7 @@ class _HeroGreeting extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Hello, Active Scholar! 👋',
+          'Your Deck Library',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 28,
             fontWeight: FontWeight.w800,
@@ -1634,11 +1670,12 @@ class _HeroGreeting extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Ready to master your knowledge today?',
+          'Create, import, and organize your flashcard decks',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: FontWeight.w500,
             color: AppColors.onSurfaceVariant,
+            height: 1.4,
           ),
         ),
       ],
@@ -1659,13 +1696,17 @@ class _SearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.outlineVariant.withOpacity(0.3),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 2),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1673,27 +1714,32 @@ class _SearchBar extends StatelessWidget {
         controller: controller,
         style: GoogleFonts.plusJakartaSans(
           fontSize: 15,
+          fontWeight: FontWeight.w500,
           color: AppColors.onSurface,
         ),
         decoration: InputDecoration(
-          hintText: 'Search your knowledge base...',
+          hintText: 'Search your decks...',
           hintStyle: GoogleFonts.plusJakartaSans(
             fontSize: 15,
-            color: AppColors.outline.withOpacity(0.6),
+            fontWeight: FontWeight.w500,
+            color: AppColors.onSurfaceVariant.withOpacity(0.6),
           ),
-          prefixIcon: const Padding(
-            padding: EdgeInsets.only(left: 6),
-            child:
-                Icon(Icons.search_rounded, color: AppColors.outline, size: 22),
+          prefixIcon: Padding(
+            padding: const EdgeInsets.only(left: 16, right: 12),
+            child: Icon(
+              Icons.search_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
           ),
           suffixIcon: ValueListenableBuilder<TextEditingValue>(
             valueListenable: controller,
             builder: (_, value, __) {
               if (value.text.isEmpty) return const SizedBox.shrink();
               return IconButton(
-                icon: const Icon(
+                icon: Icon(
                   Icons.close_rounded,
-                  color: AppColors.outline,
+                  color: AppColors.onSurfaceVariant,
                   size: 20,
                 ),
                 onPressed: () => controller.clear(),
@@ -1702,7 +1748,7 @@ class _SearchBar extends StatelessWidget {
           ),
           border: InputBorder.none,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
       ),
     );
@@ -1730,14 +1776,26 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? AppColors.primary : AppColors.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(999),
+          gradient: active
+              ? const LinearGradient(
+                  colors: [AppColors.primary, AppColors.primaryFixedDim],
+                )
+              : null,
+          color: active ? null : AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: active
+                ? AppColors.primary.withOpacity(0.3)
+                : AppColors.outlineVariant.withOpacity(0.3),
+            width: 1.5,
+          ),
           boxShadow: active
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.25),
+                    color: AppColors.primary.withOpacity(0.3),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -1749,7 +1807,7 @@ class _FilterChip extends StatelessWidget {
           style: GoogleFonts.plusJakartaSans(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            color: active ? AppColors.onPrimary : AppColors.onSurfaceVariant,
+            color: active ? Colors.white : AppColors.onSurfaceVariant,
           ),
         ),
       ),
@@ -2334,6 +2392,7 @@ class _DeckCard extends StatefulWidget {
     required this.progress,
     required this.progressColor,
     required this.visibility,
+    this.clonedFromUsername,
   });
 
   final String deckId;
@@ -2346,6 +2405,7 @@ class _DeckCard extends StatefulWidget {
   final double progress;
   final Color progressColor;
   final String visibility;
+  final String? clonedFromUsername;
 
   @override
   State<_DeckCard> createState() => _DeckCardState();
@@ -2490,6 +2550,28 @@ class _DeckCardState extends State<_DeckCard> {
                 fontWeight: FontWeight.w500,
               ),
             ),
+            if (widget.clonedFromUsername != null && widget.clonedFromUsername!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    Icons.person_outline_rounded,
+                    size: 11,
+                    color: AppColors.outline,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Cloned from @${widget.clonedFromUsername}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      color: AppColors.outline,
+                      fontWeight: FontWeight.w600,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2950,34 +3032,6 @@ class _SheetOption extends StatelessWidget {
       ),
       onTap: onTap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QUICK ADD FAB
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _QuickAddFAB extends StatelessWidget {
-  const _QuickAddFAB();
-
-  @override
-  Widget build(BuildContext context) {
-    return FloatingActionButton.extended(
-      onPressed: () {},
-      backgroundColor: AppColors.primary,
-      foregroundColor: AppColors.onPrimary,
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-      icon: const Icon(Icons.add_rounded, size: 24),
-      label: Text(
-        'Quick Add',
-        style: GoogleFonts.plusJakartaSans(
-          fontWeight: FontWeight.w800,
-          fontSize: 14,
-          letterSpacing: 0.5,
-        ),
-      ),
     );
   }
 }

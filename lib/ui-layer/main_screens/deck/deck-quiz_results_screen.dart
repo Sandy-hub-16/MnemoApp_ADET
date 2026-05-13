@@ -18,6 +18,8 @@ class QuizResultsArgs {
     required this.cardResults,
     this.isMasteryTest = false,
     this.isMasteryTestEligible = true,
+    this.isLowScoreExit = false,
+    this.clonedFromUsername,
   });
 
   final String deckId;
@@ -28,6 +30,8 @@ class QuizResultsArgs {
   final List<CardResultData> cardResults;
   final bool isMasteryTest;
   final bool isMasteryTestEligible;
+  final bool isLowScoreExit; // True when quiz ended early due to ≤20% score
+  final String? clonedFromUsername;
 }
 
 class CardResultData {
@@ -92,12 +96,19 @@ class QuizResultsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Low score encouragement banner (only for ≤20% early exit)
+                    if (args.isLowScoreExit) ...[
+                      _LowScoreEncouragementBanner(),
+                      const SizedBox(height: 20),
+                    ],
+                    
                     // Hero score card
                     _HeroScoreCard(
                       correctCount: args.correctCount,
                       totalCount: args.totalCount,
                       percentage: pct,
                       isMasteryTest: args.isMasteryTest,
+                      isLowScoreExit: args.isLowScoreExit,
                     ),
                     const SizedBox(height: 20),
                     
@@ -152,12 +163,135 @@ class QuizResultsScreen extends StatelessWidget {
                         ownerUid: args.ownerUid,
                       ),
                     ],
+                    
+                    // Creator credit (only for cloned decks)
+                    if (args.clonedFromUsername != null && args.clonedFromUsername!.isNotEmpty) ...[
+                      const SizedBox(height: 24),
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.person_outline_rounded,
+                              size: 12,
+                              color: AppColors.outline,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Deck by @${args.clonedFromUsername}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                color: AppColors.outline,
+                                fontWeight: FontWeight.w600,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOW SCORE ENCOURAGEMENT BANNER
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LowScoreEncouragementBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.secondaryContainer.withOpacity(0.7),
+            AppColors.tertiaryContainer.withOpacity(0.5),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.secondary.withOpacity(0.4),
+          width: 2,
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.secondaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.lightbulb_rounded,
+                  color: AppColors.secondary,
+                  size: 26,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Take a Step Back',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.onSurface,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Review the material first',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLowest.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Text(
+              'This material seems new to you! That\'s completely okay — everyone starts somewhere. '
+              'Take some time to review the content, understand the concepts, and come back when you feel ready. '
+              'You\'ve got this! 🚀',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.onSurface,
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -246,12 +380,14 @@ class _HeroScoreCard extends StatelessWidget {
     required this.totalCount,
     required this.percentage,
     this.isMasteryTest = false,
+    this.isLowScoreExit = false,
   });
 
   final int correctCount;
   final int totalCount;
   final int percentage;
   final bool isMasteryTest;
+  final bool isLowScoreExit;
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +397,66 @@ class _HeroScoreCard extends StatelessWidget {
         : percentage >= 50
             ? 'Good effort!'
             : 'Keep practicing!';
+    
+    // Low score exit messaging
+    if (isLowScoreExit) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.secondaryContainer.withOpacity(0.6),
+              AppColors.tertiaryContainer.withOpacity(0.4),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: AppColors.secondary.withOpacity(0.3),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '📚',
+              style: const TextStyle(fontSize: 48),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '$percentage%',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 56,
+                fontWeight: FontWeight.w800,
+                color: AppColors.secondary,
+                letterSpacing: -2,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Time to Review!',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.secondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$correctCount of $totalCount cards completed',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     
     // Mastery test messaging
     String masteryHeadline;
