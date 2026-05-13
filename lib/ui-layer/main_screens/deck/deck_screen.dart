@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'deck-quiz_screen.dart';
 import 'edit_deck_screen.dart';
 import 'create_deck_screen.dart';
+import 'deck_study_screen.dart';
 import '../../../business-layer/services/deck_service.dart';
 import '../../../business-layer/services/export_service.dart';
 import '../../../business-layer/services/share_service.dart';
@@ -581,7 +582,7 @@ Future<int?> _showQuestionCountDialog(BuildContext context, int maxCount) {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: ([5, 10, 15, 20, maxCount]
+                    children: ([10, 15, 20, 25, maxCount]
                             .where((v) => v <= maxCount)
                             .toSet()
                             .toList()
@@ -755,14 +756,18 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   if (category == null) return; // user cancelled
 
   // ── Step 4: Estimate max & show count dialog ───────────────────────────────
-  // For TXT: ~1 question per 300 chars of content, capped at 30.
-  // For PDF:  assume up to 30 (can't inspect without parsing).
+  // AI generation limits: Min 10, Max 30
+  // For TXT: ~1 question per 300 chars of content, capped at 30, minimum 10.
+  // For PDF: assume up to 30 (can't inspect without parsing), minimum 10.
+  const int minAICards = 10;
+  const int maxAICards = 30;
+  
   int maxQuestions;
   if (isPdf) {
-    maxQuestions = 30;
+    maxQuestions = maxAICards;
   } else {
     final text = utf8.decode(fileBytes, allowMalformed: true);
-    final estimatedMax = (text.trim().length / 300).ceil().clamp(5, 30);
+    final estimatedMax = (text.trim().length / 300).ceil().clamp(minAICards, maxAICards);
     maxQuestions = estimatedMax;
   }
 
@@ -2781,13 +2786,13 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
           ),
           const SizedBox(height: 8),
           _SheetOption(
-            icon: Icons.play_arrow_rounded,
+            icon: Icons.auto_stories_rounded,
             label: 'Study This Deck',
             onTap: () {
               Navigator.pop(context);
               Navigator.of(context).pushNamed(
-                '/quiz',
-                arguments: QuizArgs(
+                '/study',
+                arguments: StudyScreenArgs(
                     deckId: widget.deckId, deckTitle: widget.deckTitle),
               );
             },

@@ -387,6 +387,78 @@ class _ProgressOptionsSheet extends StatelessWidget {
             },
           ),
           _ProgressOption(
+            icon: Icons.sync_rounded,
+            label: 'Fix Overall Accuracy',
+            subtitle: 'Recalculate from all quiz history',
+            color: AppColors.tertiary,
+            onTap: () async {
+              Navigator.pop(context);
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
+              
+              try {
+                await ProgressService.migrateCumulativeTotals();
+                
+                // Trigger refresh by navigating away and back
+                navigator.pushReplacementNamed('/progress');
+                
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.20),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.check_rounded,
+                              color: Colors.white, size: 16),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Overall accuracy recalculated successfully!',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: const Color(0xFF16A34A),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    duration: const Duration(seconds: 3),
+                  ),
+                );
+              } catch (e) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Failed to recalculate: $e',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    backgroundColor: AppColors.error,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  ),
+                );
+              }
+            },
+          ),
+          _ProgressOption(
             icon: Icons.file_download_outlined,
             label: 'Export Progress Report',
             subtitle: 'Download your study statistics',
@@ -995,7 +1067,7 @@ class _HeroStatsSection extends StatelessWidget {
                       child: _InlineStatItem(
                         icon: Icons.percent_rounded,
                         value: '${(accuracyRate * 100).round()}%',
-                        label: 'Accuracy',
+                        label: 'Overall',
                         color: AppColors.secondary,
                       ),
                     ),

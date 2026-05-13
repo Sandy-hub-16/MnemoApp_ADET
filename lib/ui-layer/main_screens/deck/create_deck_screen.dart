@@ -1118,6 +1118,10 @@ class _CardCountSlider extends StatelessWidget {
   final int value;
   final ValueChanged<int> onChanged;
 
+  // Manual deck creation limits
+  static const int _minManualCards = 10;
+  static const int _maxManualCards = 50;
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -1134,7 +1138,7 @@ class _CardCountSlider extends StatelessWidget {
               ),
             ),
             Text(
-              'Min 5 · Max 50',
+              'Min $_minManualCards · Max $_maxManualCards',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 12,
                 color: AppColors.onSurfaceVariant,
@@ -1155,9 +1159,9 @@ class _CardCountSlider extends StatelessWidget {
           ),
           child: Slider(
             value: value.toDouble(),
-            min: 5,
-            max: 50,
-            divisions: 45,
+            min: _minManualCards.toDouble(),
+            max: _maxManualCards.toDouble(),
+            divisions: _maxManualCards - _minManualCards,
             onChanged: (v) => onChanged(v.round()),
           ),
         ),
