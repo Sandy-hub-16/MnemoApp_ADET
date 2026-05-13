@@ -55,7 +55,7 @@ abstract final class ShareService {
   /// - [deckId]     Firestore ID of the deck to update.
   /// - [visibility] Either `"public"` or `"private"`.
   ///
-  /// Throws [StateError] if the deck is still a draft.
+  /// Throws [StateError] if the deck is still a draft or if the deck is cloned.
   /// Throws [ArgumentError] if the deck already has the requested visibility.
   ///
   /// When setting `"public"`:
@@ -86,6 +86,11 @@ abstract final class ShareService {
 
     if (deckData['isDraft'] == true) {
       throw StateError('Cannot share a draft deck.');
+    }
+
+    // Prevent cloned decks from being made public
+    if (visibility == 'public' && deckData['clonedFrom'] != null) {
+      throw StateError('Cannot share a cloned deck. Only original decks can be made public.');
     }
 
     final currentVisibility = deckData['visibility'] as String? ?? 'private';
@@ -229,6 +234,7 @@ abstract final class ShareService {
       'isDraft': false,
       'visibility': 'private',
       'clonedFrom': sourceDeckId,
+      'clonedFromUsername': publicData['ownerUsername'] as String? ?? '',
       'cardCount': cardsSnap.docs.length,
       'targetCardCount': cardsSnap.docs.length,
       'progress': 0.0,

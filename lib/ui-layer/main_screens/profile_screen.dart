@@ -80,32 +80,58 @@ class _ProfileTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.background.withOpacity(0.75),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          Icon(
-            Icons.bubble_chart_rounded,
-            color: AppColors.primary,
-            size: 22,
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryFixedDim],
+            ).createShader(bounds),
+            child: Text(
+              'Mnemo',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                fontStyle: FontStyle.italic,
+                color: Colors.white,
+                letterSpacing: -0.5,
+              ),
+            ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            'Kindred Study',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-              letterSpacing: -0.3,
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.secondary.withOpacity(0.15),
+                  AppColors.tertiary.withOpacity(0.10),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: AppColors.secondary.withOpacity(0.2),
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.person_rounded,
+                  color: AppColors.secondary,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'PROFILE',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.secondary,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -217,7 +243,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 120),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
       child: Column(
         children: [
           // ── Profile Header (centered) ──────────────────────────────────
@@ -227,21 +253,98 @@ class _ProfileBodyState extends State<_ProfileBody> {
             photoUrl: _photoUrl,
             uploadingPhoto: _uploadingPhoto,
           ),
-          const SizedBox(height: 28),
-
-          // ── Stats Row (horizontal) ─────────────────────────────────────
-          _StatsRow(
-            deckCount: _deckCount,
-            cardCount: _cardCount,
-            draftCount: _draftCount,
-          ),
           const SizedBox(height: 32),
+
+          // ── Stats Card ─────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primaryContainer.withOpacity(0.3),
+                  AppColors.secondaryContainer.withOpacity(0.2),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: AppColors.outlineVariant.withOpacity(0.3),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.onSurface.withOpacity(0.06),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.bar_chart_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'YOUR LIBRARY',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _StatsRow(
+                  deckCount: _deckCount,
+                  cardCount: _cardCount,
+                  draftCount: _draftCount,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ── Settings Section Header ───────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  size: 16,
+                  color: AppColors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'SETTINGS & PREFERENCES',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onSurfaceVariant,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
 
           // ── Settings Card ──────────────────────────────────────────────
           Container(
             decoration: BoxDecoration(
               color: AppColors.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppColors.outlineVariant.withOpacity(0.3),
+                width: 1,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: AppColors.onSurface.withOpacity(0.04),
@@ -329,20 +432,32 @@ class _ProfileHeader extends StatelessWidget {
             Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.primary.withOpacity(0.25),
-                    AppColors.primaryContainer.withOpacity(0.40),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.2),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-              padding: const EdgeInsets.all(3),
-              child: _AvatarContent(
-                photoUrl: photoUrl,
-                fullName: fullName,
-                uploading: uploadingPhoto,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withOpacity(0.3),
+                      AppColors.secondary.withOpacity(0.2),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: _AvatarContent(
+                  photoUrl: photoUrl,
+                  fullName: fullName,
+                  uploading: uploadingPhoto,
+                ),
               ),
             ),
             if (uploadingPhoto)
@@ -350,7 +465,7 @@ class _ProfileHeader extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withOpacity(0.5),
                   ),
                   child: const Center(
                     child: CircularProgressIndicator(
@@ -362,13 +477,13 @@ class _ProfileHeader extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
 
         // ── Name + subtitle (centered) ────────────────────────────────────
         Text(
           fullName,
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 24,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             letterSpacing: -0.5,
             color: AppColors.onSurface,
@@ -377,17 +492,29 @@ class _ProfileHeader extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         if (subtitle.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              height: 1.5,
-              color: AppColors.onSurfaceVariant,
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: AppColors.outlineVariant.withOpacity(0.3),
+                width: 1,
+              ),
             ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+            child: Text(
+              subtitle,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+                color: AppColors.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ],
@@ -618,29 +745,29 @@ class _SettingsTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.vertical(
-          top: isFirst ? const Radius.circular(24) : Radius.zero,
-          bottom: isLast ? const Radius.circular(24) : Radius.zero,
+          top: isFirst ? const Radius.circular(20) : Radius.zero,
+          bottom: isLast ? const Radius.circular(20) : Radius.zero,
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: iconBg,
-                  shape: BoxShape.circle,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: iconColor, size: 20),
+                child: Icon(icon, color: iconColor, size: 22),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 14),
               Expanded(
                 child: Text(
                   label,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.onSurface,
                   ),
                 ),
@@ -683,10 +810,14 @@ class _LogOutButton extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.error.withOpacity(0.2),
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
+            color: AppColors.error.withOpacity(0.08),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
@@ -696,28 +827,28 @@ class _LogOutButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: () => _showLogoutConfirmation(context),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             child: Row(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     color: AppColors.error.withOpacity(0.15),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(Icons.logout_rounded,
-                      color: AppColors.error, size: 20),
+                      color: AppColors.error, size: 22),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Text(
                     'Log Out',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       color: AppColors.error,
                     ),
                   ),

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
+import '../widgets/connectivity_indicator.dart';
 import '../../main.dart';
 import '../../business-layer/services/progress_service.dart';
 
@@ -57,7 +58,7 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = doc.data() ?? {};
 
-    final dashboard = await ProgressService.loadDashboard();
+    final dashboard = await ProgressService.loadWeeklyDashboard();
 
     if (mounted) {
       setState(() {
@@ -153,22 +154,55 @@ class _HomeTopBar extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Brand
-              ShaderMask(
-                shaderCallback: (b) => const LinearGradient(
-                  colors: [AppColors.primary, AppColors.primaryFixedDim],
-                ).createShader(b),
-                child: Text(
-                  'Mnemo',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    fontStyle: FontStyle.italic,
-                    color: Colors.white,
-                    letterSpacing: -0.5,
+              // Brand with HOME badge
+              Row(
+                children: [
+                  Icon(
+                    Icons.bubble_chart_rounded,
+                    color: AppColors.primary,
+                    size: 22,
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  ShaderMask(
+                    shaderCallback: (b) => const LinearGradient(
+                      colors: [AppColors.primary, AppColors.secondary],
+                    ).createShader(b),
+                    child: Text(
+                      'Mnemo',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppColors.primary, AppColors.secondary],
+                      ),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'HOME',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+
+              // Connectivity indicator
+              const ConnectivityIndicator(),
+              
+              const Spacer(),
 
               // Right side: bell icon + avatar
               Row(
@@ -188,9 +222,9 @@ class _HomeTopBar extends StatelessWidget {
                               width: 38,
                               height: 38,
                               decoration: BoxDecoration(
-                                shape: BoxShape.circle,
+                                borderRadius: BorderRadius.circular(12),
                                 color: AppColors.primaryContainer
-                                    .withOpacity(0.25),
+                                    .withOpacity(0.3),
                               ),
                               child: const Icon(
                                 Icons.notifications_outlined,
@@ -240,10 +274,10 @@ class _HomeTopBar extends StatelessWidget {
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                            color: AppColors.primaryContainer, width: 2),
-                        color: AppColors.primaryContainer.withOpacity(0.25),
+                            color: AppColors.primary.withOpacity(0.3), width: 2),
+                        color: AppColors.primaryContainer.withOpacity(0.3),
                         image: photoUrl != null
                             ? DecorationImage(
                                 image: NetworkImage(photoUrl!),
@@ -338,18 +372,18 @@ class _WelcomeSection extends StatelessWidget {
         Text(
           'Welcome back, $firstName! 👋',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: FontWeight.w800,
             color: AppColors.onSurface,
             letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         Text(
-          'Ready to crush today\'s goals?',
+          'Your personalized study hub awaits',
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 15,
-            fontWeight: FontWeight.w400,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
             color: AppColors.onSurfaceVariant,
           ),
         ),
@@ -359,7 +393,7 @@ class _WelcomeSection extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TODAY'S PROGRESS CARD
+// THIS WEEK'S PROGRESS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TodayProgressCard extends StatelessWidget {
@@ -394,7 +428,7 @@ class _TodayProgressCard extends StatelessWidget {
           Row(
             children: [
               Text(
-                'TODAY\'S PROGRESS',
+                'THIS WEEK\'S PROGRESS',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -434,25 +468,25 @@ class _TodayProgressCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatItem(
-                  icon: Icons.check_circle_rounded,
-                  value: '${dashboard.correctAnswers}',
-                  label: 'Correct',
+                  icon: Icons.style_rounded,
+                  value: '${dashboard.reviewedAnswers}',
+                  label: 'Cards',
                   color: AppColors.primary,
                 ),
               ),
               Expanded(
                 child: _StatItem(
-                  icon: Icons.quiz_rounded,
-                  value: '${dashboard.reviewedAnswers}',
-                  label: 'Reviewed',
+                  icon: Icons.layers_rounded,
+                  value: '${dashboard.deckSummaries.length}',
+                  label: 'Decks',
                   color: AppColors.secondary,
                 ),
               ),
               Expanded(
                 child: _StatItem(
-                  icon: Icons.local_fire_department_rounded,
-                  value: '${dashboard.currentStreakDays}',
-                  label: 'Day Streak',
+                  icon: Icons.quiz_rounded,
+                  value: '${dashboard.totalAttempts}',
+                  label: 'Sessions',
                   color: AppColors.tertiary,
                 ),
               ),
@@ -608,14 +642,27 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: GoogleFonts.plusJakartaSans(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        color: AppColors.onSurface,
-        letterSpacing: -0.3,
-      ),
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.primaryContainer.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.history_rounded, color: AppColors.primary, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          title,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+            letterSpacing: -0.3,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -726,21 +773,6 @@ class _ActivityCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '$masteryPercent%',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: color,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -761,26 +793,34 @@ class _EmptyActivityCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(
-            Icons.history_rounded,
-            size: 48,
-            color: AppColors.outline.withOpacity(0.5),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer.withOpacity(0.3),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.auto_graph_rounded,
+              size: 32,
+              color: AppColors.primary,
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Text(
             'No activity yet',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 16,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
               color: AppColors.onSurface,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             'Complete a quiz to see your progress here',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
+              fontWeight: FontWeight.w600,
               color: AppColors.onSurfaceVariant,
             ),
           ),
