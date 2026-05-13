@@ -10,6 +10,7 @@ import 'ui-layer/auth/register/register_step3_screen.dart';
 import 'ui-layer/auth/register/verify_email_screen.dart';
 import 'ui-layer/main_screens/deck/create_deck_screen.dart';
 import 'ui-layer/main_screens/deck/edit_deck_screen.dart';
+import 'ui-layer/main_screens/deck/deck_study_screen.dart';
 import 'ui-layer/main_screens/main_shell.dart';
 import 'ui-layer/main_screens/sub_screens/profile-personal-info_screen.dart';
 import 'ui-layer/main_screens/sub_screens/settings_screen.dart';
@@ -106,6 +107,7 @@ abstract final class AppRoutes {
   static const String decks = '/decks';
   static const String createDeck = '/create-deck';
   static const String editDeck = '/edit-deck';
+  static const String study = '/study';
   static const String quiz = '/quiz';
   static const String quizResults = '/quiz-results';
   static const String progress = '/progress';
@@ -141,6 +143,7 @@ abstract final class AppRouter {
           // ← NEW
           args: settings.arguments as EditDeckArgs,
         ),
+      AppRoutes.study => const DeckStudyScreen(),
       AppRoutes.quiz => const QuizScreen(),
       AppRoutes.quizResults => const QuizResultsScreen(),
       AppRoutes.progress => const MainShell(initialIndex: 3),

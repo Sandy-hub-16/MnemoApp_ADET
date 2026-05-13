@@ -64,6 +64,8 @@ class DeckProgressSummary {
     required this.attemptCount,
     required this.mastery,
     required this.lastScore,
+    this.cumulativeCorrect,
+    this.cumulativeTotal,
     this.lastStudiedAt,
     this.firstTryAccuracy,
     this.averageRepetitions,
@@ -78,10 +80,12 @@ class DeckProgressSummary {
   final String ownerUid;
   final String deckTitle;
   final String category;
-  final int correctTotal;
-  final int answeredTotal;
+  final int correctTotal; // Best session correct count
+  final int answeredTotal; // Best session total count
+  final int? cumulativeCorrect; // Total correct across ALL attempts
+  final int? cumulativeTotal; // Total answered across ALL attempts
   final int attemptCount;
-  final double mastery;
+  final double mastery; // Based on best session
   final double lastScore;
   final DateTime? lastStudiedAt;
   final double? firstTryAccuracy;
@@ -325,7 +329,11 @@ abstract final class ProgressService {
           recentScores.insert(0, score);
           if (recentScores.length > 5) recentScores.removeRange(5, recentScores.length);
 
-          // Update deck progress with best score only
+          // Calculate cumulative totals (for overall accuracy)
+          final cumulativeCorrect = _readInt(existing?['cumulativeCorrect']) + correctCount;
+          final cumulativeTotal = _readInt(existing?['cumulativeTotal']) + totalCount;
+
+          // Update deck progress with both best scores and cumulative totals
           transaction.set(
             progressRef,
             {
@@ -338,6 +346,8 @@ abstract final class ProgressService {
               'bestCorrectCount': bestCorrectCount,
               'bestTotalCount': bestTotalCount,
               'mastery': mastery,
+              'cumulativeCorrect': cumulativeCorrect,
+              'cumulativeTotal': cumulativeTotal,
               'attemptCount': nextAttempts,
               'lastScore': score,
               'lastCorrectCount': correctCount,
@@ -482,10 +492,12 @@ abstract final class ProgressService {
       return bDate.compareTo(aDate);
     });
 
-    final correctAnswers =
-        deckSummaries.fold<int>(0, (total, item) => total + item.correctTotal);
-    final reviewedAnswers =
-        deckSummaries.fold<int>(0, (total, item) => total + item.answeredTotal);
+    final correctAnswers = deckSummaries.fold<int>(0, (total, item) {
+      return total + (item.cumulativeCorrect ?? item.correctTotal);
+    });
+    final reviewedAnswers = deckSummaries.fold<int>(0, (total, item) {
+      return total + (item.cumulativeTotal ?? item.answeredTotal);
+    });
     final totalAttempts =
         deckSummaries.fold<int>(0, (total, item) => total + item.attemptCount);
     final overallMastery =
@@ -536,6 +548,8 @@ abstract final class ProgressService {
       category: _cleanLabel(data['category'] as String?, 'Other'),
       correctTotal: bestCorrectCount,
       answeredTotal: bestTotalCount,
+      cumulativeCorrect: _readInt(data['cumulativeCorrect']),
+      cumulativeTotal: _readInt(data['cumulativeTotal']),
       attemptCount: _readInt(data['attemptCount']),
       mastery: mastery,
       lastScore: _readDouble(data['lastScore']),
@@ -892,6 +906,78 @@ abstract final class ProgressService {
       await batch.commit();
     }
   }
+
+  /// Migrates existing quiz attempts to populate cumulative totals.
+  /// This is a one-time migration to fix the cumulative tracking for existing users.
+  /// Safe to run multiple times - it recalculates from scratch each time.
+  static Future<void> migrateCumulativeTotals() async {
+    final uid = _uid;
+    if (uid == null) throw StateError('User is not signed in.');
+
+    print('\n🔄 [ProgressService] Starting cumulative totals migration...');
+    
+    final userRef = _db.collection('users').doc(uid);
+    
+    // Get all quiz attempts
+    final attemptsSnap = await userRef
+        .collection('quizAttempts')
+        .orderBy('createdAt', descending: false)
+        .get();
+    
+    print('   Found ${attemptsSnap.docs.length} quiz attempts to process');
+    
+    if (attemptsSnap.docs.isEmpty) {
+      print('   No attempts found - migration complete');
+      return;
+    }
+    
+    // Group attempts by deck
+    final deckTotals = <String, _CumulativeBucket>{};
+    
+    for (final doc in attemptsSnap.docs) {
+      final data = doc.data();
+      final ownerUid = data['ownerUid'] as String? ?? '';
+      final deckId = data['deckId'] as String? ?? '';
+      
+      if (deckId.isEmpty) continue;
+      
+      final key = '${ownerUid}__$deckId';
+      final bucket = deckTotals.putIfAbsent(
+        key,
+        () => _CumulativeBucket(ownerUid: ownerUid, deckId: deckId),
+      );
+      
+      bucket.cumulativeCorrect += _readInt(data['correctCount']);
+      bucket.cumulativeTotal += _readInt(data['totalCount']);
+    }
+    
+    print('   Calculated totals for ${deckTotals.length} unique decks');
+    
+    // Update deckProgress documents in batches
+    final entries = deckTotals.entries.toList();
+    for (var i = 0; i < entries.length; i += 500) {
+      final batch = _db.batch();
+      final end = (i + 500 < entries.length) ? i + 500 : entries.length;
+      
+      for (var j = i; j < end; j++) {
+        final entry = entries[j];
+        final progressRef = userRef.collection('deckProgress').doc(entry.key);
+        
+        batch.update(progressRef, {
+          'cumulativeCorrect': entry.value.cumulativeCorrect,
+          'cumulativeTotal': entry.value.cumulativeTotal,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        
+        print('   ✅ Queued update for ${entry.key}: ${entry.value.cumulativeCorrect}/${entry.value.cumulativeTotal}');
+      }
+      
+      await batch.commit();
+      print('   📦 Committed batch ${(i ~/ 500) + 1}');
+    }
+    
+    print('✅ [ProgressService] Migration complete!\n');
+  }
 }
 
 class _DeckProgressBucket {
@@ -922,6 +1008,8 @@ class _DeckProgressBucket {
       category: category,
       correctTotal: correctTotal,
       answeredTotal: answeredTotal,
+      cumulativeCorrect: correctTotal,
+      cumulativeTotal: answeredTotal,
       attemptCount: attemptCount,
       mastery: answeredTotal == 0 ? 0.0 : correctTotal / answeredTotal,
       lastScore: lastScore,
@@ -1000,4 +1088,16 @@ class _ForgottenCardBucket {
       lastFailedAt: lastFailedAt,
     );
   }
+}
+
+class _CumulativeBucket {
+  _CumulativeBucket({
+    required this.ownerUid,
+    required this.deckId,
+  });
+
+  final String ownerUid;
+  final String deckId;
+  int cumulativeCorrect = 0;
+  int cumulativeTotal = 0;
 }
