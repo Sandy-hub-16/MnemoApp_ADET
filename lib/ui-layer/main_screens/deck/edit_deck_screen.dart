@@ -144,14 +144,39 @@ class _EditDeckScreenState extends State<EditDeckScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    setState(() => _saving = true);
+    // ── SAVE CURRENT DIRTY STATE FOR ROLLBACK ────────────────────────────
+    final dirtyCardsBefore = _cards.where((c) => c.isDirty).toList();
+    final titleDirtyBefore = _titleDirty;
+    final titleBefore = _titleCtrl.text;
+
+    // ── OPTIMISTICALLY UPDATE: Clear dirty flags ──────────────────────────
+    setState(() {
+      for (final card in dirtyCardsBefore) {
+        card.isDirty = false;
+      }
+      _titleDirty = false;
+      _saving = true;
+    });
+
+    // ── SHOW SAVING INDICATOR ─────────────────────────────────────────────
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Saving changes...',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      ),
+    );
 
     try {
       final batch = FirebaseFirestore.instance.batch();
 
       // Update dirty cards
-      for (final card in _cards) {
-        if (!card.isDirty) continue;
+      for (final card in dirtyCardsBefore) {
         final ref = FirebaseFirestore.instance
             .collection('users')
             .doc(uid)
@@ -163,7 +188,7 @@ class _EditDeckScreenState extends State<EditDeckScreen> {
       }
 
       // Update deck title if changed
-      if (_titleDirty && _titleCtrl.text.trim().isNotEmpty) {
+      if (titleDirtyBefore && _titleCtrl.text.trim().isNotEmpty) {
         final deckRef = FirebaseFirestore.instance
             .collection('users')
             .doc(uid)
@@ -175,13 +200,10 @@ class _EditDeckScreenState extends State<EditDeckScreen> {
         });
       }
 
+      // ── SYNC TO FIRESTORE IN BACKGROUND ───────────────────────────────
       await batch.commit();
 
-      for (final card in _cards) {
-        card.isDirty = false;
-      }
-      _titleDirty = false;
-
+      // ── SUCCESS: SHOW SUCCESS MESSAGE ────────────────────────────────
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -196,9 +218,21 @@ class _EditDeckScreenState extends State<EditDeckScreen> {
             margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
           ),
         );
+        setState(() => _saving = false);
       }
     } catch (e) {
+      // ── ERROR: REVERT ALL CHANGES ─────────────────────────────────────
+      debugPrint('Deck edit save error: $e');
       if (mounted) {
+        setState(() {
+          // Mark cards dirty again
+          for (final card in dirtyCardsBefore) {
+            card.isDirty = true;
+          }
+          _titleDirty = titleDirtyBefore;
+          _titleCtrl.text = titleBefore;
+          _saving = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error saving: $e',
@@ -212,8 +246,6 @@ class _EditDeckScreenState extends State<EditDeckScreen> {
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
   }
 

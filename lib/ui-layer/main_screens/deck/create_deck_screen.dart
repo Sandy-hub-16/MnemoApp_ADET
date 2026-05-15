@@ -274,7 +274,26 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
 
   Future<void> _onSaveDraft() async {
     if (_isSaving) return;
+
+    // ── SAVE DRAFT STATE FOR ROLLBACK ──────────────────────────────────────
+    final draftIdBefore = _draftId;
+
+    // ── OPTIMISTICALLY MARK AS SAVING ─────────────────────────────────────
     setState(() => _isSaving = true);
+
+    // ── SHOW SAVING INDICATOR ──────────────────────────────────────────────
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Saving draft...',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: const Color(0xFFB45309),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      ),
+    );
 
     final completedCards = _cards.where((c) => c.isComplete).toList();
     final cardMaps = completedCards.map((c) => c.toMap()).toList();
@@ -295,11 +314,13 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
           targetCardCount: _targetCardCount,
           cards: cardMaps,
         );
-        _draftId = newId;
+        // ── OPTIMISTICALLY UPDATE DRAFT ID ────────────────────────────────
+        setState(() => _draftId = newId);
       }
 
       if (!mounted) return;
 
+      // ── SUCCESS: SHOW SUCCESS MESSAGE ──────────────────────────────────
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -314,23 +335,33 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
         ),
       );
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) {
+        setState(() => _isSaving = false);
+        // Delay pop to let user see success message
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (mounted) Navigator.of(context).pop();
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not save draft: $e',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+      // ── ERROR: REVERT DRAFT ID ────────────────────────────────────────
+      debugPrint('Draft save error: $e');
+      if (mounted) {
+        setState(() {
+          _draftId = draftIdBefore;
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Could not save draft: $e',
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           ),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+        );
+      }
     }
   }
 
@@ -344,7 +375,23 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
 
   Future<void> _onSaveDeck() async {
     if (!_canSave || _isSaving) return;
+
+    // ── OPTIMISTICALLY MARK AS SAVING ─────────────────────────────────────
     setState(() => _isSaving = true);
+
+    // ── SHOW SAVING INDICATOR ──────────────────────────────────────────────
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Saving deck...',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      ),
+    );
 
     final completedCards = _cards.where((c) => c.isComplete).toList();
     final cardMaps = completedCards.map((c) => c.toMap()).toList();
@@ -369,6 +416,7 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
 
       if (!mounted) return;
 
+      // ── SUCCESS: SHOW SUCCESS MESSAGE ──────────────────────────────────
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -383,25 +431,33 @@ class _CreateDeckScreenState extends State<CreateDeckScreen>
       );
 
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          '/decks',
-          (route) => false,
-        );
+        setState(() => _isSaving = false);
+        // Delay navigation to let user see success message
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/decks',
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save: $e',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+      // ── ERROR: REVERT SAVING STATE ────────────────────────────────────
+      debugPrint('Deck save error: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save: $e',
+                style:
+                    GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+        );
+      }
     }
   }
 
