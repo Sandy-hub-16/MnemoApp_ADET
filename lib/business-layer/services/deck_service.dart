@@ -236,6 +236,7 @@ abstract final class DeckService {
     final deckDoc = await _decksRef().doc(deckId).get();
     final deckData = deckDoc.data();
     final isClonedDeck = deckData?['clonedFrom'] != null;
+    final isPublic = deckData?['visibility'] == 'public';
 
     final batch = _db.batch();
 
@@ -248,14 +249,18 @@ abstract final class DeckService {
     // Delete the deck doc
     batch.delete(_decksRef().doc(deckId));
 
+     await batch.commit();
+
     // Only delete from public_decks if this is an ORIGINAL deck (not cloned)
     // Cloned decks don't have entries in public_decks, only originals do
-    if (!isClonedDeck) {
-      final publicDeckRef = _db.collection('public_decks').doc(deckId);
-      batch.delete(publicDeckRef);
+    if (!isClonedDeck && isPublic) {
+      try {
+        await _db.collection('public_decks').doc(deckId).delete();
+      } catch (_) {
+        // Silently ignore — the user's deck is already gone.
+        // A Cloud Function cleanup job can sweep orphaned public mirrors.
+      }
     }
-
-    await batch.commit();
 
     // Clean up progress data (separate batch to avoid size limits)
     await _cleanupProgressData(deckId);

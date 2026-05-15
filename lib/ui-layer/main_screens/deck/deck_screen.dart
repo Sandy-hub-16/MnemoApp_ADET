@@ -3344,10 +3344,10 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
     );
 
     if (confirmed != true || !context.mounted) return;
-    Navigator.pop(context);
 
     try {
       await DeckService.deleteDeck(widget.deckId);
+      if (context.mounted) Navigator.pop(context); 
     } catch (e) {
       if (context.mounted) {
         _showErrorSnackBar(context, 'Failed to delete deck.');
