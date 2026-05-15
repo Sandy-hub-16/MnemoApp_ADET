@@ -712,6 +712,355 @@ Future<int?> _showQuestionCountDialog(BuildContext context, int maxCount) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PASTE NOTES DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<String?> _showPasteNotesDialog(BuildContext context) {
+  final TextEditingController textController = TextEditingController();
+  final ValueNotifier<int> charCount = ValueNotifier(0);
+  final ValueNotifier<bool> isEmpty = ValueNotifier(true);
+
+  textController.addListener(() {
+    charCount.value = textController.text.length;
+    isEmpty.value = textController.text.trim().isEmpty;
+  });
+
+  return showDialog<String>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ────────────────────────────────────────────────────
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppColors.primary, AppColors.primaryFixedDim],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.content_paste_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Paste Notes',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Paste or type your notes below',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(ctx, null),
+                  icon: Icon(Icons.close_rounded,
+                      color: AppColors.onSurfaceVariant, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.surfaceContainerLow,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.all(6),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ── Text Area ─────────────────────────────────────────────────
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: AppColors.outlineVariant.withOpacity(0.5),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Clipboard toolbar ──────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+                    child: Row(
+                      children: [
+                        Icon(Icons.notes_rounded,
+                            size: 14, color: AppColors.outline),
+                        const SizedBox(width: 6),
+                        Text(
+                          'YOUR NOTES',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.outline,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const Spacer(),
+                        // ── Paste from clipboard button ──────────────────
+                        GestureDetector(
+                          onTap: () async {
+                            final data =
+                                await Clipboard.getData(Clipboard.kTextPlain);
+                            if (data?.text != null && data!.text!.isNotEmpty) {
+                              textController.text = data.text!;
+                              textController.selection =
+                                  TextSelection.fromPosition(
+                                TextPosition(
+                                    offset: textController.text.length),
+                              );
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryContainer,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.content_paste_go_rounded,
+                                    size: 13, color: AppColors.primary),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Paste',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // ── Clear button ─────────────────────────────────
+                        ValueListenableBuilder<bool>(
+                          valueListenable: isEmpty,
+                          builder: (_, empty, __) => AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: empty ? 0.0 : 1.0,
+                            child: GestureDetector(
+                              onTap: () => textController.clear(),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color:
+                                      AppColors.errorContainer.withOpacity(0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete_outline_rounded,
+                                        size: 13, color: AppColors.error),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Clear',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.error,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+                  Divider(
+                    height: 1,
+                    color: AppColors.outlineVariant.withOpacity(0.4),
+                    indent: 14,
+                    endIndent: 14,
+                  ),
+
+                  // ── TextField ──────────────────────────────────────────
+                  SizedBox(
+                    height: 220,
+                    child: TextField(
+                      controller: textController,
+                      autofocus: true,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      keyboardType: TextInputType.multiline,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.onSurface,
+                        height: 1.55,
+                      ),
+                      decoration: InputDecoration(
+                        hintText:
+                            'Paste your lecture notes, textbook content, or study material here…\n\nPress Ctrl+V or use the Paste button above.',
+                        hintStyle: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                          fontWeight: FontWeight.w400,
+                          height: 1.6,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      ),
+                    ),
+                  ),
+
+                  // ── Character count footer ─────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                    child: Row(
+                      children: [
+                        ValueListenableBuilder<int>(
+                          valueListenable: charCount,
+                          builder: (_, count, __) {
+                            final Color countColor = count == 0
+                                ? AppColors.outline.withOpacity(0.5)
+                                : count < 100
+                                    ? AppColors.error.withOpacity(0.8)
+                                    : AppColors.primary;
+                            return Row(
+                              children: [
+                                Icon(
+                                  count < 100 && count > 0
+                                      ? Icons.warning_amber_rounded
+                                      : Icons.check_circle_outline_rounded,
+                                  size: 12,
+                                  color: count == 0
+                                      ? AppColors.outline.withOpacity(0.5)
+                                      : countColor,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  count == 0
+                                      ? 'No content yet'
+                                      : count < 100
+                                          ? '$count chars — add more for better results'
+                                          : '$count characters',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: count == 0
+                                        ? AppColors.outline.withOpacity(0.5)
+                                        : countColor,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // ── Action buttons ────────────────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx, null),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: isEmpty,
+                    builder: (_, empty, __) => AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: empty ? 0.45 : 1.0,
+                      child: ElevatedButton.icon(
+                        onPressed: empty
+                            ? null
+                            : () =>
+                                Navigator.pop(ctx, textController.text.trim()),
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                        label: Text(
+                          'Continue',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          disabledBackgroundColor: AppColors.primary,
+                          disabledForegroundColor: AppColors.onPrimary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 // AI IMPORT HANDLER  (PDF + TXT, with question type & count dialogs)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -761,13 +1110,14 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   // For PDF: assume up to 30 (can't inspect without parsing), minimum 10.
   const int minAICards = 10;
   const int maxAICards = 30;
-  
+
   int maxQuestions;
   if (isPdf) {
     maxQuestions = maxAICards;
   } else {
     final text = utf8.decode(fileBytes, allowMalformed: true);
-    final estimatedMax = (text.trim().length / 300).ceil().clamp(minAICards, maxAICards);
+    final estimatedMax =
+        (text.trim().length / 300).ceil().clamp(minAICards, maxAICards);
     maxQuestions = estimatedMax;
   }
 
@@ -1017,6 +1367,282 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
             ],
           ),
           backgroundColor: const Color(0xFF16A34A), // green-700
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  } catch (e) {
+    safePopLoader();
+    if (context.mounted) {
+      _showErrorSnackBar(
+          context,
+          e.toString().contains('Exception:')
+              ? e.toString().replaceFirst('Exception: ', '')
+              : 'Something went wrong. Please try again.');
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PASTE NOTES HANDLER
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
+  // ── Step 1: Show paste dialog ──────────────────────────────────────────────
+  if (!context.mounted) return;
+  final pastedText = await _showPasteNotesDialog(context);
+  if (pastedText == null || pastedText.trim().isEmpty) return;
+
+  // ── Step 2: Question type dialog ───────────────────────────────────────────
+  if (!context.mounted) return;
+  final questionType = await _showQuestionTypeDialog(context);
+  if (questionType == null) return;
+
+  // ── Step 3: Category dialog ────────────────────────────────────────────────
+  if (!context.mounted) return;
+  final category = await _showCategoryDialog(context);
+  if (category == null) return;
+
+  // ── Step 4: Estimate max & show count dialog ───────────────────────────────
+  const int minAICards = 10;
+  const int maxAICards = 30;
+  final estimatedMax =
+      (pastedText.trim().length / 300).ceil().clamp(minAICards, maxAICards);
+
+  if (!context.mounted) return;
+  final questionCount = await _showQuestionCountDialog(context, estimatedMax);
+  if (questionCount == null) return;
+
+  // ── Step 5: Show loading overlay ───────────────────────────────────────────
+  bool loadingDialogOpen = false;
+  if (context.mounted) {
+    loadingDialogOpen = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: AppColors.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'Generating your deck…',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'This may take a moment',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void safePopLoader() {
+    if (loadingDialogOpen && context.mounted) {
+      loadingDialogOpen = false;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+  }
+
+  try {
+    // ── Step 6: Call Cloud Run endpoint ────────────────────────────────────
+    final response = await http
+        .post(
+          Uri.parse('https://generatedeck-x2xze3qnza-uc.a.run.app'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'text': pastedText,
+            'fileType': 'txt',
+            'questionType': questionType.apiValue,
+            'questionCount': questionCount,
+          }),
+        )
+        .timeout(const Duration(seconds: 120));
+
+    if (response.statusCode != 200) {
+      throw Exception(
+          'Server returned ${response.statusCode}: ${response.body}');
+    }
+
+    // ── Step 7: Parse response ──────────────────────────────────────────────
+    final dynamic decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('Unexpected response format from server.');
+    }
+
+    final rawCards = decoded['cards'];
+    if (rawCards == null || rawCards is! List) {
+      throw Exception('No cards returned from server.');
+    }
+
+    final cards = List<Map<String, dynamic>>.from(rawCards);
+    if (cards.isEmpty) throw Exception('Server returned 0 cards.');
+
+    final title = (decoded['title'] as String?)?.trim().isNotEmpty == true
+        ? decoded['title'] as String
+        : 'AI Generated Deck';
+
+    // ── Step 8: Write to Firestore ──────────────────────────────────────────
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw Exception('Not signed in.');
+
+    final deckRef = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('decks')
+        .add({
+      'title': title,
+      'tag': category,
+      'isDraft': false,
+      'visibility': 'private',
+      'cardCount': cards.length,
+      'targetCardCount': cards.length,
+      'questionType': questionType.apiValue,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'progress': 0.0,
+    });
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (final card in cards) {
+      final cardRef = deckRef.collection('cards').doc();
+
+      final hasOptions = card.containsKey('options') &&
+          card['options'] is List &&
+          (card['options'] as List).isNotEmpty;
+
+      int? correctIndex;
+      if (hasOptions) {
+        final options = card['options'] as List;
+        final answer = (card['answer'] as String? ?? '').trim().toLowerCase();
+        correctIndex = options.indexWhere(
+          (opt) => opt.toString().trim().toLowerCase() == answer,
+        );
+        if (correctIndex == -1) correctIndex = 0;
+      }
+
+      batch.set(cardRef, {
+        'question': card['question'] ?? '',
+        'answer': card['answer'] ?? '',
+        'type': hasOptions ? 'multiple_choice' : 'identification',
+        'createdAt': FieldValue.serverTimestamp(),
+        if (hasOptions) 'choices': card['options'],
+        if (hasOptions && correctIndex != null) 'correctIndex': correctIndex,
+      });
+    }
+    await batch.commit();
+
+    // ── Step 8b: Soft under-delivery warning ────────────────────────────────
+    final threshold = (questionCount * 0.5).ceil();
+    if (cards.length < threshold && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Only ${cards.length} of $questionCount cards were generated. You can add more cards manually.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFFF59E0B),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+
+    // ── Step 9: Success ─────────────────────────────────────────────────────
+    safePopLoader();
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.20),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Deck created successfully!',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      '${cards.length} ${questionType.displayName} cards — "$title"',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: Colors.white.withOpacity(0.85),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF16A34A),
           behavior: SnackBarBehavior.floating,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1508,7 +2134,8 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     progressColor: AppColors.primary,
                                     visibility: deck['visibility'] as String? ??
                                         'private',
-                                    clonedFromUsername: deck['clonedFromUsername'] as String?,
+                                    clonedFromUsername:
+                                        deck['clonedFromUsername'] as String?,
                                   ),
                                 ),
                               );
@@ -1529,7 +2156,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
           ),
         ],
       ),
-
     );
   }
 
@@ -1901,7 +2527,9 @@ class _AIImportCard extends StatelessWidget {
                 child: _ImportOption(
                   icon: Icons.content_paste_rounded,
                   label: 'Paste Notes',
-                  onTap: () {},
+                  onTap: () async {
+                    await handlePasteNotesAndGenerateDeck(context);
+                  },
                 ),
               ),
             ],
@@ -2555,7 +3183,8 @@ class _DeckCardState extends State<_DeckCard> {
                 fontWeight: FontWeight.w500,
               ),
             ),
-            if (widget.clonedFromUsername != null && widget.clonedFromUsername!.isNotEmpty) ...[
+            if (widget.clonedFromUsername != null &&
+                widget.clonedFromUsername!.isNotEmpty) ...[
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -2715,10 +3344,62 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
     );
 
     if (confirmed != true || !context.mounted) return;
-    Navigator.pop(context);
 
+    // REPLACE WITH:
     try {
       await DeckService.deleteDeck(widget.deckId);
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.20),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.delete_rounded,
+                      color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Deck deleted',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                      Text(
+                        '"${widget.deckTitle}" has been removed',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: Colors.white.withOpacity(0.85),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF16A34A),
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (e) {
       if (context.mounted) {
         _showErrorSnackBar(context, 'Failed to delete deck.');
