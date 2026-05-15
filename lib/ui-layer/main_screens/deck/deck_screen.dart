@@ -9,7 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'deck-quiz_screen.dart';
+import 'deck_quiz_screen.dart';
 import 'edit_deck_screen.dart';
 import 'create_deck_screen.dart';
 import 'deck_study_screen.dart';
@@ -192,56 +192,59 @@ class _QuestionTypeOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.outlineVariant.withOpacity(0.5),
-            width: 1,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.outlineVariant.withOpacity(0.5),
+              width: 1,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppColors.primaryContainer,
-                borderRadius: BorderRadius.circular(10),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(type.icon, color: AppColors.primary, size: 20),
               ),
-              child: Icon(type.icon, color: AppColors.primary, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    type.displayName,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      type.displayName,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
                     ),
-                  ),
-                  Text(
-                    type.description,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      color: AppColors.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
+                    Text(
+                      type.description,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.outline, size: 20),
-          ],
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.outline, size: 20),
+            ],
+          ),
         ),
       ),
     );
@@ -320,45 +323,48 @@ Future<String?> _showCategoryDialog(BuildContext context) {
             // ── Options ───────────────────────────────────────────────────
             ...categories.map((category) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(ctx, category),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.outlineVariant.withOpacity(0.5),
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(Icons.label_rounded,
-                                color: AppColors.primary, size: 20),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(ctx, category),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.outlineVariant.withOpacity(0.5),
+                            width: 1,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              category,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.onSurface,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(Icons.label_rounded,
+                                  color: AppColors.primary, size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                category,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.onSurface,
+                                ),
                               ),
                             ),
-                          ),
-                          const Icon(Icons.chevron_right_rounded,
-                              color: AppColors.outline, size: 20),
-                        ],
+                            const Icon(Icons.chevron_right_rounded,
+                                color: AppColors.outline, size: 20),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -487,28 +493,31 @@ Future<int?> _showQuestionCountDialog(BuildContext context, int maxCount) {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       // Decrement
-                      GestureDetector(
-                        onTap: () {
-                          if (currentCount > 1) {
-                            setState(() => setCount(currentCount - 1));
-                          }
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: currentCount > 1
-                                ? AppColors.primaryContainer
-                                : AppColors.outlineVariant.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.remove_rounded,
-                            size: 22,
-                            color: currentCount > 1
-                                ? AppColors.primary
-                                : AppColors.outline,
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (currentCount > 1) {
+                              setState(() => setCount(currentCount - 1));
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: currentCount > 1
+                                  ? AppColors.primaryContainer
+                                  : AppColors.outlineVariant.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.remove_rounded,
+                              size: 22,
+                              color: currentCount > 1
+                                  ? AppColors.primary
+                                  : AppColors.outline,
+                            ),
                           ),
                         ),
                       ),
@@ -516,59 +525,65 @@ Future<int?> _showQuestionCountDialog(BuildContext context, int maxCount) {
                       // Count input
                       SizedBox(
                         width: 100,
-                        child: TextField(
-                          controller: controller,
-                          textAlign: TextAlign.center,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly
-                          ],
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 36,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.onSurface,
-                            letterSpacing: -1,
-                          ),
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          onChanged: (val) {
-                            final parsed = int.tryParse(val);
-                            if (parsed != null) {
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.text,
+                          child: TextField(
+                            controller: controller,
+                            textAlign: TextAlign.center,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -1,
+                            ),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onChanged: (val) {
+                              final parsed = int.tryParse(val);
+                              if (parsed != null) {
+                                setState(() => setCount(parsed));
+                              }
+                            },
+                            onSubmitted: (val) {
+                              final parsed = int.tryParse(val) ?? 1;
                               setState(() => setCount(parsed));
-                            }
-                          },
-                          onSubmitted: (val) {
-                            final parsed = int.tryParse(val) ?? 1;
-                            setState(() => setCount(parsed));
-                          },
+                            },
+                          ),
                         ),
                       ),
 
                       // Increment
-                      GestureDetector(
-                        onTap: () {
-                          if (currentCount < maxCount) {
-                            setState(() => setCount(currentCount + 1));
-                          }
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: currentCount < maxCount
-                                ? AppColors.primaryContainer
-                                : AppColors.outlineVariant.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.add_rounded,
-                            size: 22,
-                            color: currentCount < maxCount
-                                ? AppColors.primary
-                                : AppColors.outline,
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (currentCount < maxCount) {
+                              setState(() => setCount(currentCount + 1));
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: currentCount < maxCount
+                                  ? AppColors.primaryContainer
+                                  : AppColors.outlineVariant.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.add_rounded,
+                              size: 22,
+                              color: currentCount < maxCount
+                                  ? AppColors.primary
+                                  : AppColors.outline,
+                            ),
                           ),
                         ),
                       ),
@@ -589,32 +604,35 @@ Future<int?> _showQuestionCountDialog(BuildContext context, int maxCount) {
                           ..sort())
                         .map((v) => Padding(
                               padding: const EdgeInsets.only(right: 8),
-                              child: GestureDetector(
-                                onTap: () => setState(() => setCount(v)),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 150),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 7),
-                                  decoration: BoxDecoration(
-                                    color: currentCount == v
-                                        ? AppColors.primary
-                                        : AppColors.surfaceContainerLow,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  onTap: () => setState(() => setCount(v)),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 7),
+                                    decoration: BoxDecoration(
                                       color: currentCount == v
                                           ? AppColors.primary
-                                          : AppColors.outlineVariant,
-                                      width: 1,
+                                          : AppColors.surfaceContainerLow,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: currentCount == v
+                                            ? AppColors.primary
+                                            : AppColors.outlineVariant,
+                                        width: 1,
+                                      ),
                                     ),
-                                  ),
-                                  child: Text(
-                                    v == maxCount ? 'Max ($v)' : '$v',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: currentCount == v
-                                          ? AppColors.onPrimary
-                                          : AppColors.onSurfaceVariant,
+                                    child: Text(
+                                      v == maxCount ? 'Max ($v)' : '$v',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: currentCount == v
+                                            ? AppColors.onPrimary
+                                            : AppColors.onSurfaceVariant,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -827,40 +845,43 @@ Future<String?> _showPasteNotesDialog(BuildContext context) {
                         ),
                         const Spacer(),
                         // ── Paste from clipboard button ──────────────────
-                        GestureDetector(
-                          onTap: () async {
-                            final data =
-                                await Clipboard.getData(Clipboard.kTextPlain);
-                            if (data?.text != null && data!.text!.isNotEmpty) {
-                              textController.text = data.text!;
-                              textController.selection =
-                                  TextSelection.fromPosition(
-                                TextPosition(
-                                    offset: textController.text.length),
-                              );
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryContainer,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.content_paste_go_rounded,
-                                    size: 13, color: AppColors.primary),
-                                const SizedBox(width: 5),
-                                Text(
-                                  'Paste',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primary,
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () async {
+                              final data =
+                                  await Clipboard.getData(Clipboard.kTextPlain);
+                              if (data?.text != null && data!.text!.isNotEmpty) {
+                                textController.text = data.text!;
+                                textController.selection =
+                                    TextSelection.fromPosition(
+                                  TextPosition(
+                                      offset: textController.text.length),
+                                );
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryContainer,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.content_paste_go_rounded,
+                                      size: 13, color: AppColors.primary),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Paste',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -871,30 +892,33 @@ Future<String?> _showPasteNotesDialog(BuildContext context) {
                           builder: (_, empty, __) => AnimatedOpacity(
                             duration: const Duration(milliseconds: 200),
                             opacity: empty ? 0.0 : 1.0,
-                            child: GestureDetector(
-                              onTap: () => textController.clear(),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color:
-                                      AppColors.errorContainer.withOpacity(0.5),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.delete_outline_rounded,
-                                        size: 13, color: AppColors.error),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Clear',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.error,
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: GestureDetector(
+                                onTap: () => textController.clear(),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        AppColors.errorContainer.withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline_rounded,
+                                          size: 13, color: AppColors.error),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Clear',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.error,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -915,31 +939,34 @@ Future<String?> _showPasteNotesDialog(BuildContext context) {
                   // ── TextField ──────────────────────────────────────────
                   SizedBox(
                     height: 220,
-                    child: TextField(
-                      controller: textController,
-                      autofocus: true,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      keyboardType: TextInputType.multiline,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.onSurface,
-                        height: 1.55,
-                      ),
-                      decoration: InputDecoration(
-                        hintText:
-                            'Paste your lecture notes, textbook content, or study material here…\n\nPress Ctrl+V or use the Paste button above.',
-                        hintStyle: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          color: AppColors.onSurfaceVariant.withOpacity(0.5),
-                          fontWeight: FontWeight.w400,
-                          height: 1.6,
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.text,
+                      child: TextField(
+                        controller: textController,
+                        autofocus: true,
+                        maxLines: null,
+                        expands: true,
+                        textAlignVertical: TextAlignVertical.top,
+                        keyboardType: TextInputType.multiline,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.onSurface,
+                          height: 1.55,
                         ),
-                        border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        decoration: InputDecoration(
+                          hintText:
+                              'Paste your lecture notes, textbook content, or study material here…\n\nPress Ctrl+V or use the Paste button above.',
+                          hintStyle: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            color: AppColors.onSurfaceVariant.withOpacity(0.5),
+                            fontWeight: FontWeight.w400,
+                            height: 1.6,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding:
+                              const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        ),
                       ),
                     ),
                   ),
@@ -2325,23 +2352,25 @@ class _SearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.outlineVariant.withOpacity(0.3),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+    return MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.outlineVariant.withOpacity(0.3),
+            width: 1,
           ),
-        ],
-      ),
-      child: TextField(
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.onSurface.withOpacity(0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextField(
         controller: controller,
         style: GoogleFonts.plusJakartaSans(
           fontSize: 15,
@@ -2382,6 +2411,7 @@ class _SearchBar extends StatelessWidget {
               const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
       ),
+      ),
     );
   }
 }
@@ -2403,9 +2433,11 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeInOut,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -2441,6 +2473,7 @@ class _FilterChip extends StatelessWidget {
             color: active ? Colors.white : AppColors.onSurfaceVariant,
           ),
         ),
+      ),
       ),
     );
   }
@@ -2553,31 +2586,34 @@ class _ImportOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2598,11 +2634,12 @@ class _CreateDeckCardState extends State<_CreateDeckCard> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed('/create-deck'),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pushNamed('/create-deck'),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 24),
@@ -2693,9 +2730,11 @@ class _DraftDeckCard extends StatelessWidget {
         ? (cardCount / targetCardCount).clamp(0.0, 1.0)
         : 0.0;
 
-    return GestureDetector(
-      onTap: onContinue,
-      child: Container(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onContinue,
+        child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: const Color(0xFFFFFBF0),
@@ -2770,10 +2809,13 @@ class _DraftDeckCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                GestureDetector(
-                  onTap: () => _showDraftMenu(context),
-                  child: const Icon(Icons.more_vert_rounded,
-                      color: Color(0xFFAA8800), size: 20),
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => _showDraftMenu(context),
+                    child: const Icon(Icons.more_vert_rounded,
+                        color: Color(0xFFAA8800), size: 20),
+                  ),
                 ),
               ],
             ),
@@ -2857,6 +2899,7 @@ class _DraftDeckCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -3069,12 +3112,14 @@ class _DeckCardState extends State<_DeckCard> {
   Widget build(BuildContext context) {
     final isPublic = _currentVisibility == 'public';
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed(
-        '/quiz',
-        arguments: QuizArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
-      ),
-      child: Container(
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pushNamed(
+          '/quiz',
+          arguments: QuizArgs(deckId: widget.deckId, deckTitle: widget.deckTitle),
+        ),
+        child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: AppColors.surfaceContainerLowest,
@@ -3157,10 +3202,13 @@ class _DeckCardState extends State<_DeckCard> {
                     ),
                   ],
                 ),
-                GestureDetector(
-                  onTap: () => _showDeckMenu(context),
-                  child: Icon(Icons.more_vert_rounded,
-                      color: AppColors.outline, size: 20),
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => _showDeckMenu(context),
+                    child: Icon(Icons.more_vert_rounded,
+                        color: AppColors.outline, size: 20),
+                  ),
                 ),
               ],
             ),
@@ -3242,6 +3290,7 @@ class _DeckCardState extends State<_DeckCard> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -3740,3 +3789,4 @@ class _Blob extends StatelessWidget {
     );
   }
 }
+

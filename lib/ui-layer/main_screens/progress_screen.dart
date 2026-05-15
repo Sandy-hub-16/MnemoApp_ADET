@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../../business-layer/services/progress_service.dart';
+import 'deck/deck_study_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROGRESS SCREEN  —  route: /progress
@@ -300,9 +301,12 @@ class _ProgressTopBar extends StatelessWidget {
               ),
             ],
           ),
-          _NavIconButton(
-            icon: Icons.tune_rounded,
-            onTap: () => _showProgressOptions(context),
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: _NavIconButton(
+              icon: Icons.tune_rounded,
+              onTap: () => _showProgressOptions(context),
+            ),
           ),
         ],
       ),
@@ -626,33 +630,36 @@ class _ProgressOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          shape: BoxShape.circle,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: color, size: 20),
         ),
-        child: Icon(icon, color: color, size: 20),
-      ),
-      title: Text(
-        label,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: AppColors.onSurface,
+        title: Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onSurface,
+          ),
         ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 12,
-          color: AppColors.onSurfaceVariant,
+        subtitle: Text(
+          subtitle,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            color: AppColors.onSurfaceVariant,
+          ),
         ),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
-      onTap: onTap,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
   }
 }
@@ -1494,24 +1501,27 @@ class _EmptyProgressState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.of(context).pushReplacementNamed('/decks'),
-            icon: const Icon(Icons.play_arrow_rounded, size: 20),
-            label: Text(
-              'Browse Decks',
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.of(context).pushReplacementNamed('/decks'),
+              icon: const Icon(Icons.play_arrow_rounded, size: 20),
+              label: Text(
+                'Browse Decks',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
               ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
               ),
-              elevation: 0,
             ),
           ),
         ],
@@ -1865,34 +1875,37 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.surfaceContainerLowest
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppColors.onSurface.withOpacity(0.06),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 13,
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
             color: isSelected
-                ? AppColors.primary
-                : AppColors.onSurfaceVariant,
+                ? AppColors.surfaceContainerLowest
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.onSurface.withOpacity(0.06),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              color: isSelected
+                  ? AppColors.primary
+                  : AppColors.onSurfaceVariant,
+            ),
           ),
         ),
       ),
@@ -1925,17 +1938,6 @@ class _DeckProgressRow extends StatelessWidget {
   const _DeckProgressRow({required this.deck, required this.viewMode});
   final DeckProgressSummary deck;
   final String viewMode;
-
-  Color _categoryColor(String category) {
-    const colors = {
-      'Science': AppColors.tertiary,
-      'Math': AppColors.primary,
-      'Language': AppColors.secondary,
-      'History': Color(0xFFE85D75),
-      'Technology': Color(0xFF9B5DE5),
-    };
-    return colors[category] ?? AppColors.primary;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1997,10 +1999,13 @@ class _DeckProgressRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.outline,
-                  size: 20,
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.outline,
+                    size: 20,
+                  ),
                 ),
               ],
             ),
@@ -2021,11 +2026,13 @@ class _DeckProgressRow extends StatelessWidget {
   }
 
   void _showDeckProgressSheet(BuildContext context, DeckProgressSummary deck) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _DeckProgressSheet(deck: deck),
+    // Navigate directly to study mode instead of showing bottom sheet
+    Navigator.of(context).pushNamed(
+      '/study',
+      arguments: StudyScreenArgs(
+        deckId: deck.deckId,
+        deckTitle: deck.deckTitle,
+      ),
     );
   }
 }
@@ -2640,239 +2647,6 @@ class _NavIconButton extends StatelessWidget {
         ),
         child: Icon(icon, color: AppColors.primary, size: 22),
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DECK PROGRESS SHEET - Bottom sheet for individual deck actions
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DeckProgressSheet extends StatelessWidget {
-  const _DeckProgressSheet({required this.deck});
-  final DeckProgressSummary deck;
-
-  Color _categoryColor(String category) {
-    const colors = {
-      'Science': AppColors.tertiary,
-      'Math': AppColors.primary,
-      'Language': AppColors.secondary,
-      'History': Color(0xFFE85D75),
-      'Technology': Color(0xFF9B5DE5),
-    };
-    return colors[category] ?? AppColors.primary;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final masteryPercent = (deck.mastery * 100).round();
-    final color = _categoryColor(deck.category);
-
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.outlineVariant,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Deck Header ──────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(Icons.book_rounded, color: color, size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        deck.deckTitle,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.onSurface,
-                          letterSpacing: -0.3,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          deck.category.toUpperCase(),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: color,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Stats Summary ────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _DeckStatItem(
-                      icon: Icons.emoji_events_rounded,
-                      label: 'Mastery',
-                      value: '$masteryPercent%',
-                      color: color,
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 40,
-                    color: AppColors.outlineVariant.withOpacity(0.3),
-                  ),
-                  Expanded(
-                    child: _DeckStatItem(
-                      icon: Icons.quiz_rounded,
-                      label: 'Quizzes',
-                      value: '${deck.attemptCount}',
-                      color: AppColors.secondary,
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 40,
-                    color: AppColors.outlineVariant.withOpacity(0.3),
-                  ),
-                  Expanded(
-                    child: _DeckStatItem(
-                      icon: Icons.style_rounded,
-                      label: 'Cards',
-                      value: '${deck.answeredTotal}',
-                      color: AppColors.tertiary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // ── Primary Action: Study ────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.of(context).pushNamed(
-                    '/quiz',
-                    arguments: {'deckId': deck.deckId, 'deckTitle': deck.deckTitle},
-                  );
-                },
-                icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                label: Text(
-                  'Study This Deck',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeckStatItem extends StatelessWidget {
-  const _DeckStatItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: AppColors.onSurface,
-            height: 1,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: AppColors.onSurfaceVariant,
-          ),
-        ),
-      ],
     );
   }
 }

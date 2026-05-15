@@ -212,54 +212,57 @@ class _HomeTopBar extends StatelessWidget {
                     stream: _unreadCountStream(),
                     builder: (context, snapshot) {
                       final unreadCount = snapshot.data ?? 0;
-                      return GestureDetector(
-                        onTap: () => Navigator.of(context)
-                            .pushNamed(AppRoutes.notifications),
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                color: AppColors.primaryContainer
-                                    .withOpacity(0.3),
-                              ),
-                              child: const Icon(
-                                Icons.notifications_outlined,
-                                color: AppColors.primary,
-                                size: 20,
-                              ),
-                            ),
-                            if (unreadCount > 0)
-                              Positioned(
-                                top: -2,
-                                right: -2,
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.error,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minWidth: 16,
-                                    minHeight: 16,
-                                  ),
-                                  child: Text(
-                                    unreadCount > 99
-                                        ? '99+'
-                                        : '$unreadCount',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
+                      return MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () => Navigator.of(context)
+                              .pushNamed(AppRoutes.notifications),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  color: AppColors.primaryContainer
+                                      .withOpacity(0.3),
+                                ),
+                                child: const Icon(
+                                  Icons.notifications_outlined,
+                                  color: AppColors.primary,
+                                  size: 20,
                                 ),
                               ),
-                          ],
+                              if (unreadCount > 0)
+                                Positioned(
+                                  top: -2,
+                                  right: -2,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.error,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 16,
+                                      minHeight: 16,
+                                    ),
+                                    child: Text(
+                                      unreadCount > 99
+                                          ? '99+'
+                                          : '$unreadCount',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -267,28 +270,31 @@ class _HomeTopBar extends StatelessWidget {
                   const SizedBox(width: 10),
 
                   // ── Avatar → navigates to Profile ─────────────────────────
-                  GestureDetector(
-                    onTap: () => Navigator.of(context)
-                        .pushReplacementNamed(AppRoutes.profile),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: AppColors.primary.withOpacity(0.3), width: 2),
-                        color: AppColors.primaryContainer.withOpacity(0.3),
-                        image: photoUrl != null
-                            ? DecorationImage(
-                                image: NetworkImage(photoUrl!),
-                                fit: BoxFit.cover,
-                              )
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context)
+                          .pushReplacementNamed(AppRoutes.profile),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: AppColors.primary.withOpacity(0.3), width: 2),
+                          color: AppColors.primaryContainer.withOpacity(0.3),
+                          image: photoUrl != null
+                              ? DecorationImage(
+                                  image: NetworkImage(photoUrl!),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: photoUrl == null
+                            ? const Icon(Icons.person_rounded,
+                                color: AppColors.primary, size: 20)
                             : null,
                       ),
-                      child: photoUrl == null
-                          ? const Icon(Icons.person_rounded,
-                              color: AppColors.primary, size: 20)
-                          : null,
                     ),
                   ),
                 ],
@@ -596,34 +602,37 @@ class _QuickActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.25),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: Colors.white, size: 28),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            gradient: gradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
-            ),
-          ],
+            ],
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: Colors.white, size: 28),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -720,60 +729,68 @@ class _ActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final masteryPercent = (deck.mastery * 100).round();
     final color = _categoryColor(deck.category);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pushNamed(
+          '/deck',
+          arguments: {'deckId': deck.deckId},
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(Icons.book_rounded, color: color, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  deck.deckTitle,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.onSurface,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${deck.category} • ${_timeAgo(deck.lastStudiedAt)}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    color: AppColors.onSurfaceVariant,
-                  ),
+                child: Icon(Icons.book_rounded, color: color, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      deck.deckTitle,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${deck.category} • ${_timeAgo(deck.lastStudiedAt)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

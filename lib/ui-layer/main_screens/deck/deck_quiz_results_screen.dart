@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
-import 'deck-quiz_screen.dart'; // Import for QuizArgs
+import 'deck_quiz_screen.dart'; // Import for QuizArgs
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ RESULTS SCREEN — Detailed per-card breakdown

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../main.dart';
-import '../widgets_design.dart';
+import '../widgets/auth_scaffold.dart';
+import '../widgets/auth_buttons.dart';
+import '../widgets/step_progress.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 2: DEMOGRAPHICS

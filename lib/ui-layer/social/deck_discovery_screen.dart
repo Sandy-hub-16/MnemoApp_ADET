@@ -471,65 +471,71 @@ class _SearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.outlineVariant.withValues(alpha: 0.3),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
+    return MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.outlineVariant.withValues(alpha: 0.3),
+            width: 1,
           ),
-        ],
-      ),
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-          color: AppColors.onSurface,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.onSurface.withValues(alpha: 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        decoration: InputDecoration(
-          hintText: 'Search decks, topics, or creators...',
-          hintStyle: GoogleFonts.plusJakartaSans(
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          style: GoogleFonts.plusJakartaSans(
             fontSize: 15,
             fontWeight: FontWeight.w500,
-            color: AppColors.onSurfaceVariant.withValues(alpha: 0.6),
+            color: AppColors.onSurface,
           ),
-          prefixIcon: Padding(
-            padding: const EdgeInsets.only(left: 16, right: 12),
-            child: Icon(
-              Icons.search_rounded,
-              color: AppColors.primary,
-              size: 22,
+          decoration: InputDecoration(
+            hintText: 'Search decks, topics, or creators...',
+            hintStyle: GoogleFonts.plusJakartaSans(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: AppColors.onSurfaceVariant.withValues(alpha: 0.6),
             ),
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 12),
+              child: Icon(
+                Icons.search_rounded,
+                color: AppColors.primary,
+                size: 22,
+              ),
+            ),
+            suffixIcon: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (_, value, __) {
+                if (value.text.isEmpty) return const SizedBox.shrink();
+                return MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: AppColors.onSurfaceVariant,
+                      size: 20,
+                    ),
+                    onPressed: () {
+                      controller.clear();
+                      onChanged('');
+                    },
+                  ),
+                );
+              },
+            ),
+            border: InputBorder.none,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           ),
-          suffixIcon: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (_, value, __) {
-              if (value.text.isEmpty) return const SizedBox.shrink();
-              return IconButton(
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: AppColors.onSurfaceVariant,
-                  size: 20,
-                ),
-                onPressed: () {
-                  controller.clear();
-                  onChanged('');
-                },
-              );
-            },
-          ),
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
       ),
     );
@@ -562,60 +568,63 @@ class _TagFilterRow extends StatelessWidget {
         itemBuilder: (context, i) {
           final tag = tags[i];
           final active = activeTag == tag;
-          return GestureDetector(
-            onTap: () => onTagSelected(tag),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              decoration: BoxDecoration(
-                gradient: active
-                    ? const LinearGradient(
-                        colors: [AppColors.primary, AppColors.primaryFixedDim],
-                      )
-                    : null,
-                color: active ? null : AppColors.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: active
-                      ? AppColors.primary.withValues(alpha: 0.3)
-                      : AppColors.outlineVariant.withValues(alpha: 0.3),
-                  width: 1.5,
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => onTagSelected(tag),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: active
+                      ? const LinearGradient(
+                          colors: [AppColors.primary, AppColors.primaryFixedDim],
+                        )
+                      : null,
+                  color: active ? null : AppColors.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: active
+                        ? AppColors.primary.withValues(alpha: 0.3)
+                        : AppColors.outlineVariant.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
+                  boxShadow: active
+                      ? [
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : [],
                 ),
-                boxShadow: active
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (active)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          size: 16,
+                          color: Colors.white,
                         ),
-                      ]
-                    : [],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (active)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Icon(
-                        Icons.check_circle_rounded,
-                        size: 16,
-                        color: Colors.white,
+                      ),
+                    Text(
+                      tag,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: active
+                            ? Colors.white
+                            : AppColors.onSurfaceVariant,
                       ),
                     ),
-                  Text(
-                    tag,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: active
-                          ? Colors.white
-                          : AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
