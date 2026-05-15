@@ -740,44 +740,47 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.vertical(
-          top: isFirst ? const Radius.circular(20) : Radius.zero,
-          bottom: isLast ? const Radius.circular(20) : Radius.zero,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  borderRadius: BorderRadius.circular(12),
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.vertical(
+            top: isFirst ? const Radius.circular(20) : Radius.zero,
+            bottom: isLast ? const Radius.circular(20) : Radius.zero,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 22),
                 ),
-                child: Icon(icon, color: iconColor, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.onSurface,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                    ),
                   ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.onSurfaceVariant,
-                size: 22,
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.onSurfaceVariant,
+                  size: 22,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -823,42 +826,45 @@ class _LogOutButton extends StatelessWidget {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showLogoutConfirmation(context),
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showLogoutConfirmation(context),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.logout_rounded,
+                        color: AppColors.error, size: 22),
                   ),
-                  child: Icon(Icons.logout_rounded,
-                      color: AppColors.error, size: 22),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    'Log Out',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.error,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      'Log Out',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.error,
+                      ),
                     ),
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.error.withOpacity(0.6),
-                  size: 22,
-                ),
-              ],
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.error.withOpacity(0.6),
+                    size: 22,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

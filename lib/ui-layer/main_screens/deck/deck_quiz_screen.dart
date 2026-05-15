@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
-import 'deck-quiz_results_screen.dart';
+import 'deck_quiz_results_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz

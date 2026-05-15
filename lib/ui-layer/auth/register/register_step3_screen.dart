@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/auth_google_service.dart';
-import '../widgets_design.dart';
+import '../widgets/auth_scaffold.dart';
+import '../widgets/auth_text_field.dart';
+import '../widgets/auth_buttons.dart';
+import '../widgets/auth_decorations.dart';
+import '../widgets/step_progress.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 3: CREDENTIALS

@@ -6,7 +6,7 @@ import '../landing_page/app_theme.dart';
 import '../../data-layer/social/public_deck_summary.dart';
 import '../../data-layer/social/social_route_args.dart';
 import '../../business-layer/services/share_service.dart';
-import '../main_screens/deck/deck-quiz_screen.dart';
+import '../main_screens/deck/deck_quiz_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED DECK DETAIL SCREEN  —  route: /shared-deck-detail
