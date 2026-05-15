@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../landing_page/app_theme.dart';
-import '../../data-layer/social/public_deck_summary.dart';
-import '../../data-layer/social/social_route_args.dart';
+import '../../data-layer/models/social/public_deck_summary.dart';
+import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/deck_search_engine.dart';
 import 'widgets/public_deck_card.dart';
 

@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../../data-layer/social/public_deck_summary.dart';
-import '../../data-layer/social/public_profile.dart';
+import '../../data-layer/models/social/public_deck_summary.dart';
+import '../../data-layer/models/social/public_profile.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE SERVICE

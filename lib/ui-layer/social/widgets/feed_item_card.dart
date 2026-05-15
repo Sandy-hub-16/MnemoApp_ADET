@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../data-layer/social/public_deck_summary.dart';
+import '../../../data-layer/models/social/public_deck_summary.dart';
 import '../../landing_page/app_theme.dart';
 import 'public_deck_card.dart';
 

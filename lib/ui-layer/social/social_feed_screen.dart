@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../business-layer/services/feed_service.dart';
-import '../../data-layer/social/public_deck_summary.dart';
-import '../../data-layer/social/social_route_args.dart';
+import '../../data-layer/models/social/public_deck_summary.dart';
+import '../../data-layer/route_args/social_route_args.dart';
 import '../../main.dart';
 import '../landing_page/app_theme.dart';
 import 'widgets/feed_item_card.dart';
