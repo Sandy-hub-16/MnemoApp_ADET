@@ -5,8 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../data-layer/social/app_notification.dart';
-import '../../data-layer/social/social_route_args.dart';
+import '../../data-layer/models/social/app_notification.dart';
+import '../../data-layer/route_args/social_route_args.dart';
 import '../../main.dart';
 import '../landing_page/app_theme.dart';
 import 'widgets/notification_tile.dart';

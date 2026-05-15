@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../data-layer/social/app_notification.dart';
+import '../../../data-layer/models/social/app_notification.dart';
 import '../../landing_page/app_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────

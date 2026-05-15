@@ -388,7 +388,30 @@ class _SettingsBodyState extends State<_SettingsBody> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    setState(() => _saving = true);
+    // ── SAVE ORIGINAL VALUES FOR ROLLBACK ──────────────────────────────────
+    final origBio = _origBio;
+    final origUsername = _origUsername;
+    final origSchool = _origSchool;
+    final origCourse = _origCourse;
+    final origYearLevel = _origYearLevel;
+    final origIsPrivate = _origIsPrivate;
+    final origRegion = _region;
+    final origBirthdate = _birthdate;
+
+    // ── OPTIMISTICALLY UPDATE LOCAL STATE ──────────────────────────────────
+    setState(() {
+      _origBio = _bioCtrl.text.trim();
+      _origUsername = _usernameCtrl.text.trim();
+      _origSchool = _schoolCtrl.text.trim();
+      _origCourse = _courseCtrl.text.trim();
+      _origYearLevel = _yearLevel;
+      _origIsPrivate = _isPrivate;
+      _isDirty = false;
+      _saving = true;
+    });
+
+    // ── SHOW SAVING INDICATOR ──────────────────────────────────────────────
+    _showSnack('Saving changes...');
 
     try {
       final updates = <String, dynamic>{
@@ -398,15 +421,15 @@ class _SettingsBodyState extends State<_SettingsBody> {
       };
 
       // Username — only write if editable and changed
-      if (!_usernameIsLocked && _usernameCtrl.text.trim() != _origUsername) {
+      if (!_usernameIsLocked && _usernameCtrl.text.trim() != origUsername) {
         updates['username'] = _usernameCtrl.text.trim();
         updates['usernameLastChangedAt'] = FieldValue.serverTimestamp();
       }
 
       // Education — only write if editable and changed
-      final eduChanged = _schoolCtrl.text.trim() != _origSchool ||
-          _courseCtrl.text.trim() != _origCourse ||
-          _yearLevel != _origYearLevel;
+      final eduChanged = _schoolCtrl.text.trim() != origSchool ||
+          _courseCtrl.text.trim() != origCourse ||
+          _yearLevel != origYearLevel;
       if (!_educationIsLocked && eduChanged) {
         updates['school'] = _schoolCtrl.text.trim();
         updates['course'] = _courseCtrl.text.trim();
@@ -422,17 +445,44 @@ class _SettingsBodyState extends State<_SettingsBody> {
         updates['birthdate'] = _birthdate;
       }
 
+      // ── SAVE TO FIRESTORE IN BACKGROUND ────────────────────────────────
       await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .update(updates);
 
-      _showSnack('Changes saved ✓');
-      if (mounted) Navigator.of(context).pop();
-    } catch (_) {
-      _showSnack('Could not save changes. Try again.', isError: true);
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      // ── SUCCESS: SHOW SUCCESS MESSAGE ──────────────────────────────────
+      if (mounted) {
+        _showSnack('Changes saved ✓');
+        setState(() => _saving = false);
+        // Delay pop to let user see the success message
+        await Future.delayed(const Duration(milliseconds: 600));
+        if (mounted) Navigator.of(context).pop();
+      }
+    } catch (e) {
+      // ── ERROR: REVERT ALL CHANGES ──────────────────────────────────────
+      debugPrint('Save error: $e');
+      if (mounted) {
+        setState(() {
+          _bioCtrl.text = origBio;
+          _usernameCtrl.text = origUsername;
+          _schoolCtrl.text = origSchool;
+          _courseCtrl.text = origCourse;
+          _yearLevel = origYearLevel;
+          _isPrivate = origIsPrivate;
+          _region = origRegion;
+          _birthdate = origBirthdate;
+          _origBio = origBio;
+          _origUsername = origUsername;
+          _origSchool = origSchool;
+          _origCourse = origCourse;
+          _origYearLevel = origYearLevel;
+          _origIsPrivate = origIsPrivate;
+          _isDirty = false;
+          _saving = false;
+        });
+        _showSnack('Could not save changes. Changes reverted.', isError: true);
+      }
     }
   }
 
