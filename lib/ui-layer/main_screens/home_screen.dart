@@ -353,7 +353,7 @@ class _HomeBody extends StatelessWidget {
               _RecentActivityList(dashboard: dashboard),
 
               // ── Bottom clearance for nav bar ────────────────────────────────
-              const SizedBox(height: 140),
+               const SizedBox(height: 20),
             ]),
           ),
         ),

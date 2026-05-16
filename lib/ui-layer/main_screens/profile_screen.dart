@@ -380,7 +380,8 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
                   iconColor: AppColors.onTertiaryContainer,
                   label: 'Notifications',
-                  onTap: () {},
+                  onTap: () => Navigator.of(context)
+                              .pushNamed('/notifications'),
                 ),
                 _SettingsDivider(),
                 _SettingsTile(
