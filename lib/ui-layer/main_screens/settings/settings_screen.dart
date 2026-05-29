@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
+import '../../../main.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS SCREEN
@@ -28,7 +29,8 @@ class SettingsScreen extends StatelessWidget {
             ),
             flexibleSpace: LayoutBuilder(
               builder: (context, constraints) {
-                final isCollapsed = constraints.maxHeight <= kToolbarHeight + 40;
+                final isCollapsed =
+                    constraints.maxHeight <= kToolbarHeight + 40;
                 return FlexibleSpaceBar(
                   centerTitle: false,
                   titlePadding: EdgeInsets.only(
@@ -52,202 +54,202 @@ class SettingsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-            // Study Settings Section
-            _SectionHeader(
-              icon: Icons.school_rounded,
-              label: 'STUDY SETTINGS',
-              color: AppColors.primary,
-            ),
-            const SizedBox(height: 12),
-            _SettingsGroup(
-              children: [
-                _SettingsTile(
-                  icon: Icons.timer_outlined,
-                  iconBg: AppColors.primaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.primary,
-                  label: 'Quiz Timer',
-                  subtitle: 'Set default time limit for quizzes',
-                  trailing: Text(
-                    'Off',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.onSurfaceVariant,
+                // Study Settings Section
+                _SectionHeader(
+                  icon: Icons.school_rounded,
+                  label: 'STUDY SETTINGS',
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 12),
+                _SettingsGroup(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.timer_outlined,
+                      iconBg: AppColors.primaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.primary,
+                      label: 'Quiz Timer',
+                      subtitle: 'Set default time limit for quizzes',
+                      trailing: Text(
+                        'Off',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      onTap: () {},
+                      isFirst: true,
                     ),
-                  ),
-                  onTap: () {},
-                  isFirst: true,
-                ),
-                _SettingsTile(
-                  icon: Icons.shuffle_rounded,
-                  iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.onSecondaryContainer,
-                  label: 'Shuffle Cards',
-                  subtitle: 'Randomize card order in quizzes',
-                  trailing: Switch(
-                    value: true,
-                    onChanged: (val) {},
-                    activeColor: AppColors.primary,
-                  ),
-                  onTap: null,
-                ),
-                _SettingsTile(
-                  icon: Icons.auto_awesome_rounded,
-                  iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.onTertiaryContainer,
-                  label: 'Smart Review',
-                  subtitle: 'Prioritize cards you struggle with',
-                  trailing: Switch(
-                    value: false,
-                    onChanged: (val) {},
-                    activeColor: AppColors.primary,
-                  ),
-                  onTap: null,
-                  isLast: true,
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-
-            // Notifications Section
-            _SectionHeader(
-              icon: Icons.notifications_rounded,
-              label: 'NOTIFICATIONS',
-              color: AppColors.secondary,
-            ),
-            const SizedBox(height: 12),
-            _SettingsGroup(
-              children: [
-                _SettingsTile(
-                  icon: Icons.notifications_active_outlined,
-                  iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.secondary,
-                  label: 'Push Notifications',
-                  subtitle: 'Receive study reminders',
-                  trailing: Switch(
-                    value: true,
-                    onChanged: (val) {},
-                    activeColor: AppColors.primary,
-                  ),
-                  onTap: null,
-                  isFirst: true,
-                ),
-                _SettingsTile(
-                  icon: Icons.schedule_rounded,
-                  iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.secondary,
-                  label: 'Daily Reminder',
-                  subtitle: 'Get reminded to study every day',
-                  trailing: Text(
-                    '9:00 AM',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.onSurfaceVariant,
+                    _SettingsTile(
+                      icon: Icons.shuffle_rounded,
+                      iconBg: AppColors.secondaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.onSecondaryContainer,
+                      label: 'Shuffle Cards',
+                      subtitle: 'Randomize card order in quizzes',
+                      trailing: Switch(
+                        value: true,
+                        onChanged: (val) {},
+                        activeColor: AppColors.primary,
+                      ),
+                      onTap: null,
                     ),
-                  ),
-                  onTap: () {},
-                  isLast: true,
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-
-            // Privacy & Data Section
-            _SectionHeader(
-              icon: Icons.shield_rounded,
-              label: 'PRIVACY & DATA',
-              color: AppColors.tertiary,
-            ),
-            const SizedBox(height: 12),
-            _SettingsGroup(
-              children: [
-                _SettingsTile(
-                  icon: Icons.cloud_sync_rounded,
-                  iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.tertiary,
-                  label: 'Cloud Sync',
-                  subtitle: 'Sync data across devices',
-                  trailing: Switch(
-                    value: true,
-                    onChanged: (val) {},
-                    activeColor: AppColors.primary,
-                  ),
-                  onTap: null,
-                  isFirst: true,
-                ),
-                _SettingsTile(
-                  icon: Icons.analytics_outlined,
-                  iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.tertiary,
-                  label: 'Usage Analytics',
-                  subtitle: 'Help improve the app',
-                  trailing: Switch(
-                    value: false,
-                    onChanged: (val) {},
-                    activeColor: AppColors.primary,
-                  ),
-                  onTap: null,
-                  isLast: true,
-                ),
-              ],
-            ),
-            const SizedBox(height: 28),
-
-            // About Section
-            _SectionHeader(
-              icon: Icons.info_rounded,
-              label: 'ABOUT',
-              color: AppColors.outline,
-            ),
-            const SizedBox(height: 12),
-            _SettingsGroup(
-              children: [
-                _SettingsTile(
-                  icon: Icons.description_outlined,
-                  iconBg: AppColors.surfaceContainerLow,
-                  iconColor: AppColors.onSurfaceVariant,
-                  label: 'Terms of Service',
-                  onTap: () {},
-                  isFirst: true,
-                ),
-                _SettingsTile(
-                  icon: Icons.privacy_tip_outlined,
-                  iconBg: AppColors.surfaceContainerLow,
-                  iconColor: AppColors.onSurfaceVariant,
-                  label: 'Privacy Policy',
-                  onTap: () {},
-                ),
-                _SettingsTile(
-                  icon: Icons.code_rounded,
-                  iconBg: AppColors.surfaceContainerLow,
-                  iconColor: AppColors.onSurfaceVariant,
-                  label: 'App Version',
-                  trailing: Text(
-                    '1.0.0',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.onSurfaceVariant,
+                    _SettingsTile(
+                      icon: Icons.auto_awesome_rounded,
+                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.onTertiaryContainer,
+                      label: 'Smart Review',
+                      subtitle: 'Prioritize cards you struggle with',
+                      trailing: Switch(
+                        value: false,
+                        onChanged: (val) {},
+                        activeColor: AppColors.primary,
+                      ),
+                      onTap: null,
+                      isLast: true,
                     ),
-                  ),
-                  onTap: null,
-                  isLast: true,
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 28),
+                const SizedBox(height: 28),
 
-            // Danger Zone Section
-            _SectionHeader(
-              icon: Icons.warning_rounded,
-              label: 'DANGER ZONE',
-              color: AppColors.error,
-            ),
-            const SizedBox(height: 12),
-            _DangerZoneCard(
-              onAmnesiaTap: () => _showAmnesiaConfirmation(context),
-            ),
+                // Notifications Section
+                _SectionHeader(
+                  icon: Icons.notifications_rounded,
+                  label: 'NOTIFICATIONS',
+                  color: AppColors.secondary,
+                ),
+                const SizedBox(height: 12),
+                _SettingsGroup(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.notifications_active_outlined,
+                      iconBg: AppColors.secondaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.secondary,
+                      label: 'Push Notifications',
+                      subtitle: 'Receive study reminders',
+                      trailing: Switch(
+                        value: true,
+                        onChanged: (val) {},
+                        activeColor: AppColors.primary,
+                      ),
+                      onTap: null,
+                      isFirst: true,
+                    ),
+                    _SettingsTile(
+                      icon: Icons.schedule_rounded,
+                      iconBg: AppColors.secondaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.secondary,
+                      label: 'Daily Reminder',
+                      subtitle: 'Get reminded to study every day',
+                      trailing: Text(
+                        '9:00 AM',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      onTap: () {},
+                      isLast: true,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+
+                // Privacy & Data Section
+                _SectionHeader(
+                  icon: Icons.shield_rounded,
+                  label: 'PRIVACY & DATA',
+                  color: AppColors.tertiary,
+                ),
+                const SizedBox(height: 12),
+                _SettingsGroup(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.cloud_sync_rounded,
+                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.tertiary,
+                      label: 'Cloud Sync',
+                      subtitle: 'Sync data across devices',
+                      trailing: Switch(
+                        value: true,
+                        onChanged: (val) {},
+                        activeColor: AppColors.primary,
+                      ),
+                      onTap: null,
+                      isFirst: true,
+                    ),
+                    _SettingsTile(
+                      icon: Icons.analytics_outlined,
+                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.tertiary,
+                      label: 'Usage Analytics',
+                      subtitle: 'Help improve the app',
+                      trailing: Switch(
+                        value: false,
+                        onChanged: (val) {},
+                        activeColor: AppColors.primary,
+                      ),
+                      onTap: null,
+                      isLast: true,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+
+                // About Section
+                _SectionHeader(
+                  icon: Icons.info_rounded,
+                  label: 'ABOUT',
+                  color: AppColors.outline,
+                ),
+                const SizedBox(height: 12),
+                _SettingsGroup(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.description_outlined,
+                      iconBg: AppColors.surfaceContainerLow,
+                      iconColor: AppColors.onSurfaceVariant,
+                      label: 'Terms of Service',
+                      onTap: () {},
+                      isFirst: true,
+                    ),
+                    _SettingsTile(
+                      icon: Icons.privacy_tip_outlined,
+                      iconBg: AppColors.surfaceContainerLow,
+                      iconColor: AppColors.onSurfaceVariant,
+                      label: 'Privacy Policy',
+                      onTap: () {},
+                    ),
+                    _SettingsTile(
+                      icon: Icons.code_rounded,
+                      iconBg: AppColors.surfaceContainerLow,
+                      iconColor: AppColors.onSurfaceVariant,
+                      label: 'App Version',
+                      trailing: Text(
+                        '1.0.0',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                      ),
+                      onTap: null,
+                      isLast: true,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+
+                // Danger Zone Section
+                _SectionHeader(
+                  icon: Icons.warning_rounded,
+                  label: 'DANGER ZONE',
+                  color: AppColors.error,
+                ),
+                const SizedBox(height: 12),
+                _DangerZoneCard(
+                  onAmnesiaTap: () => _showAmnesiaConfirmation(context),
+                ),
                 const SizedBox(height: 40),
               ]),
             ),
@@ -545,8 +547,7 @@ class _AmnesiaConfirmationDialogState
     super.dispose();
   }
 
-  bool get _isConfirmationValid =>
-      _controller.text == 'I am absolutely sure';
+  bool get _isConfirmationValid => _controller.text == 'I am absolutely sure';
 
   Future<void> _handleReset() async {
     if (!_isConfirmationValid) {
@@ -654,21 +655,32 @@ class _AmnesiaConfirmationDialogState
           duration: const Duration(seconds: 3),
         ),
       );
-    } catch (e) {
+
+      // Wait for snackbar to complete, then navigate back to home
+      await Future.delayed(const Duration(seconds: 3));
+      if (context.mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.home,
+          (route) => false,
+        );
+      }
+    } catch (_) {
       if (!mounted) return;
-      
+
       // Close loading dialog
       Navigator.pop(context);
-      
+
       // Show error dialog
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           backgroundColor: AppColors.surfaceContainerLowest,
           title: Row(
             children: [
-              Icon(Icons.error_outline_rounded, color: AppColors.error, size: 24),
+              Icon(Icons.error_outline_rounded,
+                  color: AppColors.error, size: 24),
               const SizedBox(width: 12),
               Text(
                 'Reset Failed',
@@ -878,9 +890,8 @@ class _AmnesiaConfirmationDialogState
               children: [
                 Expanded(
                   child: TextButton(
-                    onPressed: _isProcessing
-                        ? null
-                        : () => Navigator.pop(context),
+                    onPressed:
+                        _isProcessing ? null : () => Navigator.pop(context),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
@@ -904,8 +915,7 @@ class _AmnesiaConfirmationDialogState
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.error,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          AppColors.error.withOpacity(0.5),
+                      disabledBackgroundColor: AppColors.error.withOpacity(0.5),
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
