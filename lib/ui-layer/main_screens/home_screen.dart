@@ -559,6 +559,7 @@ class _StatItem extends StatelessWidget {
 // QUICK ACTIONS ROW
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ignore: unused_element
 class _QuickActionsRow extends StatelessWidget {
   const _QuickActionsRow();
 

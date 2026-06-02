@@ -105,80 +105,116 @@ ${text}`
 exports.generateDeck = onRequest(
     { secrets: [groqKey, openRouterKey], cors: true, timeoutSeconds: 300 },
     async (req, res) => {
-    try {
-        let text;
-
-        if (req.body.fileType === "pdf" && req.body.fileBase64) {
-            // Validate base64 payload is not empty
-            if (!req.body.fileBase64 || req.body.fileBase64.trim().length === 0) {
-                return res.status(400).json({ error: "PDF file data is empty. Please try uploading again." });
-            }
-            let buffer;
-            try {
-                buffer = Buffer.from(req.body.fileBase64, "base64");
-            } catch (decodeErr) {
-                return res.status(400).json({ error: "Could not decode the PDF file. The upload may be corrupted." });
-            }
-            if (buffer.length === 0) {
-                return res.status(400).json({ error: "The uploaded PDF file is empty." });
-            }
-            let parsed;
-            try {
-                parsed = await pdfParse(buffer);
-            } catch (parseErr) {
-                console.error("pdf-parse error:", parseErr.message);
-                return res.status(400).json({
-                    error: "Could not read text from this PDF. It may be a scanned image, password-protected, or corrupted. Try a text-based PDF or paste the content as text instead.",
-                });
-            }
-            text = parsed.text;
-            // Truncate to 12,000 chars to stay within LLM context limits and avoid timeouts
-            if (text.length > 12000) {
-                text = text.slice(0, 12000);
-            }
-        } else {
-            text = req.body.text;
-            // Truncate plain text too
-            if (text && text.length > 12000) {
-                text = text.slice(0, 12000);
-            }
-        }
-
-        if (!text || text.trim().length === 0) {
-            return res.status(400).json({ error: "No text content could be extracted. Please provide a non-empty text or PDF file." });
-        }
-
-        const parsedCount = parseInt(req.body.questionCount, 10);
-        const count = isNaN(parsedCount) ? 20 : Math.min(30, Math.max(1, parsedCount));
-
-        // Normalise questionType — default to identification if absent/invalid
-        const validTypes = ["identification", "multiple_choice", "both"];
-        const questionType = validTypes.includes(req.body.questionType)
-            ? req.body.questionType
-            : "identification";
-
-        let usedProvider;
-
-        let result;
         try {
-            result = await generateWithGroq(text, groqKey.value(), count, questionType);
-            usedProvider = "groq";
-        } catch (groqError) {
-            console.warn("⚠️ Groq failed, switching to OpenRouter:", groqError?.response?.data || groqError.message);
-            result = await generateWithOpenRouter(text, openRouterKey.value(), count, questionType);
-            usedProvider = "openrouter";
+            let text;
+
+            // ── Declare pageLimit FIRST before any use ────────────────────
+            const pageLimit = parseInt(req.body.pageLimit, 10) || 0;
+
+            if (req.body.fileType === "pdf" && req.body.fileBase64) {
+                if (!req.body.fileBase64 || req.body.fileBase64.trim().length === 0) {
+                    return res.status(400).json({ error: "PDF file data is empty. Please try uploading again." });
+                }
+                let buffer;
+                try {
+                    buffer = Buffer.from(req.body.fileBase64, "base64");
+                } catch (decodeErr) {
+                    return res.status(400).json({ error: "Could not decode the PDF file. The upload may be corrupted." });
+                }
+                if (buffer.length === 0) {
+                    return res.status(400).json({ error: "The uploaded PDF file is empty." });
+                }
+
+                let parsed;
+                try {
+                    // ── Detail Filtering: pagerender captures text page-by-page ──
+                    // This is the only reliable way — { max: N } is ignored by
+                    // most pdf-parse versions, and proportional slicing fails
+                    // because pages have unequal text lengths.
+                    let renderedPageCount = 0;
+                    const pageTexts = [];
+
+                    const renderOptions = {
+                        pagerender: async function (pageData) {
+                            renderedPageCount++;
+                            if (pageLimit > 0 && renderedPageCount > pageLimit) {
+                                return ""; // skip pages beyond the limit
+                            }
+                            const content = await pageData.getTextContent();
+                            const pageText = content.items
+                                .map((item) => item.str)
+                                .join(" ");
+                            pageTexts.push(pageText);
+                            return pageText;
+                        },
+                    };
+
+                    parsed = await pdfParse(buffer, renderOptions);
+                    // Use our collected page texts joined together
+                    text = pageTexts.join("\n\n");
+
+                    // Fallback: if pagerender gave nothing, use parsed.text
+                    if (!text || text.trim().length === 0) {
+                        text = parsed.text || "";
+                    }
+                } catch (parseErr) {
+                    console.error("pdf-parse error:", parseErr.message);
+                    return res.status(400).json({
+                        error: "Could not read text from this PDF. It may be a scanned image, password-protected, or corrupted. Try a text-based PDF or paste the content as text instead.",
+                    });
+                }
+
+                // Truncate to 12,000 chars to stay within LLM context limits
+                if (text.length > 12000) {
+                    text = text.slice(0, 12000);
+                }
+            } else {
+                text = req.body.text;
+                // Apply page limit for TXT (≈ 3,000 chars per page)
+                if (pageLimit > 0 && text) {
+                    const charCap = pageLimit * 3000;
+                    if (text.length > charCap) {
+                        text = text.substring(0, charCap);
+                    }
+                }
+                // Truncate plain text too
+                if (text && text.length > 12000) {
+                    text = text.slice(0, 12000);
+                }
+            }
+
+            if (!text || text.trim().length === 0) {
+                return res.status(400).json({ error: "No text content could be extracted. Please provide a non-empty text or PDF file." });
+            }
+
+            const parsedCount = parseInt(req.body.questionCount, 10);
+            const count = isNaN(parsedCount) ? 20 : Math.min(30, Math.max(1, parsedCount));
+
+            const validTypes = ["identification", "multiple_choice", "both"];
+            const questionType = validTypes.includes(req.body.questionType)
+                ? req.body.questionType
+                : "identification";
+
+            let usedProvider;
+            let result;
+            try {
+                result = await generateWithGroq(text, groqKey.value(), count, questionType);
+                usedProvider = "groq";
+            } catch (groqError) {
+                console.warn("⚠️ Groq failed, switching to OpenRouter:", groqError?.response?.data || groqError.message);
+                result = await generateWithOpenRouter(text, openRouterKey.value(), count, questionType);
+                usedProvider = "openrouter";
+            }
+
+            const { title } = result;
+            const cards = Array.isArray(result.cards) ? result.cards.slice(0, count) : [];
+            return res.json({ title, cards, provider: usedProvider });
+
+        } catch (error) {
+            console.error("🔥 FULL ERROR:", error?.response?.data || error.message);
+            return res.status(500).json({
+                error: "AI generation failed",
+                details: error?.response?.data || error.message
+            });
         }
-
-        const { title } = result;
-        // Hard-cap: never return more cards than requested, regardless of what the LLM produced
-        const cards = Array.isArray(result.cards) ? result.cards.slice(0, count) : [];
-        return res.json({ title, cards, provider: usedProvider });
-
-    } catch (error) {
-        console.error("🔥 FULL ERROR:", error?.response?.data || error.message);
-        return res.status(500).json({
-            error: "AI generation failed",
-            details: error?.response?.data || error.message
-        });
-    }
-});
+    });
