@@ -229,6 +229,204 @@ class _SignInBodyState extends State<_SignInBody> {
     );
   }
 
+  // ── Forgot Password ────────────────────────────────────────────────────────
+
+  Future<void> _handleForgotPassword() async {
+    // Pre-fill with whatever is already typed in the email field.
+    final prefilledEmail = _emailCtrl.text.trim();
+    final forgotEmailCtrl = TextEditingController(text: prefilledEmail);
+    bool isSending = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              title: Column(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.lock_reset_rounded,
+                      color: AppColors.primary,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Reset Password',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Enter the email address linked to your account. '
+                    'We\'ll send you a link to reset your password.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      height: 1.6,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  AuthTextField(
+                    controller: forgotEmailCtrl,
+                    hint: 'alex@study.com',
+                    prefixIcon: Icons.mail_outline_rounded,
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                ],
+              ),
+              actionsPadding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              actions: [
+                Row(
+                  children: [
+                    // Cancel
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                              color: AppColors.primary.withOpacity(0.4)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: isSending
+                            ? null
+                            : () => Navigator.of(dialogContext).pop(),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // Send
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: isSending
+                            ? null
+                            : () async {
+                                final email = forgotEmailCtrl.text.trim();
+
+                                // Validate
+                                if (email.isEmpty) {
+                                  _showError(
+                                      'Please enter your email address.');
+                                  return;
+                                }
+                                final emailRegex =
+                                    RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+                                if (!emailRegex.hasMatch(email)) {
+                                  _showError(
+                                      'That doesn\'t look like a valid email address.');
+                                  return;
+                                }
+
+                                setDialogState(() => isSending = true);
+
+                                try {
+                                  await FirebaseAuth.instance
+                                      .sendPasswordResetEmail(email: email);
+
+                                  if (mounted) {
+                                    Navigator.of(dialogContext).pop();
+                                    _showSuccess(
+                                      'Reset link sent! Check your inbox for $email.',
+                                    );
+                                  }
+                                } on FirebaseAuthException catch (e) {
+                                  setDialogState(() => isSending = false);
+
+                                  String msg;
+                                  switch (e.code) {
+                                    case 'user-not-found':
+                                    case 'invalid-email':
+                                      msg =
+                                          'No account found with that email address.';
+                                      break;
+                                    case 'too-many-requests':
+                                      msg =
+                                          'Too many requests. Please wait a moment and try again.';
+                                      break;
+                                    case 'network-request-failed':
+                                      msg =
+                                          'Network error. Check your internet connection.';
+                                      break;
+                                    default:
+                                      msg = e.message ??
+                                          'Something went wrong. Please try again.';
+                                  }
+                                  _showError(msg);
+                                } catch (_) {
+                                  setDialogState(() => isSending = false);
+                                  _showError(
+                                      'An unexpected error occurred. Please try again.');
+                                }
+                              },
+                        child: isSending
+                            ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                'Send Link',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    forgotEmailCtrl.dispose();
+  }
   // ── Sign-in logic ──────────────────────────────────────────────────────────
 
   Future<void> _handleSignIn() async {
@@ -393,7 +591,7 @@ class _SignInBodyState extends State<_SignInBody> {
                 children: [
                   const SizedBox.shrink(),
                   GestureDetector(
-                    onTap: () {},
+                    onTap: _handleForgotPassword,
                     child: Text(
                       'Forgot password?',
                       style: GoogleFonts.plusJakartaSans(
@@ -673,4 +871,3 @@ class _SignInFooter extends StatelessWidget {
     );
   }
 }
-
