@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1077,6 +1078,378 @@ void showCreateDeckErrorSnackBar(BuildContext context, String message) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DETAIL FILTERING HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Scans raw PDF bytes for the /Count dictionary entry to read total pages.
+/// No external package needed — works on any text-based PDF.
+int _estimatePdfPageCount(Uint8List bytes) {
+  try {
+    final raw = String.fromCharCodes(
+      bytes.map((b) => (b >= 32 && b < 127) ? b : 32),
+    );
+    final regex = RegExp(r'/Count\s+(\d+)');
+    final matches = regex.allMatches(raw);
+    if (matches.isNotEmpty) {
+      return matches
+          .map((m) => int.tryParse(m.group(1) ?? '0') ?? 0)
+          .reduce((a, b) => a > b ? a : b);
+    }
+  } catch (_) {}
+  return 0; // unknown — caller should skip the dialog
+}
+
+/// Estimates "pages" for plain-text content (≈ 3 000 chars per page).
+int _estimateTxtPageCount(int charCount) =>
+    (charCount / 3000).ceil().clamp(1, 500);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE RANGE DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<int?> _showPageRangeDialog(
+  BuildContext context, {
+  required int totalPages,
+  required bool isPdf,
+}) {
+  int currentPages = totalPages;
+  final controller = TextEditingController(text: '$totalPages');
+
+  // Build chip options highest → lowest
+  List<int> buildOptions() {
+    final opts = <int>{totalPages};
+    for (final f in [0.75, 0.5, 0.25]) {
+      final v = (totalPages * f).round();
+      if (v >= 1 && v < totalPages) opts.add(v);
+    }
+    for (final v in [20, 15, 10, 5]) {
+      if (v < totalPages) opts.add(v);
+    }
+    opts.add(1);
+    return opts.where((v) => v >= 1 && v <= totalPages).toList()
+      ..sort((a, b) => b.compareTo(a)); // highest to lowest
+  }
+
+  return showDialog<int>(
+    context: context,
+    barrierDismissible: true,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        void setPages(int value) {
+          if (!ctx.mounted) return;
+          currentPages = value.clamp(1, totalPages);
+          controller.text = '$currentPages';
+        }
+
+        final options = buildOptions();
+        final pageLabel = isPdf ? 'pages' : 'est. pages';
+
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          backgroundColor: AppColors.surfaceContainerLowest,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header ─────────────────────────────────────────────────
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            AppColors.primaryFixedDim
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.filter_list_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Detail Filtering',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          Text(
+                            'Total: $totalPages $pageLabel detected',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: AppColors.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // ── Info banner ────────────────────────────────────────────
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer.withOpacity(0.3),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded,
+                          size: 14, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Select how many pages the AI should read. '
+                          'Fewer pages = faster, more focused cards.',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Stepper ────────────────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Decrement
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (currentPages > 1 && ctx.mounted) {
+                              setState(() => setPages(currentPages - 1));
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: currentPages > 1
+                                  ? AppColors.primaryContainer
+                                  : AppColors.outlineVariant.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.remove_rounded,
+                              size: 22,
+                              color: currentPages > 1
+                                  ? AppColors.primary
+                                  : AppColors.outline,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Page number input
+                      SizedBox(
+                        width: 100,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.text,
+                          child: TextField(
+                            controller: controller,
+                            textAlign: TextAlign.center,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly
+                            ],
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -1,
+                            ),
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onChanged: (val) {
+                              if (!ctx.mounted) return;
+                              final parsed = int.tryParse(val);
+                              if (parsed != null) {
+                                setState(() => setPages(parsed));
+                              }
+                            },
+                            onSubmitted: (val) {
+                              if (!ctx.mounted) return;
+                              final parsed = int.tryParse(val) ?? 1;
+                              setState(() => setPages(parsed));
+                            },
+                          ),
+                        ),
+                      ),
+
+                      // Increment
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (currentPages < totalPages && ctx.mounted) {
+                              setState(() => setPages(currentPages + 1));
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: currentPages < totalPages
+                                  ? AppColors.primaryContainer
+                                  : AppColors.outlineVariant.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.add_rounded,
+                              size: 22,
+                              color: currentPages < totalPages
+                                  ? AppColors.primary
+                                  : AppColors.outline,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ── Quick-select chips (highest → lowest) ──────────────────
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: options
+                        .map((v) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: MouseRegion(
+                                cursor: SystemMouseCursors.click,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (ctx.mounted) setState(() => setPages(v));
+                                  },
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 150),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 7),
+                                    decoration: BoxDecoration(
+                                      color: currentPages == v
+                                          ? AppColors.primary
+                                          : AppColors.surfaceContainerLow,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: currentPages == v
+                                            ? AppColors.primary
+                                            : AppColors.outlineVariant,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      v == totalPages ? 'All ($v)' : '$v pages',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: currentPages == v
+                                            ? AppColors.onPrimary
+                                            : AppColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Action buttons ─────────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx, null),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.plusJakartaSans(
+                            color: AppColors.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, currentPages),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Text(
+                          'Read $currentPages ${currentPages == 1 ? 'Page' : 'Pages'}',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AI IMPORT HANDLER  (PDF + TXT, with question type & count dialogs)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1110,17 +1483,45 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     return;
   }
 
-  // ── Step 2: Question type dialog ──────────────────────────────────────────
+  // ── Step 2: Detail Filtering — page range dialog ───────────────────────────
+  int pageLimit = 0; // 0 = send full file; >0 = capped page count
+  if (isPdf) {
+    final detectedPages = _estimatePdfPageCount(fileBytes);
+    if (detectedPages > 1 && context.mounted) {
+      final selectedPages = await _showPageRangeDialog(
+        context,
+        totalPages: detectedPages,
+        isPdf: true,
+      );
+      if (selectedPages == null) return; // user cancelled
+      if (selectedPages < detectedPages) pageLimit = selectedPages;
+    }
+  } else {
+    // TXT: estimate pages from char count, truncate client-side
+    final rawText = utf8.decode(fileBytes, allowMalformed: true);
+    final estimatedPages = _estimateTxtPageCount(rawText.trim().length);
+    if (estimatedPages > 1 && context.mounted) {
+      final selectedPages = await _showPageRangeDialog(
+        context,
+        totalPages: estimatedPages,
+        isPdf: false,
+      );
+      if (selectedPages == null) return; // user cancelled
+      if (selectedPages < estimatedPages) pageLimit = selectedPages;
+    }
+  }
+
+  // ── Step 3: Question type dialog ──────────────────────────────────────────
   if (!context.mounted) return;
   final questionType = await _showQuestionTypeDialog(context);
   if (questionType == null) return; // user cancelled
 
-  // ── Step 3: Category dialog ────────────────────────────────────────────────
+  // ── Step 4: Category dialog ────────────────────────────────────────────────
   if (!context.mounted) return;
   final category = await _showCategoryDialog(context);
   if (category == null) return; // user cancelled
 
-  // ── Step 4: Estimate max & show count dialog ───────────────────────────────
+  // ── Step 5: Estimate max & show count dialog ───────────────────────────────
   // AI generation limits: Min 10, Max 30
   const int minAICards = 10;
   const int maxAICards = 30;
@@ -1139,7 +1540,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   final questionCount = await _showQuestionCountDialog(context, maxQuestions);
   if (questionCount == null) return; // user cancelled
 
-  // ── Step 5: Show loading overlay ──────────────────────────────────────────
+  // ── Step 6: Show loading overlay ──────────────────────────────────────────
   bool loadingDialogOpen = false;
   if (context.mounted) {
     loadingDialogOpen = true;
@@ -1192,7 +1593,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   }
 
   try {
-    // ── Step 6: Build request body ───────────────────────────────────────────
+    // ── Step 7: Build request body ───────────────────────────────────────────
     Map<String, dynamic> requestBody;
     if (isPdf) {
       final base64Data = base64Encode(fileBytes);
@@ -1201,19 +1602,25 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
         'fileType': 'pdf',
         'questionType': questionType.apiValue,
         'questionCount': questionCount,
+        if (pageLimit > 0) 'pageLimit': pageLimit, // Detail Filtering
       };
     } else {
       final text = utf8.decode(fileBytes, allowMalformed: true);
       if (text.trim().isEmpty) throw Exception('File is empty');
+      // Apply page limit: truncate text client-side (≈ 3 000 chars per page)
+      final charLimit = pageLimit > 0 ? pageLimit * 3000 : null;
+      final filteredText = (charLimit != null && text.length > charLimit)
+          ? text.substring(0, charLimit)
+          : text;
       requestBody = {
-        'text': text,
+        'text': filteredText,
         'fileType': 'txt',
         'questionType': questionType.apiValue,
         'questionCount': questionCount,
       };
     }
 
-    // ── Step 7: Call Cloud Run endpoint ─────────────────────────────────────
+    // ── Step 8: Call Cloud Run endpoint ─────────────────────────────────────
     final response = await http
         .post(
           Uri.parse('https://generatedeck-x2xze3qnza-uc.a.run.app'),
@@ -1227,7 +1634,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
           'Server returned ${response.statusCode}: ${response.body}');
     }
 
-    // ── Step 8: Parse response ───────────────────────────────────────────────
+    // ── Step 9: Parse response ───────────────────────────────────────────────
     final dynamic decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
       throw Exception('Unexpected response format from server.');
@@ -1245,7 +1652,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
         ? decoded['title'] as String
         : 'AI Generated Deck';
 
-    // ── Step 9: Write to Firestore ───────────────────────────────────────────
+    // ── Step 10: Write to Firestore ───────────────────────────────────────────
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw Exception('Not signed in.');
 
@@ -1295,7 +1702,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     }
     await batch.commit();
 
-    // ── Step 8b: Soft under-delivery warning ─────────────────────────────────
+    // ── Step 9b: Soft under-delivery warning ─────────────────────────────────
     final threshold = (questionCount * 0.5).ceil();
     if (cards.length < threshold && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1335,7 +1742,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
       );
     }
 
-    // ── Step 9: Success ──────────────────────────────────────────────────────
+    // ── Step 11: Success ──────────────────────────────────────────────────────
     safePopLoader();
 
     if (context.mounted) {

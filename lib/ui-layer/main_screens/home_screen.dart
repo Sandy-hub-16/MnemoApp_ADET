@@ -617,6 +617,100 @@ class _StatItem extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// QUICK ACTIONS ROW
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ignore: unused_element
+class _QuickActionsRow extends StatelessWidget {
+  const _QuickActionsRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _QuickActionButton(
+            icon: Icons.add_rounded,
+            label: 'Create Deck',
+            gradient: const LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryFixedDim],
+            ),
+            onTap: () => Navigator.of(context).pushNamed(AppRoutes.createDeck),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _QuickActionButton(
+            icon: Icons.explore_rounded,
+            label: 'Discover',
+            gradient: LinearGradient(
+              colors: [
+                AppColors.secondary,
+                AppColors.secondaryContainer.withOpacity(0.8)
+              ],
+            ),
+            onTap: () =>
+                Navigator.of(context).pushReplacementNamed(AppRoutes.discover),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickActionButton extends StatelessWidget {
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    required this.gradient,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Gradient gradient;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            gradient: gradient,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: Colors.white, size: 28),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SECTION HEADER
 // ─────────────────────────────────────────────────────────────────────────────
 
