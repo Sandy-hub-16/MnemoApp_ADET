@@ -35,7 +35,8 @@ class QuizArgs {
     required this.deckId,
     required this.deckTitle,
     this.ownerUid, // optional: set when quizzing a public deck owned by someone else
-    this.isMasteryTest = false, // true = mastery test mode, false = learning mode
+    this.isMasteryTest =
+        false, // true = mastery test mode, false = learning mode
   });
   final String deckId;
   final String deckTitle;
@@ -122,7 +123,8 @@ class _CardResult {
 enum _QuizPhase { loading, quiz, completed }
 
 class QuizScreen extends StatefulWidget {
-  const QuizScreen({super.key, this.deckId, this.deckTitle, this.isMasteryTest = false});
+  const QuizScreen(
+      {super.key, this.deckId, this.deckTitle, this.isMasteryTest = false});
 
   /// Prefer passing via constructor; falls back to route arguments (QuizArgs).
   final String? deckId;
@@ -146,11 +148,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   String? _quizOwnerUid;
   String? _clonedFromUsername;
   bool _attemptSaved = false;
-  
+
   // ── Progress tracking (new system) ────────────────────────────────────────────
   int _cardsSeenCount = 0; // How many unique cards have been seen (1-10)
   final Set<String> _seenCardIds = {}; // Track which cards have been seen
-  int get _cardsNeedingReview => _cardQueue.where((c) => _seenCardIds.contains(c.id)).length;
+  int get _cardsNeedingReview =>
+      _cardQueue.where((c) => _seenCardIds.contains(c.id)).length;
+
+  // Track whether we've already logged this session to Recent Activity
+  bool _sessionTracked = false;
 
   // ── Per-card transient state ──────────────────────────────────────────────────
   bool _answered = false;
@@ -195,7 +201,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     final args = ModalRoute.of(context)?.settings.arguments;
     return (args is QuizArgs) ? args.ownerUid : null;
   }
-  
+
   bool get _isMasteryTest {
     if (widget.isMasteryTest) return true;
     final args = ModalRoute.of(context)?.settings.arguments;
@@ -234,7 +240,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         CurvedAnimation(parent: _completionCtrl, curve: Curves.easeOutBack));
 
     // Load after first frame so ModalRoute.of(context) is available
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCards());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCards();
+    });
   }
 
   @override
@@ -309,10 +317,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   void _setupCard() {
     if (_currentQueueIndex >= _cardQueue.length) return;
-    
+
     final card = _cardQueue[_currentQueueIndex];
     final attempts = _cardAttempts[card.id] ?? 0;
-    
+
     _answered = false;
     _isCorrect = false;
     _canSkip = attempts >= 2; // Show skip after 2 failed attempts
@@ -338,14 +346,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   /// Immediate evaluation — no "Next" required to confirm.
   void _onChoiceTapped(int shuffledPos) {
     if (_answered) return;
-    
+
     final card = _cardQueue[_currentQueueIndex];
     final originalIdx = _shuffleMap[shuffledPos];
     final correct = originalIdx == card.correctIndex;
-    
+
     // Track attempts
     _cardAttempts[card.id] = (_cardAttempts[card.id] ?? 0) + 1;
-    
+
     // Get or create result
     final result = _cardResults.putIfAbsent(
       card.id,
@@ -356,20 +364,28 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         firstAttemptCorrect: correct,
       ),
     );
-    
+
     result.repetitionsNeeded = _cardAttempts[card.id]!;
-    
+
     // Track wrong attempts
     if (!correct) {
       result.wrongAttempts++;
     }
-    
+
     setState(() {
       _answered = true;
       _isCorrect = correct;
       _selectedShuffledIndex = shuffledPos;
     });
-    
+
+    // Track session on first submitted answer (fire-and-forget).
+    // Fires the instant a choice is tapped — before Next is ever pressed —
+    // so the deck appears in Recent Activity even if the user exits early.
+    if (!_sessionTracked) {
+      _sessionTracked = true;
+      _trackDeckStarted();
+    }
+
     if (correct) {
       result.correct = true;
       result.mastered = true;
@@ -398,13 +414,13 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       );
       return;
     }
-    
+
     final card = _cardQueue[_currentQueueIndex];
     final correct = typed.toLowerCase() == card.answer.trim().toLowerCase();
-    
+
     // Track attempts
     _cardAttempts[card.id] = (_cardAttempts[card.id] ?? 0) + 1;
-    
+
     // Get or create result
     final result = _cardResults.putIfAbsent(
       card.id,
@@ -415,20 +431,28 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         firstAttemptCorrect: correct,
       ),
     );
-    
+
     result.repetitionsNeeded = _cardAttempts[card.id]!;
-    
+
     // Track wrong attempts
     if (!correct) {
       result.wrongAttempts++;
     }
-    
+
     setState(() {
       _answered = true;
       _isCorrect = correct;
       if (!correct) _correctAnswerReveal = card.answer;
     });
-    
+
+    // Track session on first submitted answer (fire-and-forget).
+    // Fires the instant "Check Answer" is tapped — before Next is ever pressed —
+    // so the deck appears in Recent Activity even if the user exits early.
+    if (!_sessionTracked) {
+      _sessionTracked = true;
+      _trackDeckStarted();
+    }
+
     if (correct) {
       result.correct = true;
       result.mastered = true;
@@ -445,14 +469,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   Future<void> _advance() async {
     final card = _cardQueue[_currentQueueIndex];
     final result = _cardResults[card.id]!;
-    
+
     // Track if this is the first time seeing this card
     final isFirstTimeSeeingCard = !_seenCardIds.contains(card.id);
     if (isFirstTimeSeeingCard) {
       _seenCardIds.add(card.id);
       _cardsSeenCount++;
     }
-    
+
     // LEARNING MODE: Loop wrong answers until correct
     // MASTERY TEST: Fail-fast - end immediately on wrong answer
     if (_isMasteryTest) {
@@ -462,15 +486,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         await _finishQuiz();
         return;
       }
-      
+
       // Correct - move to next card
       _cardQueue.removeAt(_currentQueueIndex);
-      
+
       if (_cardQueue.isEmpty) {
         await _finishQuiz();
         return;
       }
-      
+
       if (_currentQueueIndex >= _cardQueue.length) {
         _currentQueueIndex = 0;
       }
@@ -479,12 +503,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       if (result.correct) {
         // Correct - remove from queue
         _cardQueue.removeAt(_currentQueueIndex);
-        
+
         if (_cardQueue.isEmpty) {
           await _finishQuiz();
           return;
         }
-        
+
         if (_currentQueueIndex >= _cardQueue.length) {
           _currentQueueIndex = 0;
         }
@@ -492,19 +516,20 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         // Wrong - move to end of queue for review
         _cardQueue.removeAt(_currentQueueIndex);
         _cardQueue.add(card);
-        
+
         if (_currentQueueIndex >= _cardQueue.length) {
           _currentQueueIndex = 0;
         }
-        
+
         // 🚨 NEW LOGIC: Check if user has seen all cards and scored ≤20%
         // If so, end the quiz early with encouragement to review
         if (_cardsSeenCount >= _totalCardsInDeck) {
-          final correctCount = _cardResults.values.where((r) => r.correct).length;
-          final scorePercent = _totalCardsInDeck > 0 
-              ? (correctCount / _totalCardsInDeck * 100) 
+          final correctCount =
+              _cardResults.values.where((r) => r.correct).length;
+          final scorePercent = _totalCardsInDeck > 0
+              ? (correctCount / _totalCardsInDeck * 100)
               : 0;
-          
+
           if (scorePercent <= 20) {
             // Score too low - end quiz and encourage review
             await _finishQuiz();
@@ -513,7 +538,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         }
       }
     }
-    
+
     // Animate to next card
     await _cardSlideCtrl.reverse();
     setState(() {
@@ -521,34 +546,34 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     });
     _cardSlideCtrl.forward();
   }
-  
+
   void _onSkipCard() {
     final card = _cardQueue[_currentQueueIndex];
-    
+
     // Track if this is the first time seeing this card
     final isFirstTimeSeeingCard = !_seenCardIds.contains(card.id);
     if (isFirstTimeSeeingCard) {
       _seenCardIds.add(card.id);
       _cardsSeenCount++;
     }
-    
+
     // Mark as skipped
     final result = _cardResults[card.id]!;
     result.skipped = true;
     result.correct = false; // Counts as wrong
-    
+
     // Remove from queue
     _cardQueue.removeAt(_currentQueueIndex);
-    
+
     if (_cardQueue.isEmpty) {
       _finishQuiz();
       return;
     }
-    
+
     if (_currentQueueIndex >= _cardQueue.length) {
       _currentQueueIndex = 0;
     }
-    
+
     _advance();
   }
 
@@ -557,23 +582,26 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     _attemptSaved = true;
 
     await _saveQuizAttempt();
-    
+
     // Update mastery score if this was a mastery test
     if (_isMasteryTest) {
       await _updateMasteryScore();
     }
-    
+
     // Calculate mastery test eligibility
     final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
-    final hasCardsWithThreePlusWrongAttempts = _cardResults.values.any((r) => r.wrongAttempts >= 3);
-    final isMasteryTestEligible = !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
-    
+    final hasCardsWithThreePlusWrongAttempts =
+        _cardResults.values.any((r) => r.wrongAttempts >= 3);
+    final isMasteryTestEligible =
+        !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
+
     // Check if this was a low-score early exit (≤20%)
     final correctCount = _cardResults.values.where((r) => r.correct).length;
-    final scorePercent = _totalCardsInDeck > 0 
-        ? (correctCount / _totalCardsInDeck * 100) 
-        : 0;
-    final isLowScoreExit = !_isMasteryTest && _cardsSeenCount >= _totalCardsInDeck && scorePercent <= 20;
+    final scorePercent =
+        _totalCardsInDeck > 0 ? (correctCount / _totalCardsInDeck * 100) : 0;
+    final isLowScoreExit = !_isMasteryTest &&
+        _cardsSeenCount >= _totalCardsInDeck &&
+        scorePercent <= 20;
 
     // Navigate to results screen with detailed breakdown
     if (!mounted) return;
@@ -601,18 +629,19 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       ),
     );
   }
-  
+
   // Helper method to check mastery test eligibility
   bool get _isMasteryTestEligible {
     final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
-    final hasCardsWithThreePlusWrongAttempts = _cardResults.values.any((r) => r.wrongAttempts >= 3);
+    final hasCardsWithThreePlusWrongAttempts =
+        _cardResults.values.any((r) => r.wrongAttempts >= 3);
     return !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
   }
 
   // ── Exit confirmation dialog ────────────────────────────────────────────────
   Future<void> _showExitConfirmation() async {
     final allCardsRevealed = _cardsSeenCount >= _totalCardsInDeck;
-    
+
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -624,7 +653,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: allCardsRevealed 
+                color: allCardsRevealed
                     ? AppColors.primaryContainer.withOpacity(0.5)
                     : AppColors.errorContainer.withOpacity(0.5),
                 shape: BoxShape.circle,
@@ -638,7 +667,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                allCardsRevealed ? 'End Quiz & Save Progress?' : 'Exit Without Saving?',
+                allCardsRevealed
+                    ? 'End Quiz & Save Progress?'
+                    : 'Exit Without Saving?',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w800,
                   color: AppColors.onSurface,
@@ -712,7 +743,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: allCardsRevealed ? AppColors.primary : AppColors.error,
+              backgroundColor:
+                  allCardsRevealed ? AppColors.primary : AppColors.error,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -729,7 +761,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         ],
       ),
     );
-    
+
     if (result == true) {
       if (allCardsRevealed) {
         // Save progress and exit
@@ -744,7 +776,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   Future<void> _saveQuizAttempt() async {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
-    
+
     debugPrint('🔍 [DEBUG] _saveQuizAttempt called');
     debugPrint('🔍 [DEBUG] currentUid: $currentUid');
     debugPrint('🔍 [DEBUG] _deckId: $_deckId');
@@ -752,7 +784,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     debugPrint('🔍 [DEBUG] _quizOwnerUid: $_quizOwnerUid');
     debugPrint('🔍 [DEBUG] _deckCategory: $_deckCategory');
     debugPrint('🔍 [DEBUG] _cardResults.length: ${_cardResults.length}');
-    
+
     if (currentUid == null || _deckId.isEmpty || _cardResults.isEmpty) {
       debugPrint('❌ [DEBUG] Early return - validation failed');
       debugPrint('   currentUid == null: ${currentUid == null}');
@@ -761,7 +793,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       return;
     }
 
-    final correct = _cardResults.values.where((result) => result.correct).length;
+    final correct =
+        _cardResults.values.where((result) => result.correct).length;
     final allCardsRevealed = _cardsSeenCount >= _totalCardsInDeck;
     debugPrint('🔍 [DEBUG] correct: $correct / ${_totalCardsInDeck}');
     debugPrint('🔍 [DEBUG] allCardsRevealed: $allCardsRevealed');
@@ -789,42 +822,71 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               .toList(),
         ),
       );
-      debugPrint('✅ [DEBUG] ProgressService.saveQuizAttempt completed successfully!');
+      debugPrint(
+          '✅ [DEBUG] ProgressService.saveQuizAttempt completed successfully!');
     } catch (e, st) {
       debugPrint('❌ [QuizScreen] failed to save progress: $e\n$st');
     }
   }
-  
+
+  // ── Track deck session start — fires immediately when any deck is opened ────
+  // Writes / updates users/{uid}/recentSessions/{deckId}.
+  // Uses merge: true so replaying the same deck just bumps lastPlayedAt
+  // rather than creating a second document.
+  Future<void> _trackDeckStarted() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || _deckId.isEmpty) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('recentSessions')
+          .doc(_deckId)
+          .set({
+        'deckId': _deckId,
+        'deckTitle': _deckTitle,
+        'category': _deckCategory,
+        'lastPlayedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      debugPrint('✅ Tracked deck session: $_deckTitle ($_deckId)');
+    } catch (e) {
+      debugPrint('❌ Failed to track deck session: $e');
+    }
+  }
+
   Future<void> _updateMasteryScore() async {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
     if (currentUid == null || _deckId.isEmpty) return;
-    
+
     try {
       final correct = _cardResults.values.where((r) => r.correct).length;
-      final masteryScore = _totalCardsInDeck > 0 
-          ? (correct / _totalCardsInDeck * 100).round() 
+      final masteryScore = _totalCardsInDeck > 0
+          ? (correct / _totalCardsInDeck * 100).round()
           : 0;
-      
+
       // Determine which user's deck to update (own deck vs public deck)
       final ownerUid = _quizOwnerUid ?? currentUid;
-      
+
       final deckRef = FirebaseFirestore.instance
           .collection('users')
           .doc(ownerUid)
           .collection('decks')
           .doc(_deckId);
-      
+
       // Get current highest score
       final deckSnap = await deckRef.get();
-      final currentHighest = deckSnap.data()?['highestMasteryScore'] as int? ?? 0;
-      
+      final currentHighest =
+          deckSnap.data()?['highestMasteryScore'] as int? ?? 0;
+
       await deckRef.update({
         'masteryScore': masteryScore,
         'lastMasteryTest': FieldValue.serverTimestamp(),
-        'highestMasteryScore': masteryScore > currentHighest ? masteryScore : currentHighest,
+        'highestMasteryScore':
+            masteryScore > currentHighest ? masteryScore : currentHighest,
       });
-      
-      debugPrint('✅ Updated mastery score: $masteryScore% (highest: ${masteryScore > currentHighest ? masteryScore : currentHighest}%)');
+
+      debugPrint(
+          '✅ Updated mastery score: $masteryScore% (highest: ${masteryScore > currentHighest ? masteryScore : currentHighest}%)');
     } catch (e) {
       debugPrint('❌ Failed to update mastery score: $e');
     }
@@ -954,10 +1016,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                                     isLast: _cardQueue.length == 1,
                                     isCorrect: _isCorrect,
                                     isMasteryTest: _isMasteryTest,
-                                    showEligibilitySparkle: !_isMasteryTest && _cardQueue.length == 1 && _isCorrect && _isMasteryTestEligible,
+                                    showEligibilitySparkle: !_isMasteryTest &&
+                                        _cardQueue.length == 1 &&
+                                        _isCorrect &&
+                                        _isMasteryTestEligible,
                                     onTap: _advance,
                                   ),
-                                  if (_canSkip && !_isCorrect && !_isMasteryTest) ...[
+                                  if (_canSkip &&
+                                      !_isCorrect &&
+                                      !_isMasteryTest) ...[
                                     const SizedBox(height: 12),
                                     _SkipButton(onTap: _onSkipCard),
                                   ],
@@ -1423,9 +1490,9 @@ class _QuizTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final quizState = context.findAncestorStateOfType<_QuizScreenState>();
-    final allCardsRevealed = quizState != null && 
+    final allCardsRevealed = quizState != null &&
         quizState._cardsSeenCount >= quizState._totalCardsInDeck;
-    
+
     return Container(
       color: AppColors.background.withOpacity(0.88),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1450,7 +1517,9 @@ class _QuizTopBar extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                allCardsRevealed ? Icons.check_circle_rounded : Icons.close_rounded,
+                allCardsRevealed
+                    ? Icons.check_circle_rounded
+                    : Icons.close_rounded,
                 color: allCardsRevealed ? AppColors.primary : AppColors.error,
                 size: 20,
               ),
@@ -1476,7 +1545,7 @@ class _QuizTopBar extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: isMasteryTest 
+              color: isMasteryTest
                   ? AppColors.tertiaryContainer.withOpacity(0.6)
                   : AppColors.primaryContainer.withOpacity(0.5),
               borderRadius: BorderRadius.circular(999),
@@ -1484,7 +1553,9 @@ class _QuizTopBar extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  isMasteryTest ? Icons.emoji_events_rounded : Icons.center_focus_strong_rounded,
+                  isMasteryTest
+                      ? Icons.emoji_events_rounded
+                      : Icons.center_focus_strong_rounded,
                   color: isMasteryTest ? AppColors.tertiary : AppColors.primary,
                   size: 14,
                 ),
@@ -1494,7 +1565,8 @@ class _QuizTopBar extends StatelessWidget {
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: isMasteryTest ? AppColors.tertiary : AppColors.primary,
+                    color:
+                        isMasteryTest ? AppColors.tertiary : AppColors.primary,
                     letterSpacing: 1,
                   ),
                 ),
@@ -1517,15 +1589,16 @@ class _ProgressHeader extends StatelessWidget {
     required this.totalCards,
     required this.cardsNeedingReview,
   });
-  
+
   final int cardsSeenCount;
   final int totalCards;
   final int cardsNeedingReview;
 
   @override
   Widget build(BuildContext context) {
-    final progressPercent = totalCards > 0 ? (cardsSeenCount / totalCards * 100).round() : 0;
-    
+    final progressPercent =
+        totalCards > 0 ? (cardsSeenCount / totalCards * 100).round() : 0;
+
     return Column(
       children: [
         Row(
@@ -1542,7 +1615,8 @@ class _ProgressHeader extends StatelessWidget {
             ),
             if (cardsNeedingReview > 0)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.secondaryContainer.withOpacity(0.6),
                   borderRadius: BorderRadius.circular(999),
@@ -1602,7 +1676,7 @@ class _DualProgressBar extends StatelessWidget {
     required this.totalCards,
     required this.cardsNeedingReview,
   });
-  
+
   final int cardsSeenCount;
   final int totalCards;
   final int cardsNeedingReview;
@@ -1612,11 +1686,11 @@ class _DualProgressBar extends StatelessWidget {
     if (totalCards == 0) {
       return const SizedBox.shrink();
     }
-    
+
     final cardsMastered = cardsSeenCount - cardsNeedingReview;
     final masteredProgress = cardsMastered / totalCards;
     final reviewProgress = cardsNeedingReview / totalCards;
-    
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
       child: SizedBox(
@@ -1628,7 +1702,7 @@ class _DualProgressBar extends StatelessWidget {
               width: double.infinity,
               color: AppColors.outlineVariant.withOpacity(0.22),
             ),
-            
+
             // Animated progress
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: masteredProgress + reviewProgress),
@@ -1649,7 +1723,7 @@ class _DualProgressBar extends StatelessWidget {
                         ),
                       ),
                     ),
-                  
+
                   // Cards needing review (orange/secondary)
                   if (reviewProgress > 0)
                     Expanded(
@@ -1663,11 +1737,12 @@ class _DualProgressBar extends StatelessWidget {
                         ),
                       ),
                     ),
-                  
+
                   // Remaining space
                   if (masteredProgress + reviewProgress < 1)
                     Expanded(
-                      flex: ((1 - masteredProgress - reviewProgress) * 1000).round(),
+                      flex: ((1 - masteredProgress - reviewProgress) * 1000)
+                          .round(),
                       child: const SizedBox.shrink(),
                     ),
                 ],
@@ -2130,7 +2205,7 @@ class _NextDoneButton extends StatelessWidget {
     String buttonText;
     IconData buttonIcon;
     List<Color> gradientColors;
-    
+
     if (isMasteryTest) {
       // MASTERY TEST MODE
       if (isCorrect) {
@@ -2171,7 +2246,7 @@ class _NextDoneButton extends StatelessWidget {
         gradientColors = [AppColors.secondary, AppColors.secondaryFixedDim];
       }
     }
-    
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
