@@ -77,25 +77,22 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
 class _ProfileTopBar extends StatelessWidget {
   const _ProfileTopBar();
 
+
+
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryFixedDim],
-            ).createShader(bounds),
-            child: Text(
-              'Mnemo',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                fontStyle: FontStyle.italic,
-                color: Colors.white,
-                letterSpacing: -0.5,
-              ),
+          Text(
+            'Mnemo',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              fontStyle: FontStyle.italic,
+              color: AppColors.primary,
+              letterSpacing: -0.5,
             ),
           ),
           const Spacer(),
@@ -380,17 +377,9 @@ class _ProfileBodyState extends State<_ProfileBody> {
                   iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
                   iconColor: AppColors.onTertiaryContainer,
                   label: 'Notifications',
-                  onTap: () => Navigator.of(context)
-                              .pushNamed('/notifications'),
-                ),
-                _SettingsDivider(),
-                _SettingsTile(
-                  icon: Icons.palette_outlined,
-                  iconBg: AppColors.primaryContainer.withOpacity(0.3),
-                  iconColor: AppColors.primary,
-                  label: 'Appearance',
                   isLast: true,
-                  onTap: () {},
+                  onTap: () =>
+                      Navigator.of(context).pushNamed('/notifications'),
                 ),
               ],
             ),
@@ -888,8 +877,8 @@ class _LogOutButton extends StatelessWidget {
                 color: AppColors.error.withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.logout_rounded,
-                  color: AppColors.error, size: 22),
+              child:
+                  Icon(Icons.logout_rounded, color: AppColors.error, size: 22),
             ),
             const SizedBox(width: 12),
             Text(

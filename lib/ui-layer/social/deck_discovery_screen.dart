@@ -399,19 +399,14 @@ class _DiscoveryTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
-          ShaderMask(
-            shaderCallback: (bounds) => const LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryFixedDim],
-            ).createShader(bounds),
-            child: Text(
-              'Mnemo',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                fontStyle: FontStyle.italic,
-                color: Colors.white,
-                letterSpacing: -0.5,
-              ),
+          Text(
+            'Mnemo',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              fontStyle: FontStyle.italic,
+              color: AppColors.primary,
+              letterSpacing: -0.5,
             ),
           ),
           const Spacer(),

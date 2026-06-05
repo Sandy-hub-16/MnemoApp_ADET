@@ -41,11 +41,15 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
   String _username = '';
   String? _photoUrl;
   ProgressDashboard _dashboard = ProgressDashboard.empty();
+  // Live stream — updates automatically whenever _trackDeckStarted() writes to
+  // Firestore, even if the quiz screen is open on top of the home screen.
+  Stream<List<RecentSession>>? _sessionsStream;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _initSessionsStream();
   }
 
   Future<void> _loadData() async {
@@ -71,6 +75,52 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
         _loading = false;
       });
     }
+  }
+
+  // ── Week helpers ────────────────────────────────────────────────────────────
+
+  /// Returns 00:00:00 of the Monday that started the current ISO week.
+  /// Properly handles month/year boundaries by using subtract().
+  DateTime _getWeekStart() {
+    final now = DateTime.now();
+    final daysToSubtract = now.weekday - 1; // 0 for Monday, 1 for Tue, etc.
+    final weekStartWithTime = now.subtract(Duration(days: daysToSubtract));
+    // Reset to 00:00:00 to get the exact week start
+    return DateTime(weekStartWithTime.year, weekStartWithTime.month, weekStartWithTime.day);
+  }
+
+  /// Opens a real-time Firestore stream on users/{uid}/recentSessions.
+  ///
+  /// Filters to entries whose lastPlayedAt falls within the current week
+  /// (Monday 00:00 → Sunday 23:59).  Because it uses .snapshots() the
+  /// StreamBuilder below reacts immediately whenever _trackDeckStarted()
+  /// in QuizScreen writes a new document — even if the quiz screen is still
+  /// open on top of this one.  No route observer or manual refresh needed.
+  void _initSessionsStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    final weekStart = _getWeekStart();
+
+    _sessionsStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('recentSessions')
+        .where('lastPlayedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
+        .orderBy('lastPlayedAt', descending: true)
+        .limit(5)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) {
+              final d = doc.data();
+              final ts = d['lastPlayedAt'] as Timestamp?;
+              return RecentSession(
+                deckId: d['deckId'] as String? ?? doc.id,
+                deckTitle: d['deckTitle'] as String? ?? 'Untitled Deck',
+                category: d['category'] as String? ?? 'Other',
+                lastPlayedAt: ts?.toDate(),
+              );
+            }).toList());
   }
 
   @override
@@ -114,6 +164,7 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
                           fullName: _fullName,
                           username: _username,
                           dashboard: _dashboard,
+                          sessionsStream: _sessionsStream,
                         ),
                 ),
               ],
@@ -318,10 +369,12 @@ class _HomeBody extends StatelessWidget {
     required this.fullName,
     required this.username,
     required this.dashboard,
+    required this.sessionsStream,
   });
   final String fullName;
   final String username;
   final ProgressDashboard dashboard;
+  final Stream<List<RecentSession>>? sessionsStream;
 
   String get _firstName {
     if (fullName.trim().isEmpty) return 'there';
@@ -359,7 +412,15 @@ class _HomeBody extends StatelessWidget {
               // ── Recent Activity ────────────────────────────────────────────
               _SectionHeader(title: 'Recent Activity'),
               const SizedBox(height: 14),
-              _RecentActivityList(dashboard: dashboard),
+              // StreamBuilder reacts the instant QuizScreen writes a new
+              // recentSessions document — no manual refresh required.
+              StreamBuilder<List<RecentSession>>(
+                stream: sessionsStream,
+                builder: (context, snapshot) {
+                  final sessions = snapshot.data ?? [];
+                  return _RecentActivityList(recentSessions: sessions);
+                },
+              ),
 
               // ── Bottom clearance for nav bar ────────────────────────────────
               const SizedBox(height: 20),
@@ -693,22 +754,22 @@ class _SectionHeader extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RecentActivityList extends StatelessWidget {
-  const _RecentActivityList({required this.dashboard});
-  final ProgressDashboard dashboard;
+  const _RecentActivityList({required this.recentSessions});
+  final List<RecentSession> recentSessions;
 
   @override
   Widget build(BuildContext context) {
-    if (dashboard.deckSummaries.isEmpty) {
+    if (recentSessions.isEmpty) {
       return _EmptyActivityCard();
     }
 
-    final recentDecks = dashboard.deckSummaries.take(3).toList();
+    final shown = recentSessions.take(3).toList();
 
     return Column(
-      children: recentDecks
-          .map((deck) => Padding(
+      children: shown
+          .map((session) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: _ActivityCard(deck: deck),
+                child: _ActivityCard(session: session),
               ))
           .toList(),
     );
@@ -716,8 +777,8 @@ class _RecentActivityList extends StatelessWidget {
 }
 
 class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({required this.deck});
-  final DeckProgressSummary deck;
+  const _ActivityCard({required this.session});
+  final RecentSession session;
 
   String _timeAgo(DateTime? date) {
     if (date == null) return 'Recently';
@@ -741,7 +802,7 @@ class _ActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _categoryColor(deck.category);
+    final color = _categoryColor(session.category);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -773,7 +834,7 @@ class _ActivityCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  deck.deckTitle,
+                  session.deckTitle,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -784,7 +845,7 @@ class _ActivityCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${deck.category} • ${_timeAgo(deck.lastStudiedAt)}',
+                  '${session.category} • ${_timeAgo(session.lastPlayedAt)}',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: AppColors.onSurfaceVariant,
@@ -799,8 +860,8 @@ class _ActivityCard extends StatelessWidget {
               onTap: () => Navigator.of(context).pushNamed(
                 AppRoutes.quiz,
                 arguments: QuizArgs(
-                  deckId: deck.deckId,
-                  deckTitle: deck.deckTitle,
+                  deckId: session.deckId,
+                  deckTitle: session.deckTitle,
                 ),
               ),
               child: Container(
@@ -888,4 +949,23 @@ class _Blob extends StatelessWidget {
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RECENT SESSION MODEL
+// Lightweight data class populated from users/{uid}/recentSessions/{deckId}.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class RecentSession {
+  const RecentSession({
+    required this.deckId,
+    required this.deckTitle,
+    required this.category,
+    this.lastPlayedAt,
+  });
+
+  final String deckId;
+  final String deckTitle;
+  final String category;
+  final DateTime? lastPlayedAt;
 }
