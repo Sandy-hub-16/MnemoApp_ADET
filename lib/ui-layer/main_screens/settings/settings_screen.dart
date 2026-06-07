@@ -210,7 +210,16 @@ class SettingsScreen extends StatelessWidget {
                       iconBg: AppColors.surfaceContainerLow,
                       iconColor: AppColors.onSurfaceVariant,
                       label: 'Terms of Service',
-                      onTap: () {},
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const _LegalScreen(
+                            title: 'Terms of Service',
+                            icon: Icons.description_outlined,
+                            sections: _LegalContent.termsOfService,
+                          ),
+                        ),
+                      ),
                       isFirst: true,
                     ),
                     _SettingsTile(
@@ -218,7 +227,16 @@ class SettingsScreen extends StatelessWidget {
                       iconBg: AppColors.surfaceContainerLow,
                       iconColor: AppColors.onSurfaceVariant,
                       label: 'Privacy Policy',
-                      onTap: () {},
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const _LegalScreen(
+                            title: 'Privacy Policy',
+                            icon: Icons.privacy_tip_outlined,
+                            sections: _LegalContent.privacyPolicy,
+                          ),
+                        ),
+                      ),
                     ),
                     _SettingsTile(
                       icon: Icons.code_rounded,
@@ -555,72 +573,30 @@ class _AmnesiaConfirmationDialogState
       return;
     }
 
+    // Flip to loading state IN PLACE — never pop this dialog until we are
+    // completely done. Popping the dialog early detaches its BuildContext,
+    // so any subsequent Navigator / ScaffoldMessenger calls on that context
+    // are no-ops or exceptions, which is exactly what caused the stuck screen.
     setState(() {
       _isProcessing = true;
       _errorMessage = null;
     });
-
-    // Close dialog first
-    Navigator.pop(context);
-
-    // Show full-screen loading overlay
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: Container(
-          color: Colors.black.withOpacity(0.7),
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLowest,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(
-                    color: AppColors.primary,
-                    strokeWidth: 3,
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Resetting all progress...',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Please wait, do not close the app',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
 
     try {
       await ProgressService.resetAllProgress();
 
       if (!mounted) return;
 
-      // Close loading dialog
-      Navigator.pop(context);
+      // Capture navigator + messenger BEFORE popping this dialog.
+      // Once pop() is called the dialog's context is detached, so any
+      // Navigator/ScaffoldMessenger calls after that point must use
+      // these pre-captured references — not `context`.
+      final nav = Navigator.of(context, rootNavigator: true);
+      final messenger = ScaffoldMessenger.of(context);
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
+      nav.pop(); // dismiss the amnesia dialog
+
+      messenger.showSnackBar(
         SnackBar(
           content: Row(
             children: [
@@ -656,62 +632,23 @@ class _AmnesiaConfirmationDialogState
         ),
       );
 
-      // Wait for snackbar to complete, then navigate back to home
+      // Wait for snackbar, then rebuild the whole widget tree from scratch
+      // using the pre-captured navigator (dialog context is already dead).
       await Future.delayed(const Duration(seconds: 3));
-      if (context.mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          AppRoutes.home,
-          (route) => false,
-        );
-      }
-    } catch (_) {
+      nav.pushNamedAndRemoveUntil(
+        AppRoutes.progress,
+        (route) => false,
+      );
+    } catch (e) {
       if (!mounted) return;
 
-      // Close loading dialog
-      Navigator.pop(context);
+      print('[AmnesiaConfirmation] Reset failed with error: $e');
 
-      // Show error dialog
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          backgroundColor: AppColors.surfaceContainerLowest,
-          title: Row(
-            children: [
-              Icon(Icons.error_outline_rounded,
-                  color: AppColors.error, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                'Reset Failed',
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            'Failed to reset progress. Please check your connection and try again.',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'OK',
-                style: GoogleFonts.plusJakartaSans(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
+      // Re-enable the form so the user can try again.
+      setState(() {
+        _isProcessing = false;
+        _errorMessage = 'Failed to reset progress. Please check your connection and try again.';
+      });
     }
   }
 
@@ -722,158 +659,78 @@ class _AmnesiaConfirmationDialogState
       backgroundColor: AppColors.surfaceContainerLowest,
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.errorContainer.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(Icons.warning_rounded,
-                      color: AppColors.error, size: 26),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Amnesia',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.onSurface,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      Text(
-                        'This action cannot be undone',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: AppColors.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
+        child: _isProcessing ? _buildLoadingBody() : _buildConfirmBody(),
+      ),
+    );
+  }
 
-            // Warning message
+  // ── Loading state — shown in-place while resetAllProgress() runs ──────────
+  Widget _buildLoadingBody() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        const CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 3,
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Resetting all progress...',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Please wait, do not close the app',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            color: AppColors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // ── Confirmation form — shown before the user commits ─────────────────────
+  Widget _buildConfirmBody() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header
+        Row(
+          children: [
             Container(
-              padding: const EdgeInsets.all(16),
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                color: AppColors.errorContainer.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.error.withOpacity(0.3),
-                  width: 1,
-                ),
+                color: AppColors.errorContainer.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(14),
               ),
+              child:
+                  Icon(Icons.warning_rounded, color: AppColors.error, size: 26),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'This will permanently delete:',
+                    'Amnesia',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
                       color: AppColors.onSurface,
+                      letterSpacing: -0.3,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  ..._buildWarningItem('All quiz attempt history'),
-                  ..._buildWarningItem('All mastery percentages'),
-                  ..._buildWarningItem('Study streak data'),
-                  ..._buildWarningItem('Weak spots and forgotten cards'),
-                  const SizedBox(height: 8),
                   Text(
-                    'Your decks and cards will remain intact.',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      color: AppColors.onSurfaceVariant,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Confirmation input
-            Text(
-              'Type "I am absolutely sure" to confirm:',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.onSurface,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _controller,
-              enabled: !_isProcessing,
-              onChanged: (_) => setState(() => _errorMessage = null),
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                color: AppColors.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: InputDecoration(
-                hintText: 'I am absolutely sure',
-                hintStyle: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  color: AppColors.outline.withOpacity(0.5),
-                ),
-                filled: true,
-                fillColor: AppColors.surfaceContainerLow,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: _errorMessage != null
-                        ? AppColors.error
-                        : AppColors.outlineVariant,
-                  ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: _errorMessage != null
-                        ? AppColors.error
-                        : AppColors.outlineVariant,
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: _errorMessage != null
-                        ? AppColors.error
-                        : AppColors.primary,
-                    width: 2,
-                  ),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              ),
-            ),
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.error_outline_rounded,
-                      color: AppColors.error, size: 14),
-                  const SizedBox(width: 6),
-                  Text(
-                    _errorMessage!,
+                    'This action cannot be undone',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12,
                       color: AppColors.error,
@@ -882,68 +739,172 @@ class _AmnesiaConfirmationDialogState
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 20),
-
-            // Action buttons
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed:
-                        _isProcessing ? null : () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: Text(
-                      'Cancel',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppColors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: _isProcessing ? null : _handleReset,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.error,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: AppColors.error.withOpacity(0.5),
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: _isProcessing
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            'Reset All Progress',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
-      ),
+        const SizedBox(height: 20),
+
+        // Warning message
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.errorContainer.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppColors.error.withOpacity(0.3),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This will permanently delete:',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ..._buildWarningItem('All quiz attempt history'),
+              ..._buildWarningItem('All mastery percentages'),
+              ..._buildWarningItem('Study streak data'),
+              ..._buildWarningItem('Weak spots and forgotten cards'),
+              const SizedBox(height: 8),
+              Text(
+                'Your decks and cards will remain intact.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  color: AppColors.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Confirmation input
+        Text(
+          'Type "I am absolutely sure" to confirm:',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: AppColors.onSurface,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _controller,
+          onChanged: (_) => setState(() => _errorMessage = null),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            color: AppColors.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: InputDecoration(
+            hintText: 'I am absolutely sure',
+            hintStyle: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              color: AppColors.outline.withOpacity(0.5),
+            ),
+            filled: true,
+            fillColor: AppColors.surfaceContainerLow,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: _errorMessage != null
+                    ? AppColors.error
+                    : AppColors.outlineVariant,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: _errorMessage != null
+                    ? AppColors.error
+                    : AppColors.outlineVariant,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color:
+                    _errorMessage != null ? AppColors.error : AppColors.primary,
+                width: 2,
+              ),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          ),
+        ),
+        if (_errorMessage != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.error_outline_rounded,
+                  color: AppColors.error, size: 14),
+              const SizedBox(width: 6),
+              Text(
+                _errorMessage!,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 20),
+
+        // Action buttons
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Cancel',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: AppColors.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: ElevatedButton(
+                onPressed: _handleReset,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Reset All Progress',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -967,5 +928,291 @@ class _AmnesiaConfirmationDialogState
       ),
       const SizedBox(height: 6),
     ];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGAL CONTENT DATA
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LegalSection {
+  const _LegalSection({required this.heading, required this.body});
+  final String heading;
+  final String body;
+}
+
+abstract final class _LegalContent {
+  static const String _effectiveDate = 'Effective Date: June 1, 2025';
+
+  // ── Terms of Service ──────────────────────────────────────────────────────
+  static const List<_LegalSection> termsOfService = [
+    _LegalSection(
+      heading: '',
+      body: 'Welcome to Mnemo. By downloading, accessing, or using the Mnemo '
+          'mobile application ("App"), you agree to be bound by these Terms of '
+          'Service ("Terms"). If you do not agree, please uninstall and stop '
+          'using the App.\n\n$_effectiveDate',
+    ),
+    _LegalSection(
+      heading: '1. Use of the App',
+      body: 'Mnemo is a personal flashcard and spaced-repetition study tool '
+          'intended for individual, non-commercial use. You must be at least '
+          '13 years old to create an account. You are responsible for '
+          'maintaining the confidentiality of your login credentials and for '
+          'all activity that occurs under your account.',
+    ),
+    _LegalSection(
+      heading: '2. User Content',
+      body: 'You retain ownership of any decks, cards, or other content you '
+          'create ("User Content"). By using Mnemo, you grant us a limited, '
+          'non-exclusive, royalty-free license to store and process your User '
+          'Content solely to provide and improve the service. You agree not to '
+          'upload content that is unlawful, harmful, or infringes the '
+          'intellectual property rights of others.',
+    ),
+    _LegalSection(
+      heading: '3. Acceptable Use',
+      body: 'You agree not to (a) reverse-engineer, decompile, or disassemble '
+          'the App; (b) use the App to transmit spam or malicious code; '
+          '(c) attempt to gain unauthorized access to any part of our '
+          'infrastructure; or (d) use the App in any way that violates '
+          'applicable laws or regulations.',
+    ),
+    _LegalSection(
+      heading: '4. Intellectual Property',
+      body: 'All design, code, branding, and non-user content in the App is '
+          'owned by Mnemo or its licensors and is protected by applicable '
+          'intellectual property laws. You may not reproduce or redistribute '
+          'any part of the App without our prior written permission.',
+    ),
+    _LegalSection(
+      heading: '5. Disclaimers',
+      body: 'The App is provided "as is" without warranties of any kind, '
+          'express or implied. We do not guarantee that the App will be '
+          'error-free, uninterrupted, or that any data you store will never '
+          'be lost. Use of the App is at your own risk.',
+    ),
+    _LegalSection(
+      heading: '6. Limitation of Liability',
+      body: 'To the fullest extent permitted by law, Mnemo and its developers '
+          'shall not be liable for any indirect, incidental, special, or '
+          'consequential damages arising from your use of or inability to use '
+          'the App, even if we have been advised of the possibility of such '
+          'damages.',
+    ),
+    _LegalSection(
+      heading: '7. Changes to These Terms',
+      body: 'We may update these Terms from time to time. When we do, we will '
+          'revise the Effective Date above and, where required by law, notify '
+          'you in-app or by email. Continued use of the App after changes '
+          'constitutes your acceptance of the updated Terms.',
+    ),
+    _LegalSection(
+      heading: '8. Termination',
+      body: 'We reserve the right to suspend or terminate your account at our '
+          'discretion if we believe you have violated these Terms. You may '
+          'delete your account at any time from the Profile settings.',
+    ),
+    _LegalSection(
+      heading: '9. Contact',
+      body:
+          'If you have questions about these Terms, please reach out to us at '
+          'support@mnemoapp.com.',
+    ),
+  ];
+
+  // ── Privacy Policy ────────────────────────────────────────────────────────
+  static const List<_LegalSection> privacyPolicy = [
+    _LegalSection(
+      heading: '',
+      body: 'Your privacy matters to us. This Privacy Policy explains what '
+          'information Mnemo collects, how we use it, and your rights '
+          'regarding that information.\n\n$_effectiveDate',
+    ),
+    _LegalSection(
+      heading: '1. Information We Collect',
+      body: 'Account Information — When you register, we collect your email '
+          'address, display name, and an encrypted password hash.\n\n'
+          'Study Data — Decks, flashcards, quiz scores, mastery percentages, '
+          'and study-streak data that you create or generate while using '
+          'the App.\n\n'
+          'Usage Analytics (optional) — Aggregate, anonymized data about '
+          'feature usage to help us improve the App. This is off by default '
+          'and can be toggled in Settings → Privacy & Data.',
+    ),
+    _LegalSection(
+      heading: '2. How We Use Your Information',
+      body: 'We use the information we collect to:\n'
+          '• Provide, maintain, and improve the App.\n'
+          '• Sync your data across devices via Firebase.\n'
+          '• Send study reminders if you have enabled push notifications.\n'
+          '• Respond to support requests.\n\n'
+          'We do not sell, rent, or share your personal information with '
+          'third parties for their own marketing purposes.',
+    ),
+    _LegalSection(
+      heading: '3. Data Storage & Security',
+      body: 'Your data is stored on Google Firebase (Firestore and '
+          'Authentication), which is protected by industry-standard '
+          'encryption in transit (TLS) and at rest. We enforce strict access '
+          'controls so that only you — and our backend services — can access '
+          'your study data.',
+    ),
+    _LegalSection(
+      heading: '4. Offline Data',
+      body:
+          'Mnemo caches a copy of your data locally on your device to support '
+          'offline study. This local cache is stored in the app sandbox and '
+          'is not accessible to other apps. It is removed when you log out '
+          'or uninstall the App.',
+    ),
+    _LegalSection(
+      heading: '5. Children\'s Privacy',
+      body: 'Mnemo is not directed to children under 13. We do not knowingly '
+          'collect personal information from children under 13. If we '
+          'discover that a child under 13 has provided us with personal '
+          'information, we will promptly delete it.',
+    ),
+    _LegalSection(
+      heading: '6. Your Rights',
+      body: 'You may request access to, correction of, or deletion of your '
+          'personal data at any time. To delete your account and all '
+          'associated data, go to Profile → Delete Account, or email us at '
+          'privacy@mnemoapp.com. We will process your request within 30 days.',
+    ),
+    _LegalSection(
+      heading: '7. Third-Party Services',
+      body: 'The App uses the following third-party services, each governed by '
+          'their own privacy policies:\n'
+          '• Google Firebase (authentication & database)\n'
+          '• Google Fonts (typeface rendering)\n\n'
+          'We encourage you to review their policies.',
+    ),
+    _LegalSection(
+      heading: '8. Changes to This Policy',
+      body: 'We may update this Privacy Policy from time to time. We will '
+          'notify you of material changes by updating the Effective Date and, '
+          'where required, through an in-app notice or email.',
+    ),
+    _LegalSection(
+      heading: '9. Contact',
+      body: 'For privacy-related questions or requests, please contact us at '
+          'privacy@mnemoapp.com.',
+    ),
+  ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGAL SCREEN — reusable for both ToS and Privacy Policy
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LegalScreen extends StatelessWidget {
+  const _LegalScreen({
+    required this.title,
+    required this.icon,
+    required this.sections,
+  });
+
+  final String title;
+  final IconData icon;
+  final List<_LegalSection> sections;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // ── App bar ──────────────────────────────────────────────────────
+          SliverAppBar(
+            backgroundColor: AppColors.background,
+            elevation: 0,
+            pinned: true,
+            expandedHeight: 80,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back_rounded, color: AppColors.onSurface),
+              onPressed: () => Navigator.pop(context),
+            ),
+            flexibleSpace: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCollapsed =
+                    constraints.maxHeight <= kToolbarHeight + 40;
+                return FlexibleSpaceBar(
+                  centerTitle: false,
+                  titlePadding: EdgeInsets.only(
+                    left: isCollapsed ? 56 : 20,
+                    bottom: isCollapsed ? 16 : 16,
+                  ),
+                  title: Text(
+                    title,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: isCollapsed ? 20 : 28,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.onSurface,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          // ── Content ──────────────────────────────────────────────────────
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final section = sections[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (section.heading.isNotEmpty) ...[
+                          Text(
+                            section.heading,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Text(
+                          section.body,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            height: 1.65,
+                            color: section.heading.isEmpty
+                                ? AppColors.onSurfaceVariant
+                                : AppColors.onSurface,
+                            fontWeight: section.heading.isEmpty
+                                ? FontWeight.w500
+                                : FontWeight.w400,
+                          ),
+                        ),
+                        if (section.heading.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 20),
+                            child: Divider(
+                              color: AppColors.outlineVariant.withOpacity(0.4),
+                              height: 1,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+                childCount: sections.length,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
