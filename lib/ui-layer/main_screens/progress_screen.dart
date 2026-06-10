@@ -1,4 +1,6 @@
 import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
@@ -170,7 +172,8 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                     // ── FORGOTTEN CARDS (Only if has data) ───────────────
                                     if (forgottenCards.isNotEmpty) ...[
                                       const SizedBox(height: 20),
-                                      _ForgottenCardsCard(cards: forgottenCards),
+                                      _ForgottenCardsCard(
+                                          cards: forgottenCards),
                                     ],
 
                                     // ── EMPTY STATE (Only if no data at all) ─────────────
@@ -384,7 +387,8 @@ class _ProgressOptionsSheet extends StatelessWidget {
             color: AppColors.primary,
             onTap: () {
               Navigator.pop(context);
-              final scaffoldState = context.findAncestorStateOfType<_ProgressScaffoldState>();
+              final scaffoldState =
+                  context.findAncestorStateOfType<_ProgressScaffoldState>();
               if (scaffoldState != null) {
                 scaffoldState._loadProgress();
               }
@@ -399,13 +403,13 @@ class _ProgressOptionsSheet extends StatelessWidget {
               Navigator.pop(context);
               final messenger = ScaffoldMessenger.of(context);
               final navigator = Navigator.of(context);
-              
+
               try {
                 await ProgressService.migrateCumulativeTotals();
-                
+
                 // Trigger refresh by navigating away and back
                 navigator.pushReplacementNamed('/progress');
-                
+
                 messenger.showSnackBar(
                   SnackBar(
                     content: Row(
@@ -469,7 +473,8 @@ class _ProgressOptionsSheet extends StatelessWidget {
             color: AppColors.secondary,
             onTap: () {
               Navigator.pop(context);
-              final scaffoldState = context.findAncestorStateOfType<_ProgressScaffoldState>();
+              final scaffoldState =
+                  context.findAncestorStateOfType<_ProgressScaffoldState>();
               if (scaffoldState != null) {
                 _showExportDialog(context, scaffoldState._dashboard);
               }
@@ -493,7 +498,7 @@ class _ProgressOptionsSheet extends StatelessWidget {
 
   void _showExportDialog(BuildContext context, ProgressDashboard dashboard) {
     final report = _generateProgressReport(dashboard);
-    
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -508,7 +513,8 @@ class _ProgressOptionsSheet extends StatelessWidget {
                 color: AppColors.secondaryContainer.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.file_download_outlined, color: AppColors.secondary, size: 20),
+              child: Icon(Icons.file_download_outlined,
+                  color: AppColors.secondary, size: 20),
             ),
             const SizedBox(width: 12),
             Text(
@@ -549,22 +555,25 @@ class _ProgressOptionsSheet extends StatelessWidget {
   String _generateProgressReport(ProgressDashboard dashboard) {
     final buffer = StringBuffer();
     final now = DateTime.now();
-    
+
     buffer.writeln('═══════════════════════════════════════');
     buffer.writeln('       KINDRED STUDY PROGRESS REPORT');
     buffer.writeln('═══════════════════════════════════════');
-    buffer.writeln('Generated: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}');
+    buffer.writeln(
+        'Generated: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}');
     buffer.writeln();
-    
+
     buffer.writeln('OVERALL STATISTICS');
     buffer.writeln('───────────────────────────────────────');
-    buffer.writeln('Mastery Score: ${(dashboard.overallMastery * 100).toStringAsFixed(1)}%');
-    buffer.writeln('Correct Answers: ${dashboard.correctAnswers}/${dashboard.reviewedAnswers}');
+    buffer.writeln(
+        'Mastery Score: ${(dashboard.overallMastery * 100).toStringAsFixed(1)}%');
+    buffer.writeln(
+        'Correct Answers: ${dashboard.correctAnswers}/${dashboard.reviewedAnswers}');
     buffer.writeln('Total Quiz Attempts: ${dashboard.totalAttempts}');
     buffer.writeln('Current Streak: ${dashboard.currentStreakDays} days');
     buffer.writeln('Best Streak: ${dashboard.personalBestStreakDays} days');
     buffer.writeln();
-    
+
     if (dashboard.categories.isNotEmpty) {
       buffer.writeln('CATEGORY BREAKDOWN');
       buffer.writeln('───────────────────────────────────────');
@@ -576,7 +585,7 @@ class _ProgressOptionsSheet extends StatelessWidget {
         buffer.writeln();
       }
     }
-    
+
     if (dashboard.weakSpots.isNotEmpty) {
       buffer.writeln('WEAK SPOTS (Top ${dashboard.weakSpots.length})');
       buffer.writeln('───────────────────────────────────────');
@@ -587,9 +596,10 @@ class _ProgressOptionsSheet extends StatelessWidget {
       }
       buffer.writeln();
     }
-    
+
     if (dashboard.forgottenCards.isNotEmpty) {
-      buffer.writeln('FORGOTTEN CARDS (Top ${dashboard.forgottenCards.length})');
+      buffer
+          .writeln('FORGOTTEN CARDS (Top ${dashboard.forgottenCards.length})');
       buffer.writeln('───────────────────────────────────────');
       for (var i = 0; i < dashboard.forgottenCards.length; i++) {
         final card = dashboard.forgottenCards[i];
@@ -598,10 +608,10 @@ class _ProgressOptionsSheet extends StatelessWidget {
       }
       buffer.writeln();
     }
-    
+
     buffer.writeln('═══════════════════════════════════════');
     buffer.writeln('End of Report');
-    
+
     return buffer.toString();
   }
 
@@ -677,10 +687,77 @@ class _StudyRemindersDialog extends StatefulWidget {
 
 class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
   bool _enabled = false;
-  TimeOfDay _reminderTime = const TimeOfDay(hour: 19, minute: 0);
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromFirestore();
+  }
+
+  // ── ADD THIS ENTIRE METHOD ──────────────────────────────────────────────
+  Future<void> _loadFromFirestore() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = doc.data();
+      if (data != null && mounted) {
+        final hourUTC = (data['reminderHourUTC'] as num?)?.toInt();
+        final minuteUTC = (data['reminderMinuteUTC'] as num?)?.toInt() ?? 0;
+        setState(() {
+          _enabled = data['reminderEnabled'] == true;
+          if (hourUTC != null) {
+            final localOffset = DateTime.now().timeZoneOffset;
+            final utcMinutes = hourUTC * 60 + minuteUTC;
+            final localMinutes = utcMinutes + localOffset.inMinutes;
+            final localHour = (localMinutes ~/ 60) % 24;
+            final localMinute = (localMinutes % 60).toInt();
+            _reminderTime = TimeOfDay(hour: localHour, minute: localMinute);
+          }
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // ── ADD THIS ENTIRE METHOD ──────────────────────────────────────────────
+  Future<void> _saveToFirestore() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final now = DateTime.now();
+    final localDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      _reminderTime.hour,
+      _reminderTime.minute,
+    );
+    final utcDateTime = localDateTime.toUtc();
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'reminderEnabled': _enabled,
+      'reminderHourUTC': utcDateTime.hour,
+      'reminderMinuteUTC': utcDateTime.minute,
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Dialog(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       backgroundColor: AppColors.surfaceContainerLowest,
@@ -730,7 +807,6 @@ class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
               ],
             ),
             const SizedBox(height: 24),
-            
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -826,7 +902,6 @@ class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
               ),
             ),
             const SizedBox(height: 24),
-            
             Row(
               children: [
                 Expanded(
@@ -851,7 +926,9 @@ class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      await _saveToFirestore();
+                      if (!mounted) return;
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -930,38 +1007,41 @@ class _HeroStatsSection extends StatelessWidget {
     final accuracyRate = dashboard.reviewedAnswers == 0
         ? 0.0
         : dashboard.correctAnswers / dashboard.reviewedAnswers;
-    
+
     // Calculate overall first try accuracy
     final totalFirstTryCards = dashboard.deckSummaries.fold<double>(
       0.0,
-      (sum, deck) => sum + ((deck.firstTryAccuracy ?? 0.0) * deck.answeredTotal),
+      (sum, deck) =>
+          sum + ((deck.firstTryAccuracy ?? 0.0) * deck.answeredTotal),
     );
     final overallFirstTryAccuracy = dashboard.reviewedAnswers == 0
         ? 0.0
         : totalFirstTryCards / dashboard.reviewedAnswers;
-    
+
     // Calculate overall average repetitions
     final totalRepetitions = dashboard.deckSummaries.fold<double>(
       0.0,
-      (sum, deck) => sum + ((deck.averageRepetitions ?? 0.0) * deck.answeredTotal),
+      (sum, deck) =>
+          sum + ((deck.averageRepetitions ?? 0.0) * deck.answeredTotal),
     );
     final overallAvgRepetitions = dashboard.reviewedAnswers == 0
         ? 0.0
         : totalRepetitions / dashboard.reviewedAnswers;
-    
+
     // Calculate total skipped cards
     final totalSkipped = dashboard.deckSummaries.fold<int>(
       0,
       (sum, deck) => sum + (deck.totalSkipped ?? 0),
     );
-    
+
     // Calculate mastery test stats
     final decksWithMastery = dashboard.deckSummaries
         .where((d) => d.masteryScore != null && d.masteryScore! > 0)
         .toList();
     final avgMasteryScore = decksWithMastery.isEmpty
         ? 0.0
-        : decksWithMastery.fold<int>(0, (sum, d) => sum + d.masteryScore!) / decksWithMastery.length;
+        : decksWithMastery.fold<int>(0, (sum, d) => sum + d.masteryScore!) /
+            decksWithMastery.length;
 
     return Column(
       children: [
@@ -1014,7 +1094,9 @@ class _HeroStatsSection extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          dashboard.hasAttempts ? 'Keep Going!' : 'Start Learning',
+                          dashboard.hasAttempts
+                              ? 'Keep Going!'
+                              : 'Start Learning',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -1026,7 +1108,8 @@ class _HeroStatsSection extends StatelessWidget {
                         if (dashboard.hasAttempts) ...[
                           _CompactStatRow(
                             icon: Icons.check_circle_rounded,
-                            label: '${dashboard.correctAnswers}/${dashboard.reviewedAnswers} correct',
+                            label:
+                                '${dashboard.correctAnswers}/${dashboard.reviewedAnswers} correct',
                             color: AppColors.primary,
                           ),
                           const SizedBox(height: 4),
@@ -1052,7 +1135,9 @@ class _HeroStatsSection extends StatelessWidget {
               ),
               if (dashboard.hasAttempts) ...[
                 const SizedBox(height: 16),
-                Divider(color: AppColors.outlineVariant.withOpacity(0.3), height: 1),
+                Divider(
+                    color: AppColors.outlineVariant.withOpacity(0.3),
+                    height: 1),
                 const SizedBox(height: 16),
                 // Quick stats row
                 Row(
@@ -1097,7 +1182,7 @@ class _HeroStatsSection extends StatelessWidget {
             ],
           ),
         ),
-        
+
         // ── LEARNING INSIGHTS ────────────────────────────────────────────
         if (dashboard.hasAttempts) ...[
           const SizedBox(height: 16),
@@ -1114,14 +1199,17 @@ class _HeroStatsSection extends StatelessWidget {
                 label: 'First Try Success',
                 value: '${(overallFirstTryAccuracy * 100).round()}%',
                 color: AppColors.tertiary,
-                insight: overallFirstTryAccuracy >= 0.7 ? 'Strong!' : 'Room to grow',
+                insight:
+                    overallFirstTryAccuracy >= 0.7 ? 'Strong!' : 'Room to grow',
               ),
               _InsightStat(
                 icon: Icons.repeat_rounded,
                 label: 'Avg. Repetitions',
                 value: overallAvgRepetitions.toStringAsFixed(1),
                 color: AppColors.secondary,
-                insight: overallAvgRepetitions <= 2.0 ? 'Efficient' : 'Keep practicing',
+                insight: overallAvgRepetitions <= 2.0
+                    ? 'Efficient'
+                    : 'Keep practicing',
               ),
               _InsightStat(
                 icon: Icons.skip_next_rounded,
@@ -1133,7 +1221,7 @@ class _HeroStatsSection extends StatelessWidget {
             ],
           ),
         ],
-        
+
         // ── MASTERY TEST PERFORMANCE ─────────────────────────────────────
         if (decksWithMastery.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -1146,7 +1234,8 @@ class _HeroStatsSection extends StatelessWidget {
           _MasteryTestCard(
             avgScore: avgMasteryScore,
             decksTested: decksWithMastery.length,
-            perfectScores: decksWithMastery.where((d) => d.masteryScore == 100).length,
+            perfectScores:
+                decksWithMastery.where((d) => d.masteryScore == 100).length,
           ),
         ],
       ],
@@ -1308,7 +1397,9 @@ class _InsightsCard extends StatelessWidget {
             children: [
               if (index > 0) ...[
                 const SizedBox(height: 12),
-                Divider(color: AppColors.outlineVariant.withOpacity(0.3), height: 1),
+                Divider(
+                    color: AppColors.outlineVariant.withOpacity(0.3),
+                    height: 1),
                 const SizedBox(height: 12),
               ],
               Row(
@@ -1504,7 +1595,8 @@ class _EmptyProgressState extends StatelessWidget {
           MouseRegion(
             cursor: SystemMouseCursors.click,
             child: ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).pushReplacementNamed('/decks'),
+              onPressed: () =>
+                  Navigator.of(context).pushReplacementNamed('/decks'),
               icon: const Icon(Icons.play_arrow_rounded, size: 20),
               label: Text(
                 'Browse Decks',
@@ -1516,7 +1608,8 @@ class _EmptyProgressState extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -1548,8 +1641,7 @@ class _DetailedBreakdownSection extends StatefulWidget {
       _DetailedBreakdownSectionState();
 }
 
-class _DetailedBreakdownSectionState
-    extends State<_DetailedBreakdownSection> {
+class _DetailedBreakdownSectionState extends State<_DetailedBreakdownSection> {
   int _selectedTab = 0;
   String _sortBy = 'lowest'; // Default: lowest score first
   String _viewMode = 'current'; // 'current', 'best', 'average'
@@ -1558,15 +1650,21 @@ class _DetailedBreakdownSectionState
     final sorted = List<DeckProgressSummary>.from(decks);
     switch (_sortBy) {
       case 'lowest':
-        sorted.sort((a, b) => a.getMetricByViewMode(_viewMode).compareTo(b.getMetricByViewMode(_viewMode)));
+        sorted.sort((a, b) => a
+            .getMetricByViewMode(_viewMode)
+            .compareTo(b.getMetricByViewMode(_viewMode)));
         break;
       case 'highest':
-        sorted.sort((a, b) => b.getMetricByViewMode(_viewMode).compareTo(a.getMetricByViewMode(_viewMode)));
+        sorted.sort((a, b) => b
+            .getMetricByViewMode(_viewMode)
+            .compareTo(a.getMetricByViewMode(_viewMode)));
         break;
       case 'recent':
         sorted.sort((a, b) {
-          final aDate = a.lastStudiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bDate = b.lastStudiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final aDate =
+              a.lastStudiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bDate =
+              b.lastStudiedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
           return bDate.compareTo(aDate);
         });
         break;
@@ -1574,7 +1672,8 @@ class _DetailedBreakdownSectionState
         sorted.sort((a, b) => b.attemptCount.compareTo(a.attemptCount));
         break;
       case 'alphabetical':
-        sorted.sort((a, b) => a.deckTitle.toLowerCase().compareTo(b.deckTitle.toLowerCase()));
+        sorted.sort((a, b) =>
+            a.deckTitle.toLowerCase().compareTo(b.deckTitle.toLowerCase()));
         break;
     }
     return sorted;
@@ -1594,7 +1693,8 @@ class _DetailedBreakdownSectionState
         sorted.sort((a, b) => b.attemptCount.compareTo(a.attemptCount));
         break;
       case 'alphabetical':
-        sorted.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+        sorted.sort(
+            (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
         break;
     }
     return sorted;
@@ -1616,7 +1716,8 @@ class _DetailedBreakdownSectionState
                   color: AppColors.primaryContainer.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 18),
+                child: Icon(Icons.bar_chart_rounded,
+                    color: AppColors.primary, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1651,10 +1752,12 @@ class _DetailedBreakdownSectionState
                     initialValue: _viewMode,
                     onSelected: (value) => setState(() => _viewMode = value),
                     offset: const Offset(0, 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     color: AppColors.surfaceContainerLowest,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: AppColors.secondaryContainer.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(8),
@@ -1665,7 +1768,8 @@ class _DetailedBreakdownSectionState
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.visibility_rounded, color: AppColors.secondary, size: 16),
+                          Icon(Icons.visibility_rounded,
+                              color: AppColors.secondary, size: 16),
                           const SizedBox(width: 4),
                           Text(
                             _getViewModeLabel(),
@@ -1679,9 +1783,12 @@ class _DetailedBreakdownSectionState
                       ),
                     ),
                     itemBuilder: (context) => [
-                      _buildViewModeMenuItem('current', 'Current Mastery', Icons.trending_up_rounded),
-                      _buildViewModeMenuItem('best', 'Best Performance', Icons.emoji_events_rounded),
-                      _buildViewModeMenuItem('average', 'Average (Last 5)', Icons.analytics_rounded),
+                      _buildViewModeMenuItem('current', 'Current Mastery',
+                          Icons.trending_up_rounded),
+                      _buildViewModeMenuItem('best', 'Best Performance',
+                          Icons.emoji_events_rounded),
+                      _buildViewModeMenuItem('average', 'Average (Last 5)',
+                          Icons.analytics_rounded),
                     ],
                   ),
                   const SizedBox(width: 8),
@@ -1690,10 +1797,12 @@ class _DetailedBreakdownSectionState
                     initialValue: _sortBy,
                     onSelected: (value) => setState(() => _sortBy = value),
                     offset: const Offset(0, 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     color: AppColors.surfaceContainerLowest,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         color: AppColors.primaryContainer.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(8),
@@ -1704,7 +1813,8 @@ class _DetailedBreakdownSectionState
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.sort_rounded, color: AppColors.primary, size: 16),
+                          Icon(Icons.sort_rounded,
+                              color: AppColors.primary, size: 16),
                           const SizedBox(width: 4),
                           Text(
                             _getSortLabel(),
@@ -1718,11 +1828,16 @@ class _DetailedBreakdownSectionState
                       ),
                     ),
                     itemBuilder: (context) => [
-                      _buildSortMenuItem('lowest', 'Lowest Score First', Icons.arrow_downward_rounded),
-                      _buildSortMenuItem('highest', 'Highest Score First', Icons.arrow_upward_rounded),
-                      _buildSortMenuItem('recent', 'Recently Studied', Icons.schedule_rounded),
-                      _buildSortMenuItem('quizzes', 'Most Quizzes', Icons.quiz_rounded),
-                      _buildSortMenuItem('alphabetical', 'Alphabetical', Icons.sort_by_alpha_rounded),
+                      _buildSortMenuItem('lowest', 'Lowest Score First',
+                          Icons.arrow_downward_rounded),
+                      _buildSortMenuItem('highest', 'Highest Score First',
+                          Icons.arrow_upward_rounded),
+                      _buildSortMenuItem(
+                          'recent', 'Recently Studied', Icons.schedule_rounded),
+                      _buildSortMenuItem(
+                          'quizzes', 'Most Quizzes', Icons.quiz_rounded),
+                      _buildSortMenuItem('alphabetical', 'Alphabetical',
+                          Icons.sort_by_alpha_rounded),
                     ],
                   ),
                 ],
@@ -1773,7 +1888,8 @@ class _DetailedBreakdownSectionState
     );
   }
 
-  PopupMenuItem<String> _buildSortMenuItem(String value, String label, IconData icon) {
+  PopupMenuItem<String> _buildSortMenuItem(
+      String value, String label, IconData icon) {
     final isSelected = _sortBy == value;
     return PopupMenuItem<String>(
       value: value,
@@ -1802,7 +1918,8 @@ class _DetailedBreakdownSectionState
     );
   }
 
-  PopupMenuItem<String> _buildViewModeMenuItem(String value, String label, IconData icon) {
+  PopupMenuItem<String> _buildViewModeMenuItem(
+      String value, String label, IconData icon) {
     final isSelected = _viewMode == value;
     return PopupMenuItem<String>(
       value: value,
@@ -1810,7 +1927,8 @@ class _DetailedBreakdownSectionState
         children: [
           Icon(
             icon,
-            color: isSelected ? AppColors.secondary : AppColors.onSurfaceVariant,
+            color:
+                isSelected ? AppColors.secondary : AppColors.onSurfaceVariant,
             size: 18,
           ),
           const SizedBox(width: 12),
@@ -1902,9 +2020,8 @@ class _TabButton extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-              color: isSelected
-                  ? AppColors.primary
-                  : AppColors.onSurfaceVariant,
+              color:
+                  isSelected ? AppColors.primary : AppColors.onSurfaceVariant,
             ),
           ),
         ),
@@ -1929,7 +2046,9 @@ class _DeckBreakdownContent extends StatelessWidget {
     }
 
     return Column(
-      children: decks.map((deck) => _DeckProgressRow(deck: deck, viewMode: viewMode)).toList(),
+      children: decks
+          .map((deck) => _DeckProgressRow(deck: deck, viewMode: viewMode))
+          .toList(),
     );
   }
 }
@@ -2016,7 +2135,8 @@ class _DeckProgressRow extends StatelessWidget {
                 value: displayMetric,
                 minHeight: 8,
                 backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-                valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(displayMetric)),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    _getPerformanceColor(displayMetric)),
               ),
             ),
           ],
@@ -2072,14 +2192,16 @@ class _CategoryBreakdownContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        ...subjects.map((s) => _SubjectRow(stat: s, decks: decks, viewMode: viewMode)),
+        ...subjects
+            .map((s) => _SubjectRow(stat: s, decks: decks, viewMode: viewMode)),
       ],
     );
   }
 }
 
 class _SubjectRow extends StatelessWidget {
-  const _SubjectRow({required this.stat, required this.decks, required this.viewMode});
+  const _SubjectRow(
+      {required this.stat, required this.decks, required this.viewMode});
   final _SubjectStat stat;
   final List<DeckProgressSummary> decks;
   final String viewMode;
@@ -2089,8 +2211,11 @@ class _SubjectRow extends StatelessWidget {
     final categoryDecks = decks.where((d) => d.category == stat.label).toList();
     final displayMetric = categoryDecks.isEmpty
         ? stat.percent
-        : categoryDecks.map((d) => d.getMetricByViewMode(viewMode)).reduce((a, b) => a + b) / categoryDecks.length;
-    
+        : categoryDecks
+                .map((d) => d.getMetricByViewMode(viewMode))
+                .reduce((a, b) => a + b) /
+            categoryDecks.length;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(
@@ -2140,7 +2265,8 @@ class _SubjectRow extends StatelessWidget {
               value: displayMetric,
               minHeight: 10,
               backgroundColor: AppColors.outlineVariant.withOpacity(0.25),
-              valueColor: AlwaysStoppedAnimation<Color>(_getPerformanceColor(displayMetric)),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                  _getPerformanceColor(displayMetric)),
             ),
           ),
         ],
@@ -2279,8 +2405,7 @@ class _ForgottenCardsCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.history_rounded,
-                  color: AppColors.tertiary, size: 20),
+              Icon(Icons.history_rounded, color: AppColors.tertiary, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Forgotten Cards',
@@ -2586,8 +2711,6 @@ class _ForgottenCard {
   final int failureCount;
 }
 
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2650,4 +2773,3 @@ class _NavIconButton extends StatelessWidget {
     );
   }
 }
-
