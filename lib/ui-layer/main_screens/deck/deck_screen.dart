@@ -15,7 +15,6 @@ import '../../../business-layer/services/export_service.dart';
 import '../../../business-layer/services/share_service.dart';
 import '../../../business-layer/services/deck_search_engine.dart';
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK SCREEN  —  route: /decks
 // Displays the main deck library with AI import, filters, and deck cards.
@@ -470,6 +469,8 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                         'private',
                                     clonedFromUsername:
                                         deck['clonedFromUsername'] as String?,
+                                    createdAt: (deck['createdAt'] as Timestamp?)
+                                        ?.toDate(),
                                   ),
                                 ),
                               );
@@ -976,6 +977,28 @@ class _DraftDeckCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (data['createdAt'] != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 11,
+                      color: const Color(0xFFAA8800).withOpacity(0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDeckDate(
+                          (data['createdAt'] as Timestamp).toDate()),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        color: const Color(0xFFAA8800).withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -1148,6 +1171,7 @@ class _DeckCard extends StatefulWidget {
     required this.progressColor,
     required this.visibility,
     this.clonedFromUsername,
+    this.createdAt,
   });
 
   final String deckId;
@@ -1161,6 +1185,7 @@ class _DeckCard extends StatefulWidget {
   final Color progressColor;
   final String visibility;
   final String? clonedFromUsername;
+  final DateTime? createdAt;
 
   @override
   State<_DeckCard> createState() => _DeckCardState();
@@ -1369,6 +1394,27 @@ class _DeckCardState extends State<_DeckCard> {
                       AlwaysStoppedAnimation<Color>(widget.progressColor),
                 ),
               ),
+              if (widget.createdAt != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_today_outlined,
+                      size: 11,
+                      color: AppColors.outline.withOpacity(0.7),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDeckDate(widget.createdAt!),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10,
+                        color: AppColors.outline.withOpacity(0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -1850,6 +1896,31 @@ class _SheetOption extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATE FORMATTER
+// ─────────────────────────────────────────────────────────────────────────────
+
+String _formatDeckDate(DateTime dt) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+  final minute = dt.minute.toString().padLeft(2, '0');
+  final period = dt.hour >= 12 ? 'PM' : 'AM';
+  return '${months[dt.month - 1]} ${dt.day}, ${dt.year} · $hour:$minute $period';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

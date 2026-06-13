@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1654,7 +1655,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     // ── Step 7: Build request body ───────────────────────────────────────────
     Map<String, dynamic> requestBody;
     if (isPdf) {
-      final base64Data = base64Encode(fileBytes);
+      final base64Data = await compute(base64Encode, fileBytes);
       requestBody = {
         'fileBase64': base64Data,
         'fileType': 'pdf',
@@ -1927,7 +1928,7 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'This may take a moment',
+                  'Reading your file and building cards',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: AppColors.onSurfaceVariant,
