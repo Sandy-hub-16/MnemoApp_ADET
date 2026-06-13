@@ -1077,6 +1077,15 @@ void showCreateDeckErrorSnackBar(BuildContext context, String message) {
   );
 }
 
+/// Estimates whether a PDF is scanned/image-based by checking average bytes
+/// per page. Scanned pages are image-heavy (~200 KB+), text pages are lean
+/// (~10–50 KB). 150 KB per page is a conservative threshold.
+bool _isLikelyScannedPdf(Uint8List bytes, int pageCount) {
+  if (pageCount <= 0) return false;
+  final bytesPerPage = bytes.length / pageCount;
+  return bytesPerPage > 150 * 1024; // 150 KB per page
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DETAIL FILTERING HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1111,6 +1120,7 @@ Future<int?> _showPageRangeDialog(
   BuildContext context, {
   required int totalPages,
   required bool isPdf,
+  bool isScanned = false,
 }) {
   int currentPages = totalPages;
   final controller = TextEditingController(text: '$totalPages');
@@ -1210,21 +1220,39 @@ Future<int?> _showPageRangeDialog(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                    color: AppColors.primaryContainer.withOpacity(0.3),
+                    color: isScanned
+                        ? const Color(0xFFFFF3CD)
+                        : AppColors.primaryContainer.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(12),
+                    border: isScanned
+                        ? Border.all(
+                            color: const Color(0xFFFFD95C).withOpacity(0.6))
+                        : null,
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline_rounded,
-                          size: 14, color: AppColors.primary),
+                      Icon(
+                        isScanned
+                            ? Icons.photo_camera_outlined
+                            : Icons.info_outline_rounded,
+                        size: 14,
+                        color: isScanned
+                            ? const Color(0xFF856404)
+                            : AppColors.primary,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Select how many pages the AI should read. '
-                          'Fewer pages = faster, more focused cards.',
+                          isScanned
+                              ? 'This looks like a scanned PDF. '
+                                  'The AI reads images directly — max 5 pages per request.'
+                              : 'Select how many pages the AI should read. '
+                                  'Fewer pages = faster, more focused cards.',
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 11,
-                            color: AppColors.primary,
+                            color: isScanned
+                                ? const Color(0xFF856404)
+                                : AppColors.primary,
                             fontWeight: FontWeight.w600,
                             height: 1.4,
                           ),
@@ -1358,7 +1386,8 @@ Future<int?> _showPageRangeDialog(
                                 cursor: SystemMouseCursors.click,
                                 child: GestureDetector(
                                   onTap: () {
-                                    if (ctx.mounted) setState(() => setPages(v));
+                                    if (ctx.mounted)
+                                      setState(() => setPages(v));
                                   },
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 150),
@@ -1483,15 +1512,40 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     return;
   }
 
+  // ── PDF size gate ──────────────────────────────────────────────────────────
+  // Cloud Run's default request body limit is 32 MB. base64 adds ~33% overhead,
+  // so a 20 MB raw PDF encodes to ~27 MB — safely under the limit.
+  // For PDFs the full binary is always sent (the server decides text vs vision),
+  // so there is no client-side way to reduce the payload — reject here instead.
+  if (isPdf && fileBytes.length > 20 * 1024 * 1024) {
+    if (context.mounted) {
+      final mb = (fileBytes.length / (1024 * 1024)).toStringAsFixed(1);
+      showCreateDeckErrorSnackBar(
+        context,
+        'PDF is too large ($mb MB — max 20 MB). '
+        'Export only the pages you need as a smaller PDF, or paste the text instead.',
+      );
+    }
+    return;
+  }
+
   // ── Step 2: Detail Filtering — page range dialog ───────────────────────────
   int pageLimit = 0; // 0 = send full file; >0 = capped page count
   if (isPdf) {
     final detectedPages = _estimatePdfPageCount(fileBytes);
     if (detectedPages > 1 && context.mounted) {
+      // Scanned/photographed PDFs are limited to 5 pages because the
+      // vision model only accepts up to 5 images per request.
+      // Text-based PDFs have no such cap — the server reads them directly.
+      final likelyScanned = _isLikelyScannedPdf(fileBytes, detectedPages);
+      final maxSelectablePages =
+          likelyScanned ? detectedPages.clamp(1, 5) : detectedPages;
+
       final selectedPages = await _showPageRangeDialog(
         context,
-        totalPages: detectedPages,
+        totalPages: maxSelectablePages,
         isPdf: true,
+        isScanned: likelyScanned,
       );
       if (selectedPages == null) return; // user cancelled
       if (selectedPages < detectedPages) pageLimit = selectedPages;
@@ -1593,6 +1647,10 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
   }
 
   try {
+    // ── Yield one frame so the loading dialog can paint before the
+    // synchronous base64Encode blocks the main isolate. ───────────────────────
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
     // ── Step 7: Build request body ───────────────────────────────────────────
     Map<String, dynamic> requestBody;
     if (isPdf) {
