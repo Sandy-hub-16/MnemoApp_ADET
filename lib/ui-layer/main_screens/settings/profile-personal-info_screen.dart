@@ -434,6 +434,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         updates['school'] = _schoolCtrl.text.trim();
         updates['course'] = _courseCtrl.text.trim();
         updates['yearLevel'] = _yearLevel;
+        updates['educationLevel'] = _deriveEducationLevel(_yearLevel);
         updates['educationLastChangedAt'] = FieldValue.serverTimestamp();
       }
 
@@ -531,6 +532,21 @@ class _SettingsBodyState extends State<_SettingsBody> {
         'December'
       ][m];
 
+
+  /// Maps yearLevel to the educationLevel key the Cloud Function expects.
+String _deriveEducationLevel(String yearLevel) {
+  switch (yearLevel) {
+    case 'Graduate':
+      return 'professional';
+    case '5th Year':
+    case '4th Year':
+    case '3rd Year':
+    case '2nd Year':
+    case '1st Year':
+    default:
+      return 'college';
+  }
+}
   // ── Error message helper ───────────────────────────────────────────────────
   String _errorMessage(Object e) {
     if (e is PlatformException) {

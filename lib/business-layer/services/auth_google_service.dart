@@ -38,6 +38,9 @@ class AuthService {
       'provider': 'email',
       'emailVerified': false,
       'createdAt': FieldValue.serverTimestamp(),
+      'educationLevel': 'general',
+      'reminderEnabled': false,
+      'reminderHourUTC': 1, // (default 9AM PH = UTC+8 → 1 UTC)
     });
 
     return user;
@@ -97,6 +100,9 @@ class AuthService {
           'provider': 'google',
           'emailVerified': true, // Google emails are already verified
           'createdAt': FieldValue.serverTimestamp(),
+          'educationLevel': 'general', 
+          'reminderEnabled': false, 
+          'reminderHourUTC': 1, 
         });
       } else {
         // update existing user (if needed)
@@ -116,4 +122,3 @@ class AuthService {
     await FirebaseAuth.instance.signOut();
   }
 }
-

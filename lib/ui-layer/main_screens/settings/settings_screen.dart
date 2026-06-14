@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import '../../../main.dart';
@@ -8,8 +10,92 @@ import '../../../main.dart';
 // SETTINGS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _reminderEnabled = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
+  bool _reminderLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReminderSettings();
+  }
+
+  Future<void> _loadReminderSettings() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _reminderLoading = false);
+      return;
+    }
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = doc.data();
+      if (data != null && mounted) {
+        final hourUTC = (data['reminderHourUTC'] as num?)?.toInt();
+        final minuteUTC = (data['reminderMinuteUTC'] as num?)?.toInt() ?? 0;
+        setState(() {
+          _reminderEnabled = data['reminderEnabled'] == true;
+          if (hourUTC != null) {
+            // Convert UTC hour back to local for display
+            // final utcNow = DateTime.now().toUtc();
+            final localOffset = DateTime.now().timeZoneOffset;
+            final utcMinutes = hourUTC * 60 + minuteUTC;
+            final localMinutes = utcMinutes + localOffset.inMinutes;
+            final localHour = (localMinutes ~/ 60) % 24;
+            final localMinute = (localMinutes % 60); // ← ADD THIS
+            _reminderTime = TimeOfDay(hour: localHour, minute: localMinute);
+          }
+          _reminderLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _reminderLoading = false);
+    }
+  }
+
+  Future<void> _saveReminderSettings() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    // Convert local hour to UTC
+    final now = DateTime.now();
+    final localDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      _reminderTime.hour,
+      _reminderTime.minute,
+    );
+    final utcHour = localDateTime.toUtc().hour;
+    final utcDateMinute = localDateTime.toUtc().minute;
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'reminderEnabled': _reminderEnabled,
+      'reminderHourUTC': utcHour,
+      'reminderMinuteUTC': utcDateMinute,
+    });
+  }
+
+  Future<void> _pickReminderTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _reminderTime,
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+        child: child!,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _reminderTime = picked);
+      await _saveReminderSettings();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -126,11 +212,20 @@ class SettingsScreen extends StatelessWidget {
                       iconColor: AppColors.secondary,
                       label: 'Push Notifications',
                       subtitle: 'Receive study reminders',
-                      trailing: Switch(
-                        value: true,
-                        onChanged: (val) {},
-                        activeColor: AppColors.primary,
-                      ),
+                      trailing: _reminderLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Switch(
+                              value: _reminderEnabled,
+                              onChanged: (val) async {
+                                setState(() => _reminderEnabled = val);
+                                await _saveReminderSettings();
+                              },
+                              activeColor: AppColors.primary,
+                            ),
                       onTap: null,
                       isFirst: true,
                     ),
@@ -138,17 +233,21 @@ class SettingsScreen extends StatelessWidget {
                       icon: Icons.schedule_rounded,
                       iconBg: AppColors.secondaryContainer.withOpacity(0.5),
                       iconColor: AppColors.secondary,
-                      label: 'Daily Reminder',
-                      subtitle: 'Get reminded to study every day',
+                      label: 'Reminder Time',
+                      subtitle: _reminderEnabled
+                          ? 'Email sent daily at this time'
+                          : 'Enable reminder to set a time',
                       trailing: Text(
-                        '9:00 AM',
+                        _reminderTime.format(context),
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.onSurfaceVariant,
+                          color: _reminderEnabled
+                              ? AppColors.primary
+                              : AppColors.onSurfaceVariant,
                         ),
                       ),
-                      onTap: () {},
+                      onTap: _reminderEnabled ? _pickReminderTime : null,
                       isLast: true,
                     ),
                   ],
