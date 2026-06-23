@@ -104,7 +104,11 @@ class _Step3BodyState extends State<_Step3Body> {
       );
 
       if (user != null) {
-        _showSuccessModal(context);
+        // Navigate directly to the verification screen; the 8-minute
+        // countdown starts there and auto-handles success / expiry.
+        if (mounted) {
+          Navigator.of(context).pushReplacementNamed('/verify-email');
+        }
       } else {
         _showError('Registration failed. Please try again.');
       }
@@ -169,62 +173,6 @@ class _Step3BodyState extends State<_Step3Body> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
-      ),
-    );
-  }
-
-  void _showSuccessModal(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surfaceContainerLowest,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                color: AppColors.primaryContainer.withOpacity(0.3),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.mark_email_read_rounded,
-                color: AppColors.primary,
-                size: 36,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Verify your email',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: AppColors.onSurface,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'We\'ve sent a verification link to your email. Please check your inbox and click the link to activate your account.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                height: 1.6,
-                color: AppColors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            AuthPrimaryButton(
-              label: 'Got it',
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pushReplacementNamed('/sign-in');
-              },
-            ),
-          ],
-        ),
       ),
     );
   }
