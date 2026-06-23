@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import '../../data-layer/landing_page/landing_data.dart';
 import 'app_theme.dart';
 import '../../main.dart';
@@ -26,16 +27,24 @@ class LandingScreen extends StatelessWidget {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1280),
-                    child: const Column(
+                    child: Column(
                       children: [
-                        _HeroSection(),
-                        _FeaturesSection(),
+                        const _HeroSection(),
+                        _LazyMount(
+                          placeholder: const _FeaturesSectionSkeleton(),
+                          builder: (_) => const _FeaturesSection(),
+                        ),
                       ],
                     ),
                   ),
                 ),
               ),
-              const SliverToBoxAdapter(child: _FooterSection()),
+              SliverToBoxAdapter(
+                child: _LazyMount(
+                  placeholder: const _FooterSectionSkeleton(),
+                  builder: (_) => const _FooterSection(),
+                ),
+              ),
             ],
           ),
           // Glass nav always on top
@@ -224,14 +233,8 @@ class _HeroCopy extends StatelessWidget {
         // CTA buttons — full-width stacked on mobile, inline on desktop
         if (!wide) ...[
           _PillButton(
-            label: 'Get Started for Free',
+            label: "Let's Get Started",
             onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp1),
-            fullWidth: true,
-          ),
-          const SizedBox(height: 12),
-          _OutlineButton(
-            label: 'How it works',
-            onTap: () {},
             fullWidth: true,
           ),
         ] else
@@ -240,10 +243,9 @@ class _HeroCopy extends StatelessWidget {
             runSpacing: 16,
             children: [
               _PillButton(
-                label: 'Get Started for Free',
+                label: "Let's Get Started",
                 onTap: () => Navigator.of(context).pushNamed(AppRoutes.signUp1),
-              ),
-              _OutlineButton(label: 'How it works', onTap: () {}),
+              )
             ],
           ),
         const SizedBox(height: 40),
@@ -256,7 +258,7 @@ class _HeroCopy extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(socialProofLabel,
+                Text('Join over 12,000 students worldwide!',
                     style: AppTextStyles.bodyBase.copyWith(
                         color: AppColors.onSurface,
                         fontWeight: FontWeight.w700)),
@@ -317,10 +319,12 @@ class _HeroVisualState extends State<_HeroVisual>
                   ),
                 ],
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(heroImageUrl,
-                    height: 440, width: double.infinity, fit: BoxFit.cover),
+              child: _LazyNetworkImage(
+                url: heroImageUrl,
+                height: 440,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                borderRadius: 12,
               ),
             ),
             // Floating chip
@@ -552,14 +556,16 @@ class _FeatureCardState extends State<_FeatureCard> {
             if (widget.item.variant == CardVariant.wideWithImage &&
                 widget.item.imageUrl != null) ...[
               const SizedBox(height: 32),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: AnimatedScale(
-                  scale: _hovered ? 1.04 : 1.0,
-                  duration: const Duration(milliseconds: 600),
-                  curve: Curves.easeOut,
-                  child: Image.network(widget.item.imageUrl!,
-                      height: 210, width: double.infinity, fit: BoxFit.cover),
+              AnimatedScale(
+                scale: _hovered ? 1.04 : 1.0,
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeOut,
+                child: _LazyNetworkImage(
+                  url: widget.item.imageUrl!,
+                  height: 210,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  borderRadius: 12,
                 ),
               ),
             ],
@@ -593,6 +599,42 @@ class _FeatureCardState extends State<_FeatureCard> {
           ),
         ),
       );
+}
+
+class _FeaturesSectionSkeleton extends StatelessWidget {
+  const _FeaturesSectionSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 768;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 96),
+      child: Column(
+        children: [
+          _SkeletonBlock(width: 360, height: 40, borderRadius: 8),
+          const SizedBox(height: 16),
+          _SkeletonBlock(width: 480, height: 20, borderRadius: 6),
+          const SizedBox(height: 64),
+          // Rough stand-in for the card grid height so the page doesn't jump.
+          _SkeletonBlock(height: wide ? 520 : 880, borderRadius: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _FooterSectionSkeleton extends StatelessWidget {
+  const _FooterSectionSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 768;
+    return Container(
+      color: AppColors.surfaceContainerLow,
+      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 64),
+      child: _SkeletonBlock(height: wide ? 60 : 140, borderRadius: 8),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -876,6 +918,214 @@ class _AvatarStack extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LAZY MOUNT
+// Defers building an expensive subtree until it's about to enter the
+// viewport, then keeps it mounted permanently (no rebuild thrashing on
+// scroll back up). Zero external dependencies — just a global key + RenderBox
+// position check, hooked to the ambient Scrollable's position via
+// Scrollable.of + a post-frame/scroll listener.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LazyMount extends StatefulWidget {
+  const _LazyMount({
+    required this.builder,
+    required this.placeholder,
+    this.preloadExtent = 400.0,
+  });
+
+  /// Builds the real (expensive) content once visible.
+  final WidgetBuilder builder;
+
+  /// Shown (and sized) before the real content mounts.
+  final Widget placeholder;
+
+  /// How many pixels before entering the viewport we should start building.
+  final double preloadExtent;
+
+  @override
+  State<_LazyMount> createState() => _LazyMountState();
+}
+
+class _LazyMountState extends State<_LazyMount> {
+  final _key = GlobalKey();
+  bool _mounted = false;
+  ScrollPosition? _position;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newPosition = Scrollable.maybeOf(context)?.position;
+    if (newPosition != _position) {
+      _position?.removeListener(_checkVisibility);
+      _position = newPosition;
+      _position?.addListener(_checkVisibility);
+    }
+    // Always check once after layout, in case we're already on-screen
+    // (e.g. on a short page, or after a hot-reload/resize).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkVisibility());
+  }
+
+  void _checkVisibility() {
+    if (_mounted || !context.mounted) return;
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+
+    final viewport = RenderAbstractViewport.of(box);
+    final offsetToViewport = viewport.getOffsetToReveal(box, 0.0).offset;
+    final scrollPos = _position;
+    if (scrollPos == null) {
+      // No ancestor Scrollable (shouldn't happen here) — just mount.
+      _markMounted();
+      return;
+    }
+
+    final viewportHeight = scrollPos.viewportDimension;
+    final distanceIntoView =
+        offsetToViewport - scrollPos.pixels - viewportHeight;
+
+    if (distanceIntoView <= widget.preloadExtent) {
+      _markMounted();
+    }
+  }
+
+  void _markMounted() {
+    if (!_mounted && mounted) {
+      setState(() => _mounted = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _position?.removeListener(_checkVisibility);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: _key,
+      child: _mounted ? widget.builder(context) : widget.placeholder,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHIMMER SKELETON
+// A self-contained pulsing placeholder — used both for block skeletons
+// (matching the existing wideWithSkeleton card style) and as the loading
+// state for every network image on this page.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Shimmer extends StatefulWidget {
+  const _Shimmer({required this.child});
+  final Widget child;
+
+  @override
+  State<_Shimmer> createState() => _ShimmerState();
+}
+
+class _ShimmerState extends State<_Shimmer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, child) => Opacity(
+        opacity: 0.45 + (_ctrl.value * 0.35),
+        child: child,
+      ),
+      child: widget.child,
+    );
+  }
+}
+
+/// A solid-colour block sized to [width]/[height], pulsing via [_Shimmer].
+/// Used as the loading placeholder for images and as generic skeleton bars.
+class _SkeletonBlock extends StatelessWidget {
+  const _SkeletonBlock({
+    this.width,
+    this.height,
+    this.borderRadius = 12,
+  });
+  final double? width;
+  final double? height;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Shimmer(
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.outlineVariant.withOpacity(0.25),
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
+      ),
+    );
+  }
+}
+
+/// Drop-in replacement for Image.network that shows a shimmering skeleton
+/// (matching the image's own dimensions, so layout never jumps) until the
+/// first frame has decoded.
+class _LazyNetworkImage extends StatelessWidget {
+  const _LazyNetworkImage({
+    required this.url,
+    this.height,
+    this.width,
+    this.fit = BoxFit.cover,
+    this.borderRadius = 0,
+  });
+
+  final String url;
+  final double? height;
+  final double? width;
+  final BoxFit fit;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: Image.network(
+        url,
+        height: height,
+        width: width,
+        fit: fit,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) return child;
+          return _SkeletonBlock(
+            width: width,
+            height: height,
+            borderRadius: borderRadius,
+          );
+        },
+        errorBuilder: (context, error, stackTrace) => Container(
+          height: height,
+          width: width,
+          color: AppColors.outlineVariant.withOpacity(0.18),
+          alignment: Alignment.center,
+          child: Icon(Icons.image_not_supported_outlined,
+              color: AppColors.outline, size: 28),
+        ),
+      ),
+    );
+  }
+}
+
 /// Decorative blurred colour blobs in the background.
 class _BackgroundBlobs extends StatelessWidget {
   const _BackgroundBlobs();
@@ -918,4 +1168,3 @@ class _Blob extends StatelessWidget {
     );
   }
 }
-

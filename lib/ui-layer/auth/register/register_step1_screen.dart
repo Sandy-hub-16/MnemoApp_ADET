@@ -36,12 +36,59 @@ class _Step1Body extends StatefulWidget {
 class _Step1BodyState extends State<_Step1Body> {
   final _nameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
+  final _nameFocus = FocusNode();
+  final _usernameFocus = FocusNode();
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _usernameCtrl.dispose();
+    _nameFocus.dispose();
+    _usernameFocus.dispose();
     super.dispose();
+  }
+
+  void _handleNext() {
+    // Validate form fields
+    final name = _nameCtrl.text.trim();
+    final username = _usernameCtrl.text.trim();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Full name is required'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (username.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Username is required'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (username.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Username must be at least 6 characters'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushNamed(
+      AppRoutes.signUp2,
+      arguments: {
+        'fullName': name,
+        'username': username,
+      },
+    );
   }
 
   @override
@@ -79,19 +126,25 @@ class _Step1BodyState extends State<_Step1Body> {
         // ── Form fields ───────────────────────────────────────────────────
         AuthTextField(
           controller: _nameCtrl,
+          focusNode: _nameFocus,
           hint: 'Alex Kindred',
           label: 'Full Name',
           prefixIcon: Icons.person_outline_rounded,
           shape: AuthFieldShape.rounded,
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => _usernameFocus.requestFocus(),
         ),
         const SizedBox(height: 20),
         AuthTextField(
           controller: _usernameCtrl,
+          focusNode: _usernameFocus,
           hint: 'alex_studies',
           label: 'Unique Username',
           prefixIcon: Icons.alternate_email_rounded,
           shape: AuthFieldShape.rounded,
           helperText: "This is how you'll appear in study groups.",
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _handleNext(),
         ),
         const SizedBox(height: 36),
 
@@ -109,52 +162,10 @@ class _Step1BodyState extends State<_Step1Body> {
         // ── Next CTA ──────────────────────────────────────────────────────
         AuthPrimaryButton(
           label: 'Next Step',
-          onTap: () {
-            // Validate form fields
-            final name = _nameCtrl.text.trim();
-            final username = _usernameCtrl.text.trim();
-
-            if (name.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Full name is required'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-
-            if (username.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Username is required'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-            if (username.length < 6) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Username must be at least 6 characters'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-
-            Navigator.of(context).pushNamed(
-              AppRoutes.signUp2,
-              arguments: {
-                'fullName': name,
-                'username': username,
-              },
-            );
-          },
+          onTap: _handleNext,
         ),
         const SizedBox(height: 32),
       ],
     );
   }
 }
-

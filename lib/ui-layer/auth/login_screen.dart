@@ -582,6 +582,8 @@ class _SignInBodyState extends State<_SignInBody> {
                 hint: 'alex@study.com',
                 prefixIcon: Icons.mail_outline_rounded,
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                onSubmitted: (_) => FocusScope.of(context).nextFocus(),
               ),
               const SizedBox(height: 20),
 
@@ -590,14 +592,17 @@ class _SignInBodyState extends State<_SignInBody> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const SizedBox.shrink(),
-                  GestureDetector(
-                    onTap: _handleForgotPassword,
-                    child: Text(
-                      'Forgot password?',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: _handleForgotPassword,
+                      child: Text(
+                        'Forgot password?',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                   ),
@@ -613,6 +618,8 @@ class _SignInBodyState extends State<_SignInBody> {
                     ? Icons.visibility_off_outlined
                     : Icons.visibility_outlined,
                 onSuffixTap: () => setState(() => _obscure = !_obscure),
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _handleSignIn(),
               ),
               const SizedBox(height: 28),
 
@@ -641,18 +648,21 @@ class _SignInBodyState extends State<_SignInBody> {
                       WidgetSpan(
                         alignment: PlaceholderAlignment.baseline,
                         baseline: TextBaseline.alphabetic,
-                        child: GestureDetector(
-                          onTap: () => Navigator.of(context)
-                              .pushNamed(AppRoutes.signUp1),
-                          child: Text(
-                            'Sign Up',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                              decoration: TextDecoration.underline,
-                              decorationColor:
-                                  AppColors.primary.withOpacity(0.4),
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () => Navigator.of(context)
+                                .pushNamed(AppRoutes.signUp1),
+                            child: Text(
+                              'Sign Up',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                                decoration: TextDecoration.underline,
+                                decorationColor:
+                                    AppColors.primary.withOpacity(0.4),
+                              ),
                             ),
                           ),
                         ),
@@ -664,10 +674,6 @@ class _SignInBodyState extends State<_SignInBody> {
             ],
           ),
         ),
-        const SizedBox(height: 24),
-
-        // ── Daily goal chip ───────────────────────────────────────────────
-        const _DailyGoalChip(),
         const SizedBox(height: 32),
 
         // ── Footer links ──────────────────────────────────────────────────
@@ -800,38 +806,6 @@ class _SignInBranding extends StatelessWidget {
   }
 }
 
-class _DailyGoalChip extends StatelessWidget {
-  const _DailyGoalChip();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.tertiaryContainer.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.tertiaryContainer.withOpacity(0.6)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.auto_awesome_rounded,
-              size: 18, color: AppColors.tertiary),
-          const SizedBox(width: 10),
-          Text(
-            "Today's goal: Master 10 new cards!",
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppColors.onTertiaryContainer,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _SignInFooter extends StatelessWidget {
   const _SignInFooter();
 
@@ -853,7 +827,6 @@ class _SignInFooter extends StatelessWidget {
         ...[
           'Privacy Policy',
           'Terms of Service',
-          'Help Center',
         ].map(
           (l) => GestureDetector(
             onTap: () {},

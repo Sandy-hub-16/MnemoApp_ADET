@@ -28,15 +28,15 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
-  options: const FirebaseOptions(
-    apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
-    authDomain: String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
-    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
-    storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
-    messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
-    appId: String.fromEnvironment('FIREBASE_APP_ID'),
-  ),
-);
+    options: const FirebaseOptions(
+      apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
+      authDomain: String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
+      projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
+      storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+      messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
+      appId: String.fromEnvironment('FIREBASE_APP_ID'),
+    ),
+  );
 
   // Enable offline persistence for all Firestore data
   FirebaseFirestore.instance.settings = const Settings(
@@ -131,7 +131,7 @@ abstract final class AppRouter {
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
       AppRoutes.home => const MainShell(),
       AppRoutes.profile => const MainShell(initialIndex: 4),
-      AppRoutes.accountSettings => const AccountSettingsScreen(),
+      AppRoutes.accountSettings => const SettingsScreen(),
       AppRoutes.settings => const SettingsScreen(),
       AppRoutes.decks => const MainShell(initialIndex: 1),
       AppRoutes.createDeck => const CreateDeckScreen(),

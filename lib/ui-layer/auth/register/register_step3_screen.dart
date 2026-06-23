@@ -1,3 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
@@ -38,16 +40,23 @@ class _Step3BodyState extends State<_Step3Body> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _confirmFocus = FocusNode();
 
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
 
   @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
+    _confirmFocus.dispose();
     super.dispose();
   }
 
@@ -103,6 +112,52 @@ class _Step3BodyState extends State<_Step3Body> {
       _showError('An error occurred: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignUp() async {
+    final rawArgs = ModalRoute.of(context)?.settings.arguments;
+    final Map<String, dynamic> args =
+        rawArgs != null ? Map<String, dynamic>.from(rawArgs as Map) : {};
+
+    setState(() => _isGoogleLoading = true);
+    try {
+      final User? user = await AuthService().signInWithGoogle();
+
+      if (user == null) {
+        _showError('Google sign-in was cancelled or failed.');
+        return;
+      }
+
+      // Merge the profile details the user entered in steps 1 & 2 into the
+      // Firestore document that signInWithGoogle() just created/updated.
+      // We only overwrite fields that were actually provided so that returning
+      // Google users don't lose data they haven't touched in this session.
+      final updates = <String, dynamic>{};
+      final fullName = args['fullName'] as String?;
+      final username = args['username'] as String?;
+      final age = args['age'] as int?;
+      final country = args['country'] as String?;
+
+      if (fullName != null && fullName.isNotEmpty)
+        updates['fullName'] = fullName;
+      if (username != null && username.isNotEmpty)
+        updates['username'] = username;
+      if (age != null) updates['age'] = age;
+      if (country != null && country.isNotEmpty) updates['country'] = country;
+
+      if (updates.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update(updates);
+      }
+
+      if (mounted) Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      _showError('Google sign-in failed: $e');
+    } finally {
+      if (mounted) setState(() => _isGoogleLoading = false);
     }
   }
 
@@ -206,18 +261,30 @@ class _Step3BodyState extends State<_Step3Body> {
         ),
         const SizedBox(height: 32),
 
+        // ── Google sign-up shortcut ────────────────────────────────────────
+        _isGoogleLoading
+            ? const Center(child: CircularProgressIndicator())
+            : GoogleSignInButton(onTap: _handleGoogleSignUp),
+        const SizedBox(height: 28),
+        const OrDivider(),
+        const SizedBox(height: 28),
+
         // ── Form fields ───────────────────────────────────────────────────
         AuthTextField(
           controller: _emailCtrl,
+          focusNode: _emailFocus,
           hint: 'alex@study.com',
           label: 'Email Address',
           prefixIcon: Icons.mail_outline_rounded,
           keyboardType: TextInputType.emailAddress,
           shape: AuthFieldShape.rounded,
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => _passwordFocus.requestFocus(),
         ),
         const SizedBox(height: 20),
         AuthTextField(
           controller: _passwordCtrl,
+          focusNode: _passwordFocus,
           hint: '••••••••',
           label: 'Password',
           prefixIcon: Icons.lock_outline_rounded,
@@ -225,13 +292,17 @@ class _Step3BodyState extends State<_Step3Body> {
           suffixIcon: _obscurePassword
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-          onSuffixTap: () => setState(() => _obscurePassword = !_obscurePassword),
+          onSuffixTap: () =>
+              setState(() => _obscurePassword = !_obscurePassword),
           shape: AuthFieldShape.rounded,
           helperText: 'Must be at least 8 characters',
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => _confirmFocus.requestFocus(),
         ),
         const SizedBox(height: 20),
         AuthTextField(
           controller: _confirmCtrl,
+          focusNode: _confirmFocus,
           hint: '••••••••',
           label: 'Confirm Password',
           prefixIcon: Icons.lock_outline_rounded,
@@ -241,13 +312,16 @@ class _Step3BodyState extends State<_Step3Body> {
               : Icons.visibility_outlined,
           onSuffixTap: () => setState(() => _obscureConfirm = !_obscureConfirm),
           shape: AuthFieldShape.rounded,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _handleSignUp(),
         ),
         const SizedBox(height: 36),
 
         // ── Info blob ─────────────────────────────────────────────────────
         InfoBlob(
           icon: Icons.shield_outlined,
-          text: 'Your password is encrypted and never shared. We recommend using a unique password with letters, numbers, and symbols.',
+          text:
+              'Your password is encrypted and never shared. We recommend using a unique password with letters, numbers, and symbols.',
           color: AppColors.secondaryContainer.withOpacity(0.35),
           iconColor: AppColors.secondary,
           textColor: AppColors.onSecondaryContainer,
@@ -266,4 +340,3 @@ class _Step3BodyState extends State<_Step3Body> {
     );
   }
 }
-
