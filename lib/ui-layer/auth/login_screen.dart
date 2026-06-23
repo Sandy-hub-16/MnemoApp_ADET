@@ -817,7 +817,7 @@ class _SignInFooter extends StatelessWidget {
       runSpacing: 8,
       children: [
         Text(
-          '© 2024 MnemoApp',
+          '© 2026 MnemoApp.',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 11,
             fontWeight: FontWeight.w700,
@@ -825,8 +825,8 @@ class _SignInFooter extends StatelessWidget {
           ),
         ),
         ...[
-          'Privacy Policy',
-          'Terms of Service',
+          'All rights reserved.',
+          'Privacy Policy.',
         ].map(
           (l) => GestureDetector(
             onTap: () {},

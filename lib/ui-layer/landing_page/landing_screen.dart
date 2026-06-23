@@ -258,7 +258,7 @@ class _HeroCopy extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Join over 12,000 students worldwide!',
+                Text('Join us now and unlock your potential',
                     style: AppTextStyles.bodyBase.copyWith(
                         color: AppColors.onSurface,
                         fontWeight: FontWeight.w700)),

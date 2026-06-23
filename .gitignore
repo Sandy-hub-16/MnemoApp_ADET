@@ -49,3 +49,7 @@ app.*.map.json
 
 # Firebase Credentials
 env.json
+
+# for running the app 
+flutter_run.txt
+
