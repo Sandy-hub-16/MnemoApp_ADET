@@ -100,7 +100,6 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _ProgressTopBar(),
                 Expanded(
                   child: _loading
                       ? const Center(
@@ -118,23 +117,48 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                 sliver: SliverList(
                                   delegate: SliverChildListDelegate([
                                     // ── Section heading ──────────────────────────────
-                                    Text(
-                                      'Track Your Journey',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.onSurface,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Monitor your learning progress and achievements',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'Track Your Journey',
+                                                style:
+                                                    GoogleFonts.plusJakartaSans(
+                                                  fontSize: 28,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: AppColors.onSurface,
+                                                  letterSpacing: -0.5,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Monitor your learning progress and achievements',
+                                                style:
+                                                    GoogleFonts.plusJakartaSans(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppColors
+                                                      .onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        MouseRegion(
+                                          cursor: SystemMouseCursors.click,
+                                          child: _NavIconButton(
+                                            icon: Icons.tune_rounded,
+                                            onTap: () =>
+                                                _showProgressOptions(context),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     const SizedBox(height: 16),
                                     if (_errorMessage != null) ...[
@@ -163,17 +187,14 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                       ),
                                     ],
 
-                                    // ── WEAK SPOTS (Only if has data) ────────────────────
-                                    if (weakSpots.isNotEmpty) ...[
+                                    // ── NEEDS REVIEW (merged weak spots + forgotten cards) ──
+                                    if (weakSpots.isNotEmpty ||
+                                        forgottenCards.isNotEmpty) ...[
                                       const SizedBox(height: 20),
-                                      _WeakSpotsCard(spots: weakSpots),
-                                    ],
-
-                                    // ── FORGOTTEN CARDS (Only if has data) ───────────────
-                                    if (forgottenCards.isNotEmpty) ...[
-                                      const SizedBox(height: 20),
-                                      _ForgottenCardsCard(
-                                          cards: forgottenCards),
+                                      _NeedsReviewCard(
+                                        weakSpots: weakSpots,
+                                        forgottenCards: forgottenCards,
+                                      ),
                                     ],
 
                                     // ── EMPTY STATE (Only if no data at all) ─────────────
@@ -247,82 +268,17 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TOP BAR
+// PROGRESS OPTIONS ENTRY POINT
+// Tune button moved out of the top bar (now unified in MainShell) and into
+// the section heading row instead — functionality unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProgressTopBar extends StatelessWidget {
-  const _ProgressTopBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.background.withOpacity(0.75),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.bubble_chart_rounded,
-                color: AppColors.primary,
-                size: 22,
-              ),
-              const SizedBox(width: 8),
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [AppColors.primary, AppColors.secondary],
-                ).createShader(bounds),
-                child: Text(
-                  'Mnemo',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.secondary],
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'PROGRESS',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: _NavIconButton(
-              icon: Icons.tune_rounded,
-              onTap: () => _showProgressOptions(context),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showProgressOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _ProgressOptionsSheet(),
-    );
-  }
+void _showProgressOptions(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => const _ProgressOptionsSheet(),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1018,16 +974,6 @@ class _HeroStatsSection extends StatelessWidget {
         ? 0.0
         : totalFirstTryCards / dashboard.reviewedAnswers;
 
-    // Calculate overall average repetitions
-    final totalRepetitions = dashboard.deckSummaries.fold<double>(
-      0.0,
-      (sum, deck) =>
-          sum + ((deck.averageRepetitions ?? 0.0) * deck.answeredTotal),
-    );
-    final overallAvgRepetitions = dashboard.reviewedAnswers == 0
-        ? 0.0
-        : totalRepetitions / dashboard.reviewedAnswers;
-
     // Calculate total skipped cards
     final totalSkipped = dashboard.deckSummaries.fold<int>(
       0,
@@ -1183,57 +1129,20 @@ class _HeroStatsSection extends StatelessWidget {
           ),
         ),
 
-        // ── LEARNING INSIGHTS ────────────────────────────────────────────
+        // ── PERFORMANCE (merged insights + mastery) ──────────────────────
         if (dashboard.hasAttempts) ...[
           const SizedBox(height: 16),
           _SectionHeader(
             icon: Icons.insights_rounded,
-            title: 'Learning Insights',
-            subtitle: 'Your strengths and areas to improve',
+            title: 'Performance',
+            subtitle: 'Strengths, gaps, and test results at a glance',
           ),
           const SizedBox(height: 10),
-          _InsightsCard(
-            stats: [
-              _InsightStat(
-                icon: Icons.bolt_rounded,
-                label: 'First Try Success',
-                value: '${(overallFirstTryAccuracy * 100).round()}%',
-                color: AppColors.tertiary,
-                insight:
-                    overallFirstTryAccuracy >= 0.7 ? 'Strong!' : 'Room to grow',
-              ),
-              _InsightStat(
-                icon: Icons.repeat_rounded,
-                label: 'Avg. Repetitions',
-                value: overallAvgRepetitions.toStringAsFixed(1),
-                color: AppColors.secondary,
-                insight: overallAvgRepetitions <= 2.0
-                    ? 'Efficient'
-                    : 'Keep practicing',
-              ),
-              _InsightStat(
-                icon: Icons.skip_next_rounded,
-                label: 'Cards Skipped',
-                value: '$totalSkipped',
-                color: AppColors.error,
-                insight: totalSkipped == 0 ? 'Perfect!' : 'Try not to skip',
-              ),
-            ],
-          ),
-        ],
-
-        // ── MASTERY TEST PERFORMANCE ─────────────────────────────────────
-        if (decksWithMastery.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _SectionHeader(
-            icon: Icons.emoji_events_rounded,
-            title: 'Mastery Tests',
-            subtitle: 'Your achievement showcase',
-          ),
-          const SizedBox(height: 10),
-          _MasteryTestCard(
-            avgScore: avgMasteryScore,
-            decksTested: decksWithMastery.length,
+          _PerformanceCard(
+            firstTryAccuracy: overallFirstTryAccuracy,
+            totalSkipped: totalSkipped,
+            hasMasteryTests: decksWithMastery.isNotEmpty,
+            avgMasteryScore: avgMasteryScore,
             perfectScores:
                 decksWithMastery.where((d) => d.masteryScore == 100).length,
           ),
@@ -1377,165 +1286,128 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INSIGHTS CARD - Learning insights with actionable feedback
+// PERFORMANCE CARD - merged learning insights + mastery test results
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _InsightsCard extends StatelessWidget {
-  const _InsightsCard({required this.stats});
-  final List<_InsightStat> stats;
+class _PerformanceCard extends StatelessWidget {
+  const _PerformanceCard({
+    required this.firstTryAccuracy,
+    required this.totalSkipped,
+    required this.hasMasteryTests,
+    required this.avgMasteryScore,
+    required this.perfectScores,
+  });
+
+  final double firstTryAccuracy;
+  final int totalSkipped;
+  final bool hasMasteryTests;
+  final double avgMasteryScore;
+  final int perfectScores;
 
   @override
   Widget build(BuildContext context) {
+    // Always-relevant tiles: how you do on the first try, and how often
+    // you skip. Mastery-test tiles only appear once the user has actually
+    // taken one — no point showing "0% avg" before they've tried.
+    final tiles = <_PerfTile>[
+      _PerfTile(
+        icon: Icons.bolt_rounded,
+        label: 'First Try',
+        value: '${(firstTryAccuracy * 100).round()}%',
+        color: AppColors.tertiary,
+      ),
+      _PerfTile(
+        icon: Icons.skip_next_rounded,
+        label: 'Skipped',
+        value: '$totalSkipped',
+        color: totalSkipped == 0 ? AppColors.primary : AppColors.error,
+      ),
+      if (hasMasteryTests) ...[
+        _PerfTile(
+          icon: Icons.emoji_events_rounded,
+          label: 'Mastery Avg',
+          value: '${avgMasteryScore.round()}%',
+          color: AppColors.secondary,
+        ),
+        _PerfTile(
+          icon: Icons.star_rounded,
+          label: 'Perfect Scores',
+          value: '$perfectScores',
+          color: AppColors.tertiary,
+        ),
+      ],
+    ];
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: _cardDecoration(),
-      child: Column(
-        children: stats.asMap().entries.map((entry) {
-          final index = entry.key;
-          final stat = entry.value;
-          return Column(
-            children: [
-              if (index > 0) ...[
-                const SizedBox(height: 12),
-                Divider(
-                    color: AppColors.outlineVariant.withOpacity(0.3),
-                    height: 1),
-                const SizedBox(height: 12),
-              ],
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: stat.color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(stat.icon, color: stat.color, size: 20),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          stat.label,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          stat.insight,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    stat.value,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: stat.color,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        }).toList(),
+      child: GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        childAspectRatio: 2.3,
+        children: [for (final t in tiles) _PerfTileView(tile: t)],
       ),
     );
   }
 }
 
-class _InsightStat {
-  const _InsightStat({
+class _PerfTile {
+  const _PerfTile({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
-    required this.insight,
   });
 
   final IconData icon;
   final String label;
   final String value;
   final Color color;
-  final String insight;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MASTERY TEST CARD - Achievement showcase
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _MasteryTestCard extends StatelessWidget {
-  const _MasteryTestCard({
-    required this.avgScore,
-    required this.decksTested,
-    required this.perfectScores,
-  });
-
-  final double avgScore;
-  final int decksTested;
-  final int perfectScores;
+class _PerfTileView extends StatelessWidget {
+  const _PerfTileView({required this.tile});
+  final _PerfTile tile;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.tertiaryContainer.withOpacity(0.3),
-            AppColors.background,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: tile.color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.tertiary.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.emoji_events_rounded,
-              color: AppColors.tertiary,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 16),
+          Icon(tile.icon, color: tile.color, size: 18),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${avgScore.round()}% Average',
+                  tile.value,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 20,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
-                    color: AppColors.onSurface,
+                    color: tile.color,
                     height: 1,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 1),
                 Text(
-                  '$decksTested deck${decksTested == 1 ? '' : 's'} tested · $perfectScores perfect score${perfectScores == 1 ? '' : 's'}',
+                  tile.label,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.onSurfaceVariant,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -1642,6 +1514,7 @@ class _DetailedBreakdownSection extends StatefulWidget {
 }
 
 class _DetailedBreakdownSectionState extends State<_DetailedBreakdownSection> {
+  bool _expanded = false;
   int _selectedTab = 0;
   String _sortBy = 'lowest'; // Default: lowest score first
   String _viewMode = 'current'; // 'current', 'best', 'average'
@@ -1702,187 +1575,239 @@ class _DetailedBreakdownSectionState extends State<_DetailedBreakdownSection> {
 
   @override
   Widget build(BuildContext context) {
+    final decks = widget.dashboard.deckSummaries;
+    final weakestDeck = decks.isEmpty
+        ? null
+        : decks.reduce((a, b) =>
+            a.getMetricByViewMode('current') < b.getMetricByViewMode('current')
+                ? a
+                : b);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.bar_chart_rounded,
-                    color: AppColors.primary, size: 18),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Detailed Breakdown',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.onSurface,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    Text(
-                      'Performance by deck and category',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Row(
+          // ── Header — always visible, tap to expand/collapse ────────────
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => setState(() => _expanded = !_expanded),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
                 children: [
-                  // View mode dropdown
-                  PopupMenuButton<String>(
-                    initialValue: _viewMode,
-                    onSelected: (value) => setState(() => _viewMode = value),
-                    offset: const Offset(0, 40),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    color: AppColors.surfaceContainerLowest,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.secondaryContainer.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.secondary.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.visibility_rounded,
-                              color: AppColors.secondary, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            _getViewModeLabel(),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.secondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    itemBuilder: (context) => [
-                      _buildViewModeMenuItem('current', 'Current Mastery',
-                          Icons.trending_up_rounded),
-                      _buildViewModeMenuItem('best', 'Best Performance',
-                          Icons.emoji_events_rounded),
-                      _buildViewModeMenuItem('average', 'Average (Last 5)',
-                          Icons.analytics_rounded),
-                    ],
+                    child: Icon(Icons.bar_chart_rounded,
+                        color: AppColors.primary, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Detailed Breakdown',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.onSurface,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        Text(
+                          !_expanded && weakestDeck != null
+                              ? 'Lowest: ${weakestDeck.deckTitle} · ${(weakestDeck.getMetricByViewMode('current') * 100).round()}%'
+                              : 'Performance by deck and category',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  // Sort dropdown
-                  PopupMenuButton<String>(
-                    initialValue: _sortBy,
-                    onSelected: (value) => setState(() => _sortBy = value),
-                    offset: const Offset(0, 40),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    color: AppColors.surfaceContainerLowest,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryContainer.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.primary.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.sort_rounded,
-                              color: AppColors.primary, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            _getSortLabel(),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ],
-                      ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.onSurfaceVariant,
+                      size: 24,
                     ),
-                    itemBuilder: (context) => [
-                      _buildSortMenuItem('lowest', 'Lowest Score First',
-                          Icons.arrow_downward_rounded),
-                      _buildSortMenuItem('highest', 'Highest Score First',
-                          Icons.arrow_upward_rounded),
-                      _buildSortMenuItem(
-                          'recent', 'Recently Studied', Icons.schedule_rounded),
-                      _buildSortMenuItem(
-                          'quizzes', 'Most Quizzes', Icons.quiz_rounded),
-                      _buildSortMenuItem('alphabetical', 'Alphabetical',
-                          Icons.sort_by_alpha_rounded),
-                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _TabButton(
-                    label: 'By Deck',
-                    isSelected: _selectedTab == 0,
-                    onTap: () => setState(() => _selectedTab = 0),
-                  ),
-                ),
-                Expanded(
-                  child: _TabButton(
-                    label: 'By Category',
-                    isSelected: _selectedTab == 1,
-                    onTap: () => setState(() => _selectedTab = 1),
-                  ),
-                ),
-              ],
             ),
           ),
-          const SizedBox(height: 18),
-          if (_selectedTab == 0)
-            _DeckBreakdownContent(
-              decks: _sortDecks(widget.dashboard.deckSummaries),
-              viewMode: _viewMode,
-            )
-          else
-            _CategoryBreakdownContent(
-              subjects: _sortSubjects(widget.subjectStats),
-              totalDecks: widget.dashboard.deckSummaries.length,
-              decks: widget.dashboard.deckSummaries,
-              viewMode: _viewMode,
-            ),
+
+          // ── Body — sort/view controls, tabs, and content ────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: !_expanded
+                ? const SizedBox(width: double.infinity)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Spacer(),
+                          // View mode dropdown
+                          PopupMenuButton<String>(
+                            initialValue: _viewMode,
+                            onSelected: (value) =>
+                                setState(() => _viewMode = value),
+                            offset: const Offset(0, 40),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            color: AppColors.surfaceContainerLowest,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.secondaryContainer
+                                    .withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.secondary.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.visibility_rounded,
+                                      color: AppColors.secondary, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _getViewModeLabel(),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.secondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            itemBuilder: (context) => [
+                              _buildViewModeMenuItem('current',
+                                  'Current Mastery', Icons.trending_up_rounded),
+                              _buildViewModeMenuItem('best', 'Best Performance',
+                                  Icons.emoji_events_rounded),
+                              _buildViewModeMenuItem('average',
+                                  'Average (Last 5)', Icons.analytics_rounded),
+                            ],
+                          ),
+                          const SizedBox(width: 8),
+                          // Sort dropdown
+                          PopupMenuButton<String>(
+                            initialValue: _sortBy,
+                            onSelected: (value) =>
+                                setState(() => _sortBy = value),
+                            offset: const Offset(0, 40),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            color: AppColors.surfaceContainerLowest,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.primaryContainer.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.primary.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.sort_rounded,
+                                      color: AppColors.primary, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _getSortLabel(),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            itemBuilder: (context) => [
+                              _buildSortMenuItem('lowest', 'Lowest Score First',
+                                  Icons.arrow_downward_rounded),
+                              _buildSortMenuItem(
+                                  'highest',
+                                  'Highest Score First',
+                                  Icons.arrow_upward_rounded),
+                              _buildSortMenuItem('recent', 'Recently Studied',
+                                  Icons.schedule_rounded),
+                              _buildSortMenuItem('quizzes', 'Most Quizzes',
+                                  Icons.quiz_rounded),
+                              _buildSortMenuItem('alphabetical', 'Alphabetical',
+                                  Icons.sort_by_alpha_rounded),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _TabButton(
+                                label: 'By Deck',
+                                isSelected: _selectedTab == 0,
+                                onTap: () => setState(() => _selectedTab = 0),
+                              ),
+                            ),
+                            Expanded(
+                              child: _TabButton(
+                                label: 'By Category',
+                                isSelected: _selectedTab == 1,
+                                onTap: () => setState(() => _selectedTab = 1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (_selectedTab == 0)
+                        _DeckBreakdownContent(
+                          decks: _sortDecks(widget.dashboard.deckSummaries),
+                          viewMode: _viewMode,
+                        )
+                      else
+                        _CategoryBreakdownContent(
+                          subjects: _sortSubjects(widget.subjectStats),
+                          totalDecks: widget.dashboard.deckSummaries.length,
+                          decks: widget.dashboard.deckSummaries,
+                          viewMode: _viewMode,
+                        ),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
@@ -2279,12 +2204,49 @@ class _SubjectRow extends StatelessWidget {
 // WEAK SPOTS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _WeakSpotsCard extends StatelessWidget {
-  const _WeakSpotsCard({required this.spots});
-  final List<_WeakSpot> spots;
+class _NeedsReviewCard extends StatefulWidget {
+  const _NeedsReviewCard({
+    required this.weakSpots,
+    required this.forgottenCards,
+  });
+
+  final List<_WeakSpot> weakSpots;
+  final List<_ForgottenCard> forgottenCards;
+
+  @override
+  State<_NeedsReviewCard> createState() => _NeedsReviewCardState();
+}
+
+class _NeedsReviewCardState extends State<_NeedsReviewCard> {
+  bool _showAll = false;
 
   @override
   Widget build(BuildContext context) {
+    // Combine both kinds of "struggling" content into one ranked list —
+    // weak spots and forgotten cards are conceptually the same thing to a
+    // user (material that needs another look), just with different causes.
+    final items = <_ReviewItem>[
+      ...widget.weakSpots.map((s) => _ReviewItem(
+            topic: s.topic,
+            subject: s.subject,
+            reason: '${s.termCount} terms struggling',
+            severity: s.termCount,
+            icon: Icons.error_outline_rounded,
+            color: AppColors.error,
+          )),
+      ...widget.forgottenCards.map((c) => _ReviewItem(
+            topic: c.topic,
+            subject: c.subject,
+            reason: 'Forgot after mastering · ${c.failureCount}x',
+            severity: c.failureCount,
+            icon: Icons.history_rounded,
+            color: AppColors.tertiary,
+          )),
+    ]..sort((a, b) => b.severity.compareTo(a.severity));
+
+    final visibleItems = _showAll ? items : items.take(3).toList();
+    final hiddenCount = items.length - visibleItems.length;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(color: AppColors.surfaceContainerLow),
@@ -2296,131 +2258,39 @@ class _WeakSpotsCard extends StatelessWidget {
               Icon(Icons.error_outline_rounded,
                   color: AppColors.error, size: 20),
               const SizedBox(width: 8),
-              Text(
-                'Weak Spots',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (spots.isEmpty)
-            const _EmptyProgressMessage(
-              icon: Icons.check_circle_outline_rounded,
-              title: 'No weak spots yet',
-              message: 'Missed cards from future quizzes will collect here.',
-            )
-          else
-            ...spots.map((s) => _WeakSpotTile(spot: s)),
-        ],
-      ),
-    );
-  }
-}
-
-class _WeakSpotTile extends StatelessWidget {
-  const _WeakSpotTile({required this.spot});
-  final _WeakSpot spot;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: () {},
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: AppColors.outlineVariant.withOpacity(0.2),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.onSurface.withOpacity(0.03),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        spot.topic,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${spot.subject} · ${spot.termCount} terms struggling',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+              Expanded(
+                child: Text(
+                  'Needs Review',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onSurface,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    color: AppColors.outline, size: 20),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FORGOTTEN CARDS CARD
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ForgottenCardsCard extends StatelessWidget {
-  const _ForgottenCardsCard({required this.cards});
-  final List<_ForgottenCard> cards;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(color: AppColors.surfaceContainerLow),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.history_rounded, color: AppColors.tertiary, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Forgotten Cards',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
-                  letterSpacing: -0.2,
-                ),
               ),
+              if (items.isNotEmpty)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.error,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
-            'Cards you knew in your best session but forgot later',
+            'Topics you\'re struggling with or forgot after mastering',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               color: AppColors.onSurfaceVariant,
@@ -2428,23 +2298,79 @@ class _ForgottenCardsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          if (cards.isEmpty)
+          if (items.isEmpty)
             const _EmptyProgressMessage(
-              icon: Icons.celebration_outlined,
-              title: 'No forgotten cards',
-              message: 'You haven\'t forgotten anything you once knew!',
+              icon: Icons.check_circle_outline_rounded,
+              title: 'Nothing to review',
+              message: 'Struggling or forgotten cards will collect here.',
             )
-          else
-            ...cards.map((c) => _ForgottenCardTile(card: c)),
+          else ...[
+            ...visibleItems.map((item) => _ReviewTile(item: item)),
+            if (hiddenCount > 0 || _showAll && items.length > 3)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showAll = !_showAll),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _showAll
+                                ? 'Show less'
+                                : 'View all $hiddenCount more',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            _showAll
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            color: AppColors.primary,
+                            size: 16,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _ForgottenCardTile extends StatelessWidget {
-  const _ForgottenCardTile({required this.card});
-  final _ForgottenCard card;
+class _ReviewItem {
+  const _ReviewItem({
+    required this.topic,
+    required this.subject,
+    required this.reason,
+    required this.severity,
+    required this.icon,
+    required this.color,
+  });
+
+  final String topic;
+  final String subject;
+  final String reason;
+  final int severity;
+  final IconData icon;
+  final Color color;
+}
+
+class _ReviewTile extends StatelessWidget {
+  const _ReviewTile({required this.item});
+  final _ReviewItem item;
 
   @override
   Widget build(BuildContext context) {
@@ -2461,7 +2387,7 @@ class _ForgottenCardTile extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: AppColors.tertiary.withOpacity(0.3),
+                color: item.color.withOpacity(0.25),
               ),
               boxShadow: [
                 BoxShadow(
@@ -2476,14 +2402,10 @@ class _ForgottenCardTile extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.tertiaryContainer.withOpacity(0.5),
+                    color: item.color.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(
-                    Icons.refresh_rounded,
-                    color: AppColors.tertiary,
-                    size: 18,
-                  ),
+                  child: Icon(item.icon, color: item.color, size: 16),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2491,20 +2413,24 @@ class _ForgottenCardTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        card.topic,
+                        item.topic,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: AppColors.onSurface,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${card.subject} · Failed ${card.failureCount}x after mastering',
+                        '${item.subject} · ${item.reason}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: AppColors.onSurfaceVariant,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -2521,7 +2447,7 @@ class _ForgottenCardTile extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MASTERY RING  —  CustomPainter arc
+// EMPTY STATE MESSAGE  —  shared by Needs Review when nothing to show
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyProgressMessage extends StatelessWidget {

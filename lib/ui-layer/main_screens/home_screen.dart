@@ -1,10 +1,8 @@
-import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
-import '../widgets/connectivity_indicator.dart';
 import '../../main.dart';
 import '../../business-layer/services/progress_service.dart';
 import 'deck/create_deck_options.dart';
@@ -39,7 +37,6 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
   bool _loading = true;
   String _fullName = '';
   String _username = '';
-  String? _photoUrl;
   ProgressDashboard _dashboard = ProgressDashboard.empty();
   // Live stream — updates automatically whenever _trackDeckStarted() writes to
   // Firestore, even if the quiz screen is open on top of the home screen.
@@ -59,7 +56,6 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
       return;
     }
 
-    final authUser = FirebaseAuth.instance.currentUser!;
     final doc =
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = doc.data() ?? {};
@@ -70,7 +66,6 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
       setState(() {
         _fullName = data['fullName'] as String? ?? '';
         _username = data['username'] as String? ?? '';
-        _photoUrl = authUser.photoURL ?? data['photoUrl'] as String?;
         _dashboard = dashboard;
         _loading = false;
       });
@@ -86,7 +81,8 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
     final daysToSubtract = now.weekday - 1; // 0 for Monday, 1 for Tue, etc.
     final weekStartWithTime = now.subtract(Duration(days: daysToSubtract));
     // Reset to 00:00:00 to get the exact week start
-    return DateTime(weekStartWithTime.year, weekStartWithTime.month, weekStartWithTime.day);
+    return DateTime(
+        weekStartWithTime.year, weekStartWithTime.month, weekStartWithTime.day);
   }
 
   /// Opens a real-time Firestore stream on users/{uid}/recentSessions.
@@ -149,212 +145,21 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
           // ── Main content ──────────────────────────────────────────────────
           SafeArea(
             bottom: false,
-            child: Column(
-              children: [
-                _HomeTopBar(photoUrl: _photoUrl),
-                Expanded(
-                  child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : _HomeBody(
-                          fullName: _fullName,
-                          username: _username,
-                          dashboard: _dashboard,
-                          sessionsStream: _sessionsStream,
-                        ),
-                ),
-              ],
-            ),
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : _HomeBody(
+                    fullName: _fullName,
+                    username: _username,
+                    dashboard: _dashboard,
+                    sessionsStream: _sessionsStream,
+                  ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TOP BAR
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _HomeTopBar extends StatelessWidget {
-  const _HomeTopBar({this.photoUrl});
-  final String? photoUrl;
-
-  Stream<int> _unreadCountStream() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return Stream.value(0);
-    return FirebaseFirestore.instance
-        .collection('users')
-        .doc(uid)
-        .collection('notifications')
-        .where('read', isEqualTo: false)
-        .snapshots()
-        .map((snap) => snap.docs.length);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          color: AppColors.background.withOpacity(0.75),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Brand with HOME badge
-              Row(
-                children: [
-                  Icon(
-                    Icons.bubble_chart_rounded,
-                    color: AppColors.primary,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 8),
-                  ShaderMask(
-                    shaderCallback: (b) => const LinearGradient(
-                      colors: [AppColors.primary, AppColors.secondary],
-                    ).createShader(b),
-                    child: Text(
-                      'Mnemo',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.primary, AppColors.secondary],
-                      ),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'HOME',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              // Connectivity indicator
-              const ConnectivityIndicator(),
-
-              const Spacer(),
-
-              // Right side: bell icon + avatar
-              Row(
-                children: [
-                  // ── Bell icon with unread badge ───────────────────────────
-                  StreamBuilder<int>(
-                    stream: _unreadCountStream(),
-                    builder: (context, snapshot) {
-                      final unreadCount = snapshot.data ?? 0;
-                      return MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: GestureDetector(
-                          onTap: () => Navigator.of(context)
-                              .pushNamed(AppRoutes.notifications),
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  color: AppColors.primaryContainer
-                                      .withOpacity(0.3),
-                                ),
-                                child: const Icon(
-                                  Icons.notifications_outlined,
-                                  color: AppColors.primary,
-                                  size: 20,
-                                ),
-                              ),
-                              if (unreadCount > 0)
-                                Positioned(
-                                  top: -2,
-                                  right: -2,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(3),
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.error,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    constraints: const BoxConstraints(
-                                      minWidth: 16,
-                                      minHeight: 16,
-                                    ),
-                                    child: Text(
-                                      unreadCount > 99 ? '99+' : '$unreadCount',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 10),
-
-                  // ── Avatar → navigates to Profile ─────────────────────────
-                  MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context)
-                          .pushReplacementNamed(AppRoutes.profile),
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: AppColors.primary.withOpacity(0.3),
-                              width: 2),
-                          color: AppColors.primaryContainer.withOpacity(0.3),
-                          image: photoUrl != null
-                              ? DecorationImage(
-                                  image: NetworkImage(photoUrl!),
-                                  fit: BoxFit.cover,
-                                )
-                              : null,
-                        ),
-                        child: photoUrl == null
-                            ? const Icon(Icons.person_rounded,
-                                color: AppColors.primary, size: 20)
-                            : null,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
