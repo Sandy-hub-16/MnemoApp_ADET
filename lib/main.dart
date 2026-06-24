@@ -131,7 +131,7 @@ abstract final class AppRouter {
       AppRoutes.verifyEmail => const VerifyEmailScreen(),
       AppRoutes.home => const MainShell(),
       AppRoutes.profile => const MainShell(initialIndex: 4),
-      AppRoutes.accountSettings => const SettingsScreen(),
+      AppRoutes.accountSettings => const AccountSettingsScreen(),
       AppRoutes.settings => const SettingsScreen(),
       AppRoutes.decks => const MainShell(initialIndex: 1),
       AppRoutes.createDeck => const CreateDeckScreen(),

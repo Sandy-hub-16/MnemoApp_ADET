@@ -1680,7 +1680,7 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
           const SizedBox(height: 8),
           _SheetOption(
             icon: Icons.auto_stories_rounded,
-            label: 'Study This Deck',
+            label: 'Browse Cards',
             onTap: () {
               Navigator.pop(context);
               Navigator.of(context).pushNamed(

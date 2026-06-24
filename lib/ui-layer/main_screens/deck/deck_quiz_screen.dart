@@ -54,7 +54,6 @@ class _QuizCard {
     required this.answer,
     this.choices = const [],
     this.correctIndex = 0,
-    this.showRevealFirst = false,
   });
 
   factory _QuizCard.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -70,7 +69,6 @@ class _QuizCard {
       answer: d['answer'] as String? ?? '',
       choices: choices,
       correctIndex: (d['correctIndex'] as int?) ?? 0,
-      showRevealFirst: Random().nextDouble() < 0.25, // 25% chance
     );
   }
 
@@ -80,7 +78,6 @@ class _QuizCard {
   final String answer;
   final List<String> choices; // only populated for multiple_choice
   final int correctIndex; // index into choices[] of the correct answer
-  final bool showRevealFirst; // true = reveal-first mode, false = straight MC
 
   bool get isMultipleChoice => type == 'multiple_choice';
 }
@@ -116,6 +113,35 @@ class _CardResult {
   int wrongAttempts;
 }
 
+// ── Per-card transient UI state ──────────────────────────────────────────────
+// Everything here is scoped to "however the current card looks right now" —
+// answered/not, which choice was tapped, etc. It's bundled into one object and
+// replaced wholesale by _setupCard() instead of being reset field-by-field, so
+// a new per-card field can't be left out of a reset by accident.
+class _CardSessionState {
+  _CardSessionState({
+    required this.canSkip,
+    this.shuffledChoices = const [],
+    this.shuffleMap = const [],
+    this.showThinkFirstGate = false,
+  });
+
+  bool answered = false;
+  bool isCorrect = false;
+  final bool canSkip; // Shows skip button after 2 failed attempts
+
+  // MC-specific
+  bool choicesRevealed = false;
+  int? selectedShuffledIndex; // which shuffled slot the user tapped
+  final List<String> shuffledChoices;
+  final List<int> shuffleMap; // shuffleMap[shuffledPos] = originalIndex
+  final bool
+      showThinkFirstGate; // true only if in this session's ~25% subset AND first showing
+
+  // Identification-specific
+  String correctAnswerReveal = ''; // shown only on wrong identification
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +175,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   String? _clonedFromUsername;
   bool _attemptSaved = false;
 
+  // ~25% of this deck's cards, re-shuffled every session, eligible to show
+  // the "think first" gate on their first encounter (see _loadCards).
+  Set<String> _thinkFirstCardIds = {};
+
   // ── Progress tracking (new system) ────────────────────────────────────────────
   int _cardsSeenCount = 0; // How many unique cards have been seen (1-10)
   final Set<String> _seenCardIds = {}; // Track which cards have been seen
@@ -159,19 +189,19 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   bool _sessionTracked = false;
 
   // ── Per-card transient state ──────────────────────────────────────────────────
-  bool _answered = false;
-  bool _isCorrect = false;
-  bool _canSkip = false; // Shows skip button after 2 failed attempts
+  // Bundled into _CardSessionState (defined above) and replaced wholesale by
+  // _setupCard() each time we move to a new card.
+  late _CardSessionState _cardSession;
 
-  // MC-specific
-  bool _choicesRevealed = false;
-  int? _selectedShuffledIndex; // which shuffled slot the user tapped
-  List<String> _shuffledChoices = [];
-  List<int> _shuffleMap = []; // shuffleMap[shuffledPos] = originalIndex
-
-  // Identification-specific
+  // Identification-specific — kept separate since it's a controller, not a
+  // value we reset; we just clear its text in _setupCard().
   final TextEditingController _answerCtrl = TextEditingController();
-  String _correctAnswerReveal = ''; // shown only on wrong identification
+
+  // Motivational bubble message — rotates every few cards rather than on
+  // every rebuild, so it doesn't change mid-interaction or feel like noise.
+  String _motivationalMessage = _motivationalMessages.first;
+  int _cardsSinceMotivationalChange = 0;
+  static const int _motivationalMessageInterval = 3; // cards between changes
 
   // ── Animation controllers ─────────────────────────────────────────────────────
   late AnimationController _cardSlideCtrl;
@@ -292,6 +322,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       // 🔀 Shuffle card order — different every session
       loaded.shuffle(Random());
 
+      // 🔀 Independently shuffle + pick ~25% of the deck to get the
+      // "think first" gate this session — re-rolled every time, so it's
+      // not always the same cards, and it's a fixed share of the deck
+      // rather than an independent coin-flip per card.
+      final shuffledIdsForGate = loaded.map((c) => c.id).toList()
+        ..shuffle(Random());
+      final gateCount = (loaded.length * 0.25).round();
+      final thinkFirstIds = shuffledIdsForGate.take(gateCount).toSet();
+
       if (!mounted) return;
       setState(() {
         _cards = loaded;
@@ -300,6 +339,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         _deckCategory = category;
         _phase = _QuizPhase.quiz;
         _currentQueueIndex = 0;
+        _thinkFirstCardIds = thinkFirstIds;
       });
       _setupCard();
       _cardSlideCtrl.forward();
@@ -321,20 +361,40 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     final card = _cardQueue[_currentQueueIndex];
     final attempts = _cardAttempts[card.id] ?? 0;
 
-    _answered = false;
-    _isCorrect = false;
-    _canSkip = attempts >= 2; // Show skip after 2 failed attempts
-    _choicesRevealed = false;
-    _selectedShuffledIndex = null;
-    _correctAnswerReveal = '';
     _answerCtrl.clear();
 
+    // 🔀 Shuffle the order choices appear in — different every card visit
+    List<int> shuffleMap = const [];
+    List<String> shuffledChoices = const [];
     if (card.isMultipleChoice) {
-      // 🔀 Shuffle the order choices appear in — different every card visit
       final positions = List<int>.generate(card.choices.length, (i) => i);
       positions.shuffle(Random());
-      _shuffleMap = positions;
-      _shuffledChoices = positions.map((i) => card.choices[i]).toList();
+      shuffleMap = positions;
+      shuffledChoices = positions.map((i) => card.choices[i]).toList();
+    }
+
+    // Replace the whole per-card state at once. Any future per-card field
+    // lives on _CardSessionState, so there's nothing extra to remember here.
+    // Think-first gate: only for cards in this session's ~25% subset
+    // (_thinkFirstCardIds), and only on their true first showing —
+    // _seenCardIds only gains an id once we've advanced past that card, so a
+    // card being requeued after a wrong answer won't re-trigger the gate.
+    _cardSession = _CardSessionState(
+      canSkip: attempts >= 2, // Show skip after 2 failed attempts
+      shuffleMap: shuffleMap,
+      shuffledChoices: shuffledChoices,
+      showThinkFirstGate: card.isMultipleChoice &&
+          _thinkFirstCardIds.contains(card.id) &&
+          !_seenCardIds.contains(card.id),
+    );
+
+    // Rotate the motivational message every few cards instead of on every
+    // single card, so it reads as occasional variety rather than flicker.
+    _cardsSinceMotivationalChange++;
+    if (_cardsSinceMotivationalChange >= _motivationalMessageInterval) {
+      _motivationalMessage =
+          _motivationalMessages[Random().nextInt(_motivationalMessages.length)];
+      _cardsSinceMotivationalChange = 0;
     }
   }
 
@@ -345,10 +405,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   /// Called when user taps a multiple-choice option.
   /// Immediate evaluation — no "Next" required to confirm.
   void _onChoiceTapped(int shuffledPos) {
-    if (_answered) return;
+    if (_cardSession.answered) return;
 
     final card = _cardQueue[_currentQueueIndex];
-    final originalIdx = _shuffleMap[shuffledPos];
+    final originalIdx = _cardSession.shuffleMap[shuffledPos];
     final correct = originalIdx == card.correctIndex;
 
     // Track attempts
@@ -373,9 +433,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     setState(() {
-      _answered = true;
-      _isCorrect = correct;
-      _selectedShuffledIndex = shuffledPos;
+      _cardSession.answered = true;
+      _cardSession.isCorrect = correct;
+      _cardSession.selectedShuffledIndex = shuffledPos;
     });
 
     // Track session on first submitted answer (fire-and-forget).
@@ -397,7 +457,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   /// Called when user taps "Check Answer" for identification cards.
   void _onCheckIdentification() {
-    if (_answered) return;
+    if (_cardSession.answered) return;
     final typed = _answerCtrl.text.trim();
     if (typed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -440,9 +500,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     setState(() {
-      _answered = true;
-      _isCorrect = correct;
-      if (!correct) _correctAnswerReveal = card.answer;
+      _cardSession.answered = true;
+      _cardSession.isCorrect = correct;
+      if (!correct) _cardSession.correctAnswerReveal = card.answer;
     });
 
     // Track session on first submitted answer (fire-and-forget).
@@ -589,11 +649,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     // Calculate mastery test eligibility
-    final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
-    final hasCardsWithThreePlusWrongAttempts =
-        _cardResults.values.any((r) => r.wrongAttempts >= 3);
-    final isMasteryTestEligible =
-        !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
+    final isMasteryTestEligible = _isMasteryTestEligible;
 
     // Check if this was a low-score early exit (≤20%)
     final correctCount = _cardResults.values.where((r) => r.correct).length;
@@ -1009,21 +1065,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                       AnimatedSize(
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeOutCubic,
-                        child: _answered
+                        child: _cardSession.answered
                             ? Column(
                                 children: [
                                   _NextDoneButton(
                                     isLast: _cardQueue.length == 1,
-                                    isCorrect: _isCorrect,
+                                    isCorrect: _cardSession.isCorrect,
                                     isMasteryTest: _isMasteryTest,
                                     showEligibilitySparkle: !_isMasteryTest &&
                                         _cardQueue.length == 1 &&
-                                        _isCorrect &&
+                                        _cardSession.isCorrect &&
                                         _isMasteryTestEligible,
                                     onTap: _advance,
                                   ),
-                                  if (_canSkip &&
-                                      !_isCorrect &&
+                                  if (_cardSession.canSkip &&
+                                      !_cardSession.isCorrect &&
                                       !_isMasteryTest) ...[
                                     const SizedBox(height: 12),
                                     _SkipButton(onTap: _onSkipCard),
@@ -1034,7 +1090,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                       ),
 
                       const SizedBox(height: 40),
-                      _MotivationalBubble(),
+                      _MotivationalBubble(message: _motivationalMessage),
                     ],
                   ),
                 ),
@@ -1051,15 +1107,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildMCSection(_QuizCard card) {
-    // Only show reveal-first gate if card.showRevealFirst is true
-    if (card.showRevealFirst && !_choicesRevealed) {
+    // Only show the think-first gate on this card's true first showing
+    if (_cardSession.showThinkFirstGate && !_cardSession.choicesRevealed) {
       // ── Phase 1: Think-first gate ──────────────────────────────────────────
       return Column(
         children: [
           _ThinkFirstBanner(),
           const SizedBox(height: 20),
           _RevealChoicesButton(
-            onTap: () => setState(() => _choicesRevealed = true),
+            onTap: () => setState(() => _cardSession.choicesRevealed = true),
           ),
         ],
       );
@@ -1067,14 +1123,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
     // ── Phase 2: Choices visible ─────────────────────────────────────────────
     return Column(
-      children: List.generate(_shuffledChoices.length, (i) {
-        final originalIdx = _shuffleMap[i];
+      children: List.generate(_cardSession.shuffledChoices.length, (i) {
+        final originalIdx = _cardSession.shuffleMap[i];
         final isCorrectOption = originalIdx == card.correctIndex;
-        final isUserChoice = _selectedShuffledIndex == i;
+        final isUserChoice = _cardSession.selectedShuffledIndex == i;
 
         // Determine visual state
         _ChoiceState state = _ChoiceState.idle;
-        if (_answered) {
+        if (_cardSession.answered) {
           if (isCorrectOption) {
             state = _ChoiceState.correct;
           } else if (isUserChoice) {
@@ -1087,9 +1143,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: _ChoiceTile(
-            label: _shuffledChoices[i],
+            label: _cardSession.shuffledChoices[i],
             state: state,
-            onTap: _answered ? null : () => _onChoiceTapped(i),
+            onTap: _cardSession.answered ? null : () => _onChoiceTapped(i),
           ),
         );
       }),
@@ -1101,21 +1157,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildIdentificationSection() {
-    final fieldColor = _answered
-        ? (_isCorrect
+    final fieldColor = _cardSession.answered
+        ? (_cardSession.isCorrect
             ? AppColors.primaryContainer.withOpacity(0.30)
             : AppColors.errorContainer.withOpacity(0.40))
         : AppColors.surfaceContainerLow;
 
-    final borderSide = _answered
+    final borderSide = _cardSession.answered
         ? BorderSide(
-            color: _isCorrect ? AppColors.primary : AppColors.error,
+            color: _cardSession.isCorrect ? AppColors.primary : AppColors.error,
             width: 2,
           )
         : BorderSide.none;
 
-    final textColor = _answered
-        ? (_isCorrect ? AppColors.primary : AppColors.error)
+    final textColor = _cardSession.answered
+        ? (_cardSession.isCorrect ? AppColors.primary : AppColors.error)
         : AppColors.onSurface;
 
     return Column(
@@ -1136,7 +1192,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         // ── Text field ──────────────────────────────────────────────────────
         TextField(
           controller: _answerCtrl,
-          enabled: !_answered,
+          enabled: !_cardSession.answered,
           style: GoogleFonts.plusJakartaSans(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1173,7 +1229,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ),
           textInputAction: TextInputAction.done,
           onSubmitted: (_) {
-            if (!_answered) _onCheckIdentification();
+            if (!_cardSession.answered) _onCheckIdentification();
           },
         ),
 
@@ -1181,12 +1237,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         AnimatedSize(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
-          child: _answered
+          child: _cardSession.answered
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 14),
-                    if (_isCorrect)
+                    if (_cardSession.isCorrect)
                       _IdentificationFeedback(
                         correct: true,
                         correctAnswer: '',
@@ -1194,7 +1250,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                     else
                       _IdentificationFeedback(
                         correct: false,
-                        correctAnswer: _correctAnswerReveal,
+                        correctAnswer: _cardSession.correctAnswerReveal,
                       ),
                   ],
                 )
@@ -1205,7 +1261,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         AnimatedSize(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
-          child: !_answered
+          child: !_cardSession.answered
               ? Padding(
                   padding: const EdgeInsets.only(top: 20),
                   child: _CheckAnswerButton(onTap: _onCheckIdentification),
@@ -2324,18 +2380,22 @@ class _NextDoneButton extends StatelessWidget {
 // MOTIVATIONAL BUBBLE
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Module-level so the rotation interval logic in _QuizScreenState can pick
+// from it directly without instantiating the widget.
+const List<String> _motivationalMessages = [
+  '"Active recall is the single most effective study technique. You\'ve got this!"',
+  '"Each card you review today saves you hours of cramming tomorrow."',
+  '"Struggle a little — that\'s your brain building new pathways!"',
+  '"Consistency beats intensity. Keep going, one card at a time."',
+];
+
 class _MotivationalBubble extends StatelessWidget {
-  static const _messages = [
-    '"Active recall is the single most effective study technique. You\'ve got this!"',
-    '"Each card you review today saves you hours of cramming tomorrow."',
-    '"Struggle a little — that\'s your brain building new pathways!"',
-    '"Consistency beats intensity. Keep going, one card at a time."',
-  ];
+  const _MotivationalBubble({required this.message});
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
-    final msg = _messages[DateTime.now().millisecond % _messages.length];
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2367,7 +2427,7 @@ class _MotivationalBubble extends StatelessWidget {
               ),
             ),
             child: Text(
-              msg,
+              message,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
