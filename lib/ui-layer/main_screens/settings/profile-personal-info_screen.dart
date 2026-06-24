@@ -23,7 +23,7 @@ String _censorEmail(String email) {
   return '$visible***$domain';
 }
 
-// ── 7-day lock helper ─────────────────────────────────────────────────────────
+// ── 7-day lock helper (username) ─────────────────────────────────────────────
 bool _isWithin7Days(Timestamp? ts) {
   if (ts == null) return false;
   final diff = DateTime.now().difference(ts.toDate());
@@ -35,6 +35,23 @@ String _daysRemaining(Timestamp? ts) {
   if (ts == null) return '';
   final diff = DateTime.now().difference(ts.toDate());
   final remaining = 7 - diff.inDays;
+  return remaining == 1 ? '1 day' : '$remaining days';
+}
+
+// ── 30-day lock helper (per education field) ──────────────────────────────────
+// Uses exactly 30 elapsed days, not a calendar-month comparison.
+bool _isWithin30Days(Timestamp? ts) {
+  if (ts == null) return false;
+  final diff = DateTime.now().difference(ts.toDate());
+  return diff.inDays < 30;
+}
+
+/// Returns how many days remain in the 30-day cooldown, e.g. "25 days".
+String _daysRemaining30(Timestamp? ts) {
+  if (ts == null) return '';
+  final diff = DateTime.now().difference(ts.toDate());
+  final remaining = 30 - diff.inDays;
+  if (remaining <= 0) return '';
   return remaining == 1 ? '1 day' : '$remaining days';
 }
 
@@ -136,7 +153,10 @@ class _SettingsBodyState extends State<_SettingsBody> {
   // ── Lock timestamps ────────────────────────────────────────────────────────
   Timestamp? _createdAt;
   Timestamp? _usernameLastChangedAt; // null → use createdAt for username lock
-  Timestamp? _educationLastChangedAt;
+  // Education: one timestamp per field — cooldown is per-field, not per-section
+  Timestamp? _schoolLastChangedAt;
+  Timestamp? _courseLastChangedAt;
+  Timestamp? _yearLevelLastChangedAt;
 
   bool _loading = true;
   bool _saving = false;
@@ -150,7 +170,11 @@ class _SettingsBodyState extends State<_SettingsBody> {
     return _isWithin7Days(ts);
   }
 
-  bool get _educationIsLocked => _isWithin7Days(_educationLastChangedAt);
+  // Education: 30-day cooldown is per-field — changing school doesn't lock course
+  bool get _schoolIsLocked => _isWithin30Days(_schoolLastChangedAt);
+  bool get _courseIsLocked => _isWithin30Days(_courseLastChangedAt);
+  bool get _yearLevelIsLocked => _isWithin30Days(_yearLevelLastChangedAt);
+
   bool get _regionIsLocked => _region != null && _region!.isNotEmpty;
   bool get _birthdateIsLocked => _birthdate != null && _birthdate!.isNotEmpty;
 
@@ -262,7 +286,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
 
         _createdAt = data['createdAt'] as Timestamp?;
         _usernameLastChangedAt = data['usernameLastChangedAt'] as Timestamp?;
-        _educationLastChangedAt = data['educationLastChangedAt'] as Timestamp?;
+        _schoolLastChangedAt = data['schoolLastChangedAt'] as Timestamp?;
+        _courseLastChangedAt = data['courseLastChangedAt'] as Timestamp?;
+        _yearLevelLastChangedAt = data['yearLevelLastChangedAt'] as Timestamp?;
 
         _isDirty = false;
         _loading = false;
@@ -335,10 +361,8 @@ class _SettingsBodyState extends State<_SettingsBody> {
       // Overlay on — set before any async upload work.
       setState(() => _uploadingPhoto = true);
 
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('avatars')
-          .child('$uid.jpg');
+      final ref =
+          FirebaseStorage.instance.ref().child('avatars').child('$uid.jpg');
 
       if (kIsWeb) {
         final bytes = await picked.readAsBytes();
@@ -426,16 +450,20 @@ class _SettingsBodyState extends State<_SettingsBody> {
         updates['usernameLastChangedAt'] = FieldValue.serverTimestamp();
       }
 
-      // Education — only write if editable and changed
-      final eduChanged = _schoolCtrl.text.trim() != origSchool ||
-          _courseCtrl.text.trim() != origCourse ||
-          _yearLevel != origYearLevel;
-      if (!_educationIsLocked && eduChanged) {
+      // Education — per-field 30-day cooldown.
+      // Each field is saved independently; editing school does not lock course.
+      if (!_schoolIsLocked && _schoolCtrl.text.trim() != origSchool) {
         updates['school'] = _schoolCtrl.text.trim();
+        updates['schoolLastChangedAt'] = FieldValue.serverTimestamp();
+      }
+      if (!_courseIsLocked && _courseCtrl.text.trim() != origCourse) {
         updates['course'] = _courseCtrl.text.trim();
+        updates['courseLastChangedAt'] = FieldValue.serverTimestamp();
+      }
+      if (!_yearLevelIsLocked && _yearLevel != origYearLevel) {
         updates['yearLevel'] = _yearLevel;
         updates['educationLevel'] = _deriveEducationLevel(_yearLevel);
-        updates['educationLastChangedAt'] = FieldValue.serverTimestamp();
+        updates['yearLevelLastChangedAt'] = FieldValue.serverTimestamp();
       }
 
       // Region & birthdate — one-time writes (only if not already set)
@@ -532,21 +560,21 @@ class _SettingsBodyState extends State<_SettingsBody> {
         'December'
       ][m];
 
-
   /// Maps yearLevel to the educationLevel key the Cloud Function expects.
-String _deriveEducationLevel(String yearLevel) {
-  switch (yearLevel) {
-    case 'Graduate':
-      return 'professional';
-    case '5th Year':
-    case '4th Year':
-    case '3rd Year':
-    case '2nd Year':
-    case '1st Year':
-    default:
-      return 'college';
+  String _deriveEducationLevel(String yearLevel) {
+    switch (yearLevel) {
+      case 'Graduate':
+        return 'professional';
+      case '5th Year':
+      case '4th Year':
+      case '3rd Year':
+      case '2nd Year':
+      case '1st Year':
+      default:
+        return 'college';
+    }
   }
-}
+
   // ── Error message helper ───────────────────────────────────────────────────
   String _errorMessage(Object e) {
     if (e is PlatformException) {
@@ -764,8 +792,7 @@ String _deriveEducationLevel(String yearLevel) {
                             },
                             activeColor: AppColors.primary,
                             inactiveThumbColor: AppColors.outline,
-                            inactiveTrackColor:
-                                AppColors.surfaceContainerLow,
+                            inactiveTrackColor: AppColors.surfaceContainerLow,
                           ),
                         ],
                       ),
@@ -776,36 +803,92 @@ String _deriveEducationLevel(String yearLevel) {
                   // ── Educational Background card ─────────────────────────
                   _SectionCard(
                     label: 'Educational Background',
-                    trailing: _educationIsLocked
-                        ? _LockBadge('Editable in '
-                            '${_daysRemaining(_educationLastChangedAt)}')
-                        : null,
                     children: [
                       _LockedOrEditableTextField(
                         label: 'School / University',
                         controller: _schoolCtrl,
                         icon: Icons.school_outlined,
-                        isLocked: _educationIsLocked,
+                        isLocked: _schoolIsLocked,
                         hint: 'e.g. University of the Philippines',
+                        lockSubtitle: _schoolIsLocked
+                            ? 'Editable again in '
+                                '${_daysRemaining30(_schoolLastChangedAt)}'
+                            : null,
                       ),
                       const SizedBox(height: 14),
                       _LockedOrEditableTextField(
                         label: 'Course / Program',
                         controller: _courseCtrl,
                         icon: Icons.menu_book_outlined,
-                        isLocked: _educationIsLocked,
+                        isLocked: _courseIsLocked,
                         hint: 'e.g. BS Computer Science',
+                        lockSubtitle: _courseIsLocked
+                            ? 'Editable again in '
+                                '${_daysRemaining30(_courseLastChangedAt)}'
+                            : null,
                       ),
                       const SizedBox(height: 14),
                       _FieldLabel('Year Level'),
                       const SizedBox(height: 8),
-                      _educationIsLocked
-                          ? _ReadOnlyTile(
-                              label: '',
-                              value: _yearLevel,
-                              icon: Icons.stairs_outlined,
-                              lockReason: '',
-                              compact: true,
+                      _yearLevelIsLocked
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 18, vertical: 14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceContainerLow
+                                        .withOpacity(0.7),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.stairs_outlined,
+                                          color: AppColors.outline
+                                              .withOpacity(0.6),
+                                          size: 19),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          _yearLevel,
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.outline,
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(Icons.lock_outline_rounded,
+                                          color: AppColors.outline
+                                              .withOpacity(0.35),
+                                          size: 14),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 18),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.schedule_rounded,
+                                          size: 12,
+                                          color: AppColors.outline
+                                              .withOpacity(0.5)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Editable again in '
+                                        '${_daysRemaining30(_yearLevelLastChangedAt)}',
+                                        style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            color: AppColors.outline
+                                                .withOpacity(0.55)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             )
                           : _YearDropdown(
                               value: _yearLevel,
@@ -1344,7 +1427,7 @@ class _EditableOrLockedField extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LOCKED OR EDITABLE TEXT FIELD  (education — 7-day lock)
+// LOCKED OR EDITABLE TEXT FIELD  (education — 30-day per-field lock)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _LockedOrEditableTextField extends StatelessWidget {
@@ -1354,6 +1437,7 @@ class _LockedOrEditableTextField extends StatelessWidget {
     required this.icon,
     required this.isLocked,
     required this.hint,
+    this.lockSubtitle,
   });
 
   final String label;
@@ -1361,6 +1445,7 @@ class _LockedOrEditableTextField extends StatelessWidget {
   final IconData icon;
   final bool isLocked;
   final String hint;
+  final String? lockSubtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -1370,18 +1455,57 @@ class _LockedOrEditableTextField extends StatelessWidget {
         _FieldLabel(label),
         const SizedBox(height: 8),
         isLocked
-            ? _ReadOnlyTile(
-                label: '',
-                value: controller.text,
-                icon: icon,
-                lockReason: '',
-                compact: true,
+            ? Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLow.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  children: [
+                    Icon(icon,
+                        color: AppColors.outline.withOpacity(0.6), size: 19),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        controller.text.isNotEmpty ? controller.text : '—',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.outline,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.lock_outline_rounded,
+                        color: AppColors.outline.withOpacity(0.35), size: 14),
+                  ],
+                ),
               )
             : _EditableField(
                 controller: controller,
                 icon: icon,
                 hint: hint,
               ),
+        if (isLocked && lockSubtitle != null) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 18),
+            child: Row(
+              children: [
+                Icon(Icons.schedule_rounded,
+                    size: 12, color: AppColors.outline.withOpacity(0.5)),
+                const SizedBox(width: 4),
+                Text(
+                  lockSubtitle!,
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11, color: AppColors.outline.withOpacity(0.55)),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1843,7 +1967,7 @@ class _SaveConfirmDialog extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Your profile information will be updated. Some fields may be locked for 7 days after saving.',
+              'Your profile information will be updated. Username locks for 7 days after saving; each education field locks for 30 days independently.',
               textAlign: TextAlign.center,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
@@ -2028,8 +2152,7 @@ class _ImageSourceSheet extends StatelessWidget {
                     label: 'Camera',
                     color: AppColors.primary,
                     bgColor: AppColors.primaryContainer.withOpacity(0.25),
-                    onTap: () =>
-                        Navigator.of(context).pop(ImageSource.camera),
+                    onTap: () => Navigator.of(context).pop(ImageSource.camera),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -2039,8 +2162,7 @@ class _ImageSourceSheet extends StatelessWidget {
                     label: 'Gallery',
                     color: AppColors.secondary,
                     bgColor: AppColors.secondaryContainer.withOpacity(0.25),
-                    onTap: () =>
-                        Navigator.of(context).pop(ImageSource.gallery),
+                    onTap: () => Navigator.of(context).pop(ImageSource.gallery),
                   ),
                 ),
               ],

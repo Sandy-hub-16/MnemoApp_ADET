@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import '../../../main.dart';
@@ -10,91 +8,34 @@ import '../../../main.dart';
 // SETTINGS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  bool _reminderEnabled = false;
-  TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
-  bool _reminderLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadReminderSettings();
-  }
-
-  Future<void> _loadReminderSettings() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      setState(() => _reminderLoading = false);
-      return;
-    }
-    try {
-      final doc =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final data = doc.data();
-      if (data != null && mounted) {
-        final hourUTC = (data['reminderHourUTC'] as num?)?.toInt();
-        final minuteUTC = (data['reminderMinuteUTC'] as num?)?.toInt() ?? 0;
-        setState(() {
-          _reminderEnabled = data['reminderEnabled'] == true;
-          if (hourUTC != null) {
-            // Convert UTC hour back to local for display
-            // final utcNow = DateTime.now().toUtc();
-            final localOffset = DateTime.now().timeZoneOffset;
-            final utcMinutes = hourUTC * 60 + minuteUTC;
-            final localMinutes = utcMinutes + localOffset.inMinutes;
-            final localHour = (localMinutes ~/ 60) % 24;
-            final localMinute = (localMinutes % 60); // ← ADD THIS
-            _reminderTime = TimeOfDay(hour: localHour, minute: localMinute);
-          }
-          _reminderLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _reminderLoading = false);
-    }
-  }
-
-  Future<void> _saveReminderSettings() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    // Convert local hour to UTC
-    final now = DateTime.now();
-    final localDateTime = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      _reminderTime.hour,
-      _reminderTime.minute,
-    );
-    final utcHour = localDateTime.toUtc().hour;
-    final utcDateMinute = localDateTime.toUtc().minute;
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'reminderEnabled': _reminderEnabled,
-      'reminderHourUTC': utcHour,
-      'reminderMinuteUTC': utcDateMinute,
-    });
-  }
-
-  Future<void> _pickReminderTime() async {
-    final picked = await showTimePicker(
+  void _showAmnesiaConfirmation(BuildContext context) {
+    showDialog(
       context: context,
-      initialTime: _reminderTime,
-      builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
-        child: child!,
+      barrierDismissible: false,
+      builder: (_) => const _AmnesiaConfirmationDialog(),
+    );
+  }
+
+  void _showLegalModal(
+    BuildContext context,
+    String title,
+    IconData icon,
+    List<_LegalSection> sections,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LegalBottomSheet(
+        title: title,
+        icon: icon,
+        sections: sections,
       ),
     );
-    if (picked != null && mounted) {
-      setState(() => _reminderTime = picked);
-      await _saveReminderSettings();
-    }
   }
 
   @override
@@ -140,7 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // Study Settings Section
+                // ── Study Settings ────────────────────────────────────────────
                 _SectionHeader(
                   icon: Icons.school_rounded,
                   label: 'STUDY SETTINGS',
@@ -197,105 +138,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 28),
 
-                // Notifications Section
-                _SectionHeader(
-                  icon: Icons.notifications_rounded,
-                  label: 'NOTIFICATIONS',
-                  color: AppColors.secondary,
-                ),
-                const SizedBox(height: 12),
-                _SettingsGroup(
-                  children: [
-                    _SettingsTile(
-                      icon: Icons.notifications_active_outlined,
-                      iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-                      iconColor: AppColors.secondary,
-                      label: 'Push Notifications',
-                      subtitle: 'Receive study reminders',
-                      trailing: _reminderLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Switch(
-                              value: _reminderEnabled,
-                              onChanged: (val) async {
-                                setState(() => _reminderEnabled = val);
-                                await _saveReminderSettings();
-                              },
-                              activeColor: AppColors.primary,
-                            ),
-                      onTap: null,
-                      isFirst: true,
-                    ),
-                    _SettingsTile(
-                      icon: Icons.schedule_rounded,
-                      iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-                      iconColor: AppColors.secondary,
-                      label: 'Reminder Time',
-                      subtitle: _reminderEnabled
-                          ? 'Email sent daily at this time'
-                          : 'Enable reminder to set a time',
-                      trailing: Text(
-                        _reminderTime.format(context),
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _reminderEnabled
-                              ? AppColors.primary
-                              : AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                      onTap: _reminderEnabled ? _pickReminderTime : null,
-                      isLast: true,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-
-                // Privacy & Data Section
-                _SectionHeader(
-                  icon: Icons.shield_rounded,
-                  label: 'PRIVACY & DATA',
-                  color: AppColors.tertiary,
-                ),
-                const SizedBox(height: 12),
-                _SettingsGroup(
-                  children: [
-                    _SettingsTile(
-                      icon: Icons.cloud_sync_rounded,
-                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                      iconColor: AppColors.tertiary,
-                      label: 'Cloud Sync',
-                      subtitle: 'Sync data across devices',
-                      trailing: Switch(
-                        value: true,
-                        onChanged: (val) {},
-                        activeColor: AppColors.primary,
-                      ),
-                      onTap: null,
-                      isFirst: true,
-                    ),
-                    _SettingsTile(
-                      icon: Icons.analytics_outlined,
-                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                      iconColor: AppColors.tertiary,
-                      label: 'Usage Analytics',
-                      subtitle: 'Help improve the app',
-                      trailing: Switch(
-                        value: false,
-                        onChanged: (val) {},
-                        activeColor: AppColors.primary,
-                      ),
-                      onTap: null,
-                      isLast: true,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-
-                // About Section
+                // ── About ─────────────────────────────────────────────────────
                 _SectionHeader(
                   icon: Icons.info_rounded,
                   label: 'ABOUT',
@@ -309,15 +152,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       iconBg: AppColors.surfaceContainerLow,
                       iconColor: AppColors.onSurfaceVariant,
                       label: 'Terms of Service',
-                      onTap: () => Navigator.push(
+                      onTap: () => _showLegalModal(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const _LegalScreen(
-                            title: 'Terms of Service',
-                            icon: Icons.description_outlined,
-                            sections: _LegalContent.termsOfService,
-                          ),
-                        ),
+                        'Terms of Service',
+                        Icons.description_outlined,
+                        _LegalContent.termsOfService,
                       ),
                       isFirst: true,
                     ),
@@ -326,38 +165,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       iconBg: AppColors.surfaceContainerLow,
                       iconColor: AppColors.onSurfaceVariant,
                       label: 'Privacy Policy',
-                      onTap: () => Navigator.push(
+                      onTap: () => _showLegalModal(
                         context,
-                        MaterialPageRoute(
-                          builder: (_) => const _LegalScreen(
-                            title: 'Privacy Policy',
-                            icon: Icons.privacy_tip_outlined,
-                            sections: _LegalContent.privacyPolicy,
-                          ),
-                        ),
+                        'Privacy Policy',
+                        Icons.privacy_tip_outlined,
+                        _LegalContent.privacyPolicy,
                       ),
-                    ),
-                    _SettingsTile(
-                      icon: Icons.code_rounded,
-                      iconBg: AppColors.surfaceContainerLow,
-                      iconColor: AppColors.onSurfaceVariant,
-                      label: 'App Version',
-                      trailing: Text(
-                        '1.0.0',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                      onTap: null,
                       isLast: true,
                     ),
                   ],
                 ),
                 const SizedBox(height: 28),
 
-                // Danger Zone Section
+                // ── Danger Zone ───────────────────────────────────────────────
                 _SectionHeader(
                   icon: Icons.warning_rounded,
                   label: 'DANGER ZONE',
@@ -373,14 +193,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  void _showAmnesiaConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const _AmnesiaConfirmationDialog(),
     );
   }
 }
@@ -1202,11 +1014,11 @@ abstract final class _LegalContent {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LEGAL SCREEN — reusable for both ToS and Privacy Policy
+// LEGAL BOTTOM SHEET — modal for both ToS and Privacy Policy
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _LegalScreen extends StatelessWidget {
-  const _LegalScreen({
+class _LegalBottomSheet extends StatelessWidget {
+  const _LegalBottomSheet({
     required this.title,
     required this.icon,
     required this.sections,
@@ -1218,100 +1030,138 @@ class _LegalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── App bar ──────────────────────────────────────────────────────
-          SliverAppBar(
-            backgroundColor: AppColors.background,
-            elevation: 0,
-            pinned: true,
-            expandedHeight: 80,
-            leading: IconButton(
-              icon: Icon(Icons.arrow_back_rounded, color: AppColors.onSurface),
-              onPressed: () => Navigator.pop(context),
-            ),
-            flexibleSpace: LayoutBuilder(
-              builder: (context, constraints) {
-                final isCollapsed =
-                    constraints.maxHeight <= kToolbarHeight + 40;
-                return FlexibleSpaceBar(
-                  centerTitle: false,
-                  titlePadding: EdgeInsets.only(
-                    left: isCollapsed ? 56 : 20,
-                    bottom: isCollapsed ? 16 : 16,
-                  ),
-                  title: Text(
-                    title,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: isCollapsed ? 20 : 28,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.onSurface,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                );
-              },
-            ),
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.5,
+      snap: true,
+      snapSizes: const [0.75, 0.95],
+      builder: (_, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
-
-          // ── Content ──────────────────────────────────────────────────────
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final section = sections[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (section.heading.isNotEmpty) ...[
-                          Text(
-                            section.heading,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.onSurface,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        Text(
-                          section.body,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 14,
-                            height: 1.65,
-                            color: section.heading.isEmpty
-                                ? AppColors.onSurfaceVariant
-                                : AppColors.onSurface,
-                            fontWeight: section.heading.isEmpty
-                                ? FontWeight.w500
-                                : FontWeight.w400,
-                          ),
-                        ),
-                        if (section.heading.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 20),
-                            child: Divider(
-                              color: AppColors.outlineVariant.withOpacity(0.4),
-                              height: 1,
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                },
-                childCount: sections.length,
+          child: Column(
+            children: [
+              // ── Drag handle ───────────────────────────────────────────────
+              const SizedBox(height: 14),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.outlineVariant.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
+              const SizedBox(height: 20),
+
+              // ── Title row ─────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(icon,
+                          color: AppColors.onSurfaceVariant, size: 20),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded,
+                          color: AppColors.onSurfaceVariant, size: 22),
+                      onPressed: () => Navigator.pop(context),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.surfaceContainerLow,
+                        padding: const EdgeInsets.all(8),
+                        minimumSize: const Size(36, 36),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Divider(
+                  color: AppColors.outlineVariant.withOpacity(0.35),
+                  height: 1,
+                ),
+              ),
+
+              // ── Scrollable content ────────────────────────────────────────
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                  itemCount: sections.length,
+                  itemBuilder: (context, index) {
+                    final section = sections[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (section.heading.isNotEmpty) ...[
+                            Text(
+                              section.heading,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.onSurface,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                          Text(
+                            section.body,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              height: 1.65,
+                              color: section.heading.isEmpty
+                                  ? AppColors.onSurfaceVariant
+                                  : AppColors.onSurface,
+                              fontWeight: section.heading.isEmpty
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                          if (section.heading.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 20),
+                              child: Divider(
+                                color:
+                                    AppColors.outlineVariant.withOpacity(0.4),
+                                height: 1,
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

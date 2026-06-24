@@ -76,11 +76,12 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.onSurface),
+          icon:
+              const Icon(Icons.arrow_back_rounded, color: AppColors.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Study Mode',
+          'Browse Cards',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -89,7 +90,8 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary))
           : _error != null
               ? Center(
                   child: Padding(
@@ -97,7 +99,8 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline_rounded, size: 64, color: AppColors.error),
+                        const Icon(Icons.error_outline_rounded,
+                            size: 64, color: AppColors.error),
                         const SizedBox(height: 16),
                         Text(
                           'Failed to load deck',
@@ -127,7 +130,8 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.layers_outlined, size: 64, color: AppColors.outline),
+                            const Icon(Icons.layers_outlined,
+                                size: 64, color: AppColors.outline),
                             const SizedBox(height: 16),
                             Text(
                               'No cards in this deck',
@@ -214,7 +218,8 @@ class _DeckDetailsHeader extends StatelessWidget {
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 26),
+                child: const Icon(Icons.auto_stories_rounded,
+                    color: Colors.white, size: 26),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -259,7 +264,8 @@ class _DeckDetailsHeader extends StatelessWidget {
                   label: 'Cards',
                   value: '$cardCount',
                 ),
-                Container(width: 1, height: 32, color: Colors.white.withOpacity(0.2)),
+                Container(
+                    width: 1, height: 32, color: Colors.white.withOpacity(0.2)),
                 _StatItem(
                   icon: Icons.category_rounded,
                   label: 'Category',
@@ -280,7 +286,8 @@ class _DeckDetailsHeader extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.person_outline_rounded, size: 14, color: Colors.white),
+                  const Icon(Icons.person_outline_rounded,
+                      size: 14, color: Colors.white),
                   const SizedBox(width: 6),
                   Text(
                     'Created by @$clonedFromUsername',
@@ -400,7 +407,8 @@ class _CardItem extends StatelessWidget {
                   color: AppColors.primaryContainer,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.help_outline_rounded, color: AppColors.primary, size: 18),
+                child: const Icon(Icons.help_outline_rounded,
+                    color: AppColors.primary, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -448,7 +456,8 @@ class _CardItem extends StatelessWidget {
                   color: AppColors.tertiaryContainer,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.check_circle_outline_rounded, color: AppColors.tertiary, size: 18),
+                child: const Icon(Icons.check_circle_outline_rounded,
+                    color: AppColors.tertiary, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(

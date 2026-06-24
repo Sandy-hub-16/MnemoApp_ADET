@@ -282,10 +282,8 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
           SafeArea(
             bottom: false,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── Top bar ───────────────────────────────────────────────
-                const _DiscoveryTopBar(),
-
                 // ── Header section ────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
@@ -389,67 +387,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
 // ─────────────────────────────────────────────────────────────────────────────
 // TOP BAR
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _DiscoveryTopBar extends StatelessWidget {
-  const _DiscoveryTopBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        children: [
-          Text(
-            'Mnemo',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              fontStyle: FontStyle.italic,
-              color: AppColors.primary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary.withValues(alpha: 0.15),
-                  AppColors.secondary.withValues(alpha: 0.10),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.2),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.explore_rounded,
-                  color: AppColors.primary,
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'DISCOVER',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEARCH FIELD
@@ -575,7 +512,10 @@ class _TagFilterRow extends StatelessWidget {
                 decoration: BoxDecoration(
                   gradient: active
                       ? const LinearGradient(
-                          colors: [AppColors.primary, AppColors.primaryFixedDim],
+                          colors: [
+                            AppColors.primary,
+                            AppColors.primaryFixedDim
+                          ],
                         )
                       : null,
                   color: active ? null : AppColors.surfaceContainerLowest,
@@ -613,9 +553,8 @@ class _TagFilterRow extends StatelessWidget {
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: active
-                            ? Colors.white
-                            : AppColors.onSurfaceVariant,
+                        color:
+                            active ? Colors.white : AppColors.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -765,11 +704,13 @@ class _EmptyState extends StatelessWidget {
       icon = Icons.search_off_rounded;
     } else if (activeTag != null) {
       title = 'No Decks in Category';
-      subtitle = 'No public decks found for "$activeTag". Try a different category or clear the filter.';
+      subtitle =
+          'No public decks found for "$activeTag". Try a different category or clear the filter.';
       icon = Icons.category_outlined;
     } else {
       title = 'No Decks Available';
-      subtitle = 'There are no public decks to display at the moment. Check back later!';
+      subtitle =
+          'There are no public decks to display at the moment. Check back later!';
       icon = Icons.explore_off_rounded;
     }
 
