@@ -4,8 +4,24 @@ import '../../landing_page/app_theme.dart';
 import 'deck_quiz_screen.dart'; // Import for QuizArgs
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QUIZ RESULTS SCREEN — Detailed per-card breakdown
-// Shows mastery statistics, per-card performance, and insights
+// QUIZ RESULTS SCREEN — Streamlined summary, details on demand
+//
+// Design intent (redesigned):
+//   The old version stacked THREE layers that all repeated the same story —
+//   a hero %, a 3-card stat grid, and a full per-card list — before the user
+//   could even act on the result. That's the information overload.
+//
+//   This version tells the story once, in order of how a user actually wants
+//   to read it:
+//     1. The headline number + message      (hero card)
+//     2. One glance at the mix of outcomes   (single compact stat line)
+//     3. The play-by-play, only if wanted    (collapsed by default)
+//     4. What to do next                     (CTA buttons)
+//
+//   Nothing about the underlying data model changes — ProgressService still
+//   receives the exact same per-card fields it always did, so the Progress
+//   screen and Firestore writes are unaffected. This is a display-layer
+//   redesign only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class QuizResultsArgs {
@@ -56,7 +72,7 @@ class QuizResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments as QuizResultsArgs?;
-    
+
     if (args == null) {
       return Scaffold(
         backgroundColor: AppColors.background,
@@ -64,21 +80,18 @@ class QuizResultsScreen extends StatelessWidget {
       );
     }
 
-    final pct = args.totalCount > 0 
-        ? (args.correctCount / args.totalCount * 100).round() 
+    final pct = args.totalCount > 0
+        ? (args.correctCount / args.totalCount * 100).round()
         : 0;
-    
-    final masteredFirstTry = args.cardResults
-        .where((r) => r.firstAttemptCorrect)
-        .length;
-    
+
+    final masteredFirstTry =
+        args.cardResults.where((r) => r.firstAttemptCorrect).length;
+
     final neededRepetition = args.cardResults
         .where((r) => r.repetitionsNeeded > 1 && r.correct)
         .length;
-    
-    final skippedCount = args.cardResults
-        .where((r) => r.skipped)
-        .length;
+
+    final skippedCount = args.cardResults.where((r) => r.skipped).length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -87,7 +100,7 @@ class QuizResultsScreen extends StatelessWidget {
           children: [
             // Top bar
             _TopBar(deckTitle: args.deckTitle),
-            
+
             // Scrollable content
             Expanded(
               child: SingleChildScrollView(
@@ -101,8 +114,8 @@ class QuizResultsScreen extends StatelessWidget {
                       _LowScoreEncouragementBanner(),
                       const SizedBox(height: 20),
                     ],
-                    
-                    // Hero score card
+
+                    // Hero score card — the one headline of the screen
                     _HeroScoreCard(
                       correctCount: args.correctCount,
                       totalCount: args.totalCount,
@@ -110,50 +123,33 @@ class QuizResultsScreen extends StatelessWidget {
                       isMasteryTest: args.isMasteryTest,
                       isLowScoreExit: args.isLowScoreExit,
                     ),
-                    const SizedBox(height: 20),
-                    
-                    // Quick stats row
-                    _QuickStatsRow(
-                      masteredFirstTry: masteredFirstTry,
-                      neededRepetition: neededRepetition,
-                      skipped: skippedCount,
-                      totalCards: args.totalCount,
-                      isMasteryTest: args.isMasteryTest,
-                    ),
-                    const SizedBox(height: 28),
-                    
-                    // Section header
-                    Text(
-                      'CARD-BY-CARD BREAKDOWN',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.outline,
-                        letterSpacing: 1.2,
+
+                    // Compact stat line — a single glance at the mix of
+                    // outcomes. Replaces the old completion banner + 3-card
+                    // grid. Only non-zero stats are shown.
+                    if (!args.isLowScoreExit) ...[
+                      const SizedBox(height: 14),
+                      _CompactStatLine(
+                        masteredFirstTry: masteredFirstTry,
+                        neededRepetition: neededRepetition,
+                        skipped: skippedCount,
+                        isMasteryTest: args.isMasteryTest,
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Per-card list
-                    ...args.cardResults.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final result = entry.value;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _CardResultTile(
-                          cardNumber: index + 1,
-                          result: result,
-                        ),
-                      );
-                    }),
-                    
-                    const SizedBox(height: 32),
-                    
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // Collapsed-by-default per-card breakdown
+                    _CardBreakdownSection(cardResults: args.cardResults),
+
+                    const SizedBox(height: 28),
+
                     // Done button
                     _DoneButton(
-                      onTap: () => Navigator.of(context).pushReplacementNamed('/progress'),
+                      onTap: () => Navigator.of(context)
+                          .pushReplacementNamed('/progress'),
                     ),
-                    
+
                     // Test Your Mastery button (only show after learning mode AND if eligible)
                     if (!args.isMasteryTest && args.isMasteryTestEligible) ...[
                       const SizedBox(height: 12),
@@ -163,9 +159,10 @@ class QuizResultsScreen extends StatelessWidget {
                         ownerUid: args.ownerUid,
                       ),
                     ],
-                    
+
                     // Creator credit (only for cloned decks)
-                    if (args.clonedFromUsername != null && args.clonedFromUsername!.isNotEmpty) ...[
+                    if (args.clonedFromUsername != null &&
+                        args.clonedFromUsername!.isNotEmpty) ...[
                       const SizedBox(height: 24),
                       Center(
                         child: Row(
@@ -210,85 +207,40 @@ class _LowScoreEncouragementBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.secondaryContainer.withOpacity(0.7),
-            AppColors.tertiaryContainer.withOpacity(0.5),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: AppColors.secondaryContainer.withOpacity(0.45),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.secondary.withOpacity(0.4),
-          width: 2,
+          color: AppColors.secondary.withOpacity(0.3),
+          width: 1.5,
         ),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.secondaryContainer,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.lightbulb_rounded,
-                  color: AppColors.secondary,
-                  size: 26,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Take a Step Back',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.onSurface,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Review the material first',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(16),
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(14),
+              color: AppColors.secondaryContainer,
+              shape: BoxShape.circle,
             ),
+            child: const Icon(
+              Icons.lightbulb_rounded,
+              color: AppColors.secondary,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
             child: Text(
-              'This material seems new to you! That\'s completely okay — everyone starts somewhere. '
-              'Take some time to review the content, understand the concepts, and come back when you feel ready. '
-              'You\'ve got this! 🚀',
+              'New material — review it first, then try again. You\'ve got this 🚀',
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
                 color: AppColors.onSurface,
-                height: 1.6,
+                height: 1.3,
               ),
-              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -322,7 +274,8 @@ class _TopBar extends StatelessWidget {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pushReplacementNamed('/progress'),
+            onTap: () =>
+                Navigator.of(context).pushReplacementNamed('/progress'),
             child: Container(
               width: 40,
               height: 40,
@@ -391,13 +344,17 @@ class _HeroScoreCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = percentage >= 80 ? '🏆' : percentage >= 50 ? '💪' : '📚';
+    final emoji = percentage >= 80
+        ? '🏆'
+        : percentage >= 50
+            ? '💪'
+            : '📚';
     final message = percentage >= 80
         ? 'Outstanding!'
         : percentage >= 50
             ? 'Good effort!'
             : 'Keep practicing!';
-    
+
     // Low score exit messaging
     if (isLowScoreExit) {
       return Container(
@@ -420,9 +377,9 @@ class _HeroScoreCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(
+            const Text(
               '📚',
-              style: const TextStyle(fontSize: 48),
+              style: TextStyle(fontSize: 48),
             ),
             const SizedBox(height: 12),
             Text(
@@ -457,7 +414,7 @@ class _HeroScoreCard extends StatelessWidget {
         ),
       );
     }
-    
+
     // Mastery test messaging
     String masteryHeadline;
     if (isMasteryTest) {
@@ -490,7 +447,7 @@ class _HeroScoreCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: isMasteryTest 
+          color: isMasteryTest
               ? AppColors.tertiary.withOpacity(0.3)
               : AppColors.primary.withOpacity(0.2),
           width: 1.5,
@@ -540,8 +497,8 @@ class _HeroScoreCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             isMasteryTest
-                ? (percentage == 100 
-                    ? 'All $totalCount cards mastered!' 
+                ? (percentage == 100
+                    ? 'All $totalCount cards mastered!'
                     : 'Mastered $correctCount of $totalCount cards')
                 : '$correctCount of $totalCount cards completed',
             style: GoogleFonts.plusJakartaSans(
@@ -557,200 +514,229 @@ class _HeroScoreCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QUICK STATS ROW
+// COMPACT STAT LINE
+//
+// Replaces the old "completed" banner + 3-card stat grid with a single
+// inline row. Each entry only appears if its count is non-zero, so a clean
+// run (no repeats, nothing skipped) shows just one chip instead of three
+// boxes with two zeroes in them.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _QuickStatsRow extends StatelessWidget {
-  const _QuickStatsRow({
+class _CompactStatLine extends StatelessWidget {
+  const _CompactStatLine({
     required this.masteredFirstTry,
     required this.neededRepetition,
     required this.skipped,
-    required this.totalCards,
     this.isMasteryTest = false,
   });
 
   final int masteredFirstTry;
   final int neededRepetition;
   final int skipped;
-  final int totalCards;
   final bool isMasteryTest;
 
   @override
   Widget build(BuildContext context) {
-    final completed = masteredFirstTry + neededRepetition;
-    
-    // For mastery test, only show the main completion banner (no breakdown)
-    if (isMasteryTest) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.tertiaryContainer.withOpacity(0.4),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.tertiary.withOpacity(0.3),
-            width: 1.5,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppColors.tertiary.withOpacity(0.15),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.emoji_events_rounded,
-                color: AppColors.tertiary,
-                size: 18,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              '$completed/$totalCards cards mastered',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.tertiary,
-              ),
-            ),
-          ],
-        ),
-      );
+    final chips = <Widget>[];
+
+    void addChip(IconData icon, int value, String label, Color color) {
+      if (value <= 0) return;
+      if (chips.isNotEmpty) {
+        chips.add(const SizedBox(width: 8));
+      }
+      chips
+          .add(_StatChip(icon: icon, value: value, label: label, color: color));
     }
-    
-    // For learning mode, show full breakdown
+
+    addChip(
+        Icons.bolt_rounded, masteredFirstTry, 'first try', AppColors.tertiary);
+    addChip(Icons.repeat_rounded, neededRepetition, 'repeated',
+        AppColors.secondary);
+    addChip(Icons.skip_next_rounded, skipped, 'skipped', AppColors.error);
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(children: chips),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  const _StatChip({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final int value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.25), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 6),
+          Text(
+            '$value $label',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CARD BREAKDOWN SECTION — collapsed by default
+//
+// The full per-card list is real signal, but showing all of it unconditionally
+// is what made the old screen feel heavy. This wraps the existing per-card
+// tiles behind a single tappable summary row, so a user who just wants their
+// score can stop reading right after the stat line, while anyone who wants
+// the play-by-play can still get it in one tap.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CardBreakdownSection extends StatefulWidget {
+  const _CardBreakdownSection({required this.cardResults});
+  final List<CardResultData> cardResults;
+
+  @override
+  State<_CardBreakdownSection> createState() => _CardBreakdownSectionState();
+}
+
+class _CardBreakdownSectionState extends State<_CardBreakdownSection> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final wrongCount = widget.cardResults.where((r) => !r.correct).length;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Completed cards banner
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.primaryContainer.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: AppColors.primary.withOpacity(0.3),
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle_rounded,
-                  color: AppColors.primary,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '$completed/$totalCards cards completed',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
-          ),
+        _ExpandToggleRow(
+          expanded: _expanded,
+          totalCount: widget.cardResults.length,
+          wrongCount: wrongCount,
+          onTap: () => setState(() => _expanded = !_expanded),
         ),
-        const SizedBox(height: 12),
-        
-        // Stats breakdown
-        Row(
-          children: [
-            Expanded(
-              child: _QuickStatCard(
-                icon: Icons.bolt_rounded,
-                label: 'First Try',
-                value: masteredFirstTry.toString(),
-                color: AppColors.tertiary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _QuickStatCard(
-                icon: Icons.repeat_rounded,
-                label: 'Repeated',
-                value: neededRepetition.toString(),
-                color: AppColors.secondary,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _QuickStatCard(
-                icon: Icons.skip_next_rounded,
-                label: 'Skipped',
-                value: skipped.toString(),
-                color: AppColors.error,
-              ),
-            ),
-          ],
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Column(
+                    children: widget.cardResults.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final result = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _CardResultTile(
+                          cardNumber: index + 1,
+                          result: result,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
   }
 }
 
-class _QuickStatCard extends StatelessWidget {
-  const _QuickStatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
+class _ExpandToggleRow extends StatelessWidget {
+  const _ExpandToggleRow({
+    required this.expanded,
+    required this.totalCount,
+    required this.wrongCount,
+    required this.onTap,
   });
 
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
+  final bool expanded;
+  final int totalCount;
+  final int wrongCount;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withOpacity(0.2),
-          width: 1.5,
+    final subtitle = wrongCount > 0
+        ? '$wrongCount of $totalCount need another look'
+        : 'Every card went well';
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.outline.withOpacity(0.15),
+            width: 1.5,
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: color,
-              height: 1,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'See how each card went',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: AppColors.onSurfaceVariant,
+            AnimatedRotation(
+              turns: expanded ? 0.5 : 0,
+              duration: const Duration(milliseconds: 220),
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: AppColors.onSurfaceVariant,
+                size: 22,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -828,7 +814,7 @@ class _CardResultTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          
+
           // Question and status
           Expanded(
             child: Column(
@@ -933,7 +919,7 @@ class _TestMasteryButton extends StatelessWidget {
     required this.deckTitle,
     required this.ownerUid,
   });
-  
+
   final String deckId;
   final String deckTitle;
   final String? ownerUid;
@@ -994,5 +980,3 @@ class _TestMasteryButton extends StatelessWidget {
     );
   }
 }
-
-

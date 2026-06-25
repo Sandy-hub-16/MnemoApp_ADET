@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import '../../../main.dart';
@@ -8,14 +11,62 @@ import '../../../main.dart';
 // SETTINGS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-class SettingsScreen extends StatelessWidget {
+// SharedPreferences keys used by both SettingsScreen and QuizScreen.
+const String kQuizTimerEnabledKey = 'quiz_timer_enabled';
+const String kShuffleCardsKey = 'shuffle_cards_enabled';
+
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _quizTimerEnabled = false;
+  bool _shuffleCardsEnabled = true; // default on, matches original behaviour
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _quizTimerEnabled = prefs.getBool(kQuizTimerEnabledKey) ?? false;
+      _shuffleCardsEnabled = prefs.getBool(kShuffleCardsKey) ?? true;
+    });
+  }
+
+  Future<void> _setQuizTimer(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kQuizTimerEnabledKey, value);
+    if (!mounted) return;
+    setState(() => _quizTimerEnabled = value);
+  }
+
+  Future<void> _setShuffleCards(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kShuffleCardsKey, value);
+    if (!mounted) return;
+    setState(() => _shuffleCardsEnabled = value);
+  }
 
   void _showAmnesiaConfirmation(BuildContext context) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const _AmnesiaConfirmationDialog(),
+    );
+  }
+
+  void _showStudyRemindersDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => const _StudyRemindersDialog(),
     );
   }
 
@@ -95,16 +146,13 @@ class SettingsScreen extends StatelessWidget {
                       iconBg: AppColors.primaryContainer.withOpacity(0.5),
                       iconColor: AppColors.primary,
                       label: 'Quiz Timer',
-                      subtitle: 'Set default time limit for quizzes',
-                      trailing: Text(
-                        'Off',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.onSurfaceVariant,
-                        ),
+                      subtitle: '15-second countdown per card',
+                      trailing: Switch(
+                        value: _quizTimerEnabled,
+                        onChanged: _setQuizTimer,
+                        activeColor: AppColors.primary,
                       ),
-                      onTap: () {},
+                      onTap: null,
                       isFirst: true,
                     ),
                     _SettingsTile(
@@ -114,8 +162,8 @@ class SettingsScreen extends StatelessWidget {
                       label: 'Shuffle Cards',
                       subtitle: 'Randomize card order in quizzes',
                       trailing: Switch(
-                        value: true,
-                        onChanged: (val) {},
+                        value: _shuffleCardsEnabled,
+                        onChanged: _setShuffleCards,
                         activeColor: AppColors.primary,
                       ),
                       onTap: null,
@@ -132,6 +180,14 @@ class SettingsScreen extends StatelessWidget {
                         activeColor: AppColors.primary,
                       ),
                       onTap: null,
+                    ),
+                    _SettingsTile(
+                      icon: Icons.notifications_outlined,
+                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.onTertiaryContainer,
+                      label: 'Study Reminders',
+                      subtitle: 'Set daily study notifications',
+                      onTap: () => _showStudyRemindersDialog(context),
                       isLast: true,
                     ),
                   ],
@@ -558,7 +614,8 @@ class _AmnesiaConfirmationDialogState
       // Re-enable the form so the user can try again.
       setState(() {
         _isProcessing = false;
-        _errorMessage = 'Failed to reset progress. Please check your connection and try again.';
+        _errorMessage =
+            'Failed to reset progress. Please check your connection and try again.';
       });
     }
   }
@@ -839,6 +896,324 @@ class _AmnesiaConfirmationDialogState
       ),
       const SizedBox(height: 6),
     ];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STUDY REMINDERS DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StudyRemindersDialog extends StatefulWidget {
+  const _StudyRemindersDialog();
+
+  @override
+  State<_StudyRemindersDialog> createState() => _StudyRemindersDialogState();
+}
+
+class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
+  bool _enabled = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFromFirestore();
+  }
+
+  Future<void> _loadFromFirestore() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final data = doc.data();
+      if (data != null && mounted) {
+        final hourUTC = (data['reminderHourUTC'] as num?)?.toInt();
+        final minuteUTC = (data['reminderMinuteUTC'] as num?)?.toInt() ?? 0;
+        setState(() {
+          _enabled = data['reminderEnabled'] == true;
+          if (hourUTC != null) {
+            final localOffset = DateTime.now().timeZoneOffset;
+            final utcMinutes = hourUTC * 60 + minuteUTC;
+            final localMinutes = utcMinutes + localOffset.inMinutes;
+            final localHour = (localMinutes ~/ 60) % 24;
+            final localMinute = (localMinutes % 60).toInt();
+            _reminderTime = TimeOfDay(hour: localHour, minute: localMinute);
+          }
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _saveToFirestore() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final now = DateTime.now();
+    final localDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      _reminderTime.hour,
+      _reminderTime.minute,
+    );
+    final utcDateTime = localDateTime.toUtc();
+    await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      'reminderEnabled': _enabled,
+      'reminderHourUTC': utcDateTime.hour,
+      'reminderMinuteUTC': utcDateTime.minute,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Dialog(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.tertiaryContainer.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(Icons.notifications_outlined,
+                      color: AppColors.tertiary, size: 26),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Study Reminders',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Daily study notifications',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Enable Reminders',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Get notified to study daily',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Switch(
+                        value: _enabled,
+                        onChanged: (value) => setState(() => _enabled = value),
+                        activeColor: AppColors.primary,
+                      ),
+                    ],
+                  ),
+                  if (_enabled) ...[
+                    const SizedBox(height: 16),
+                    Divider(color: AppColors.outlineVariant.withOpacity(0.3)),
+                    const SizedBox(height: 16),
+                    InkWell(
+                      onTap: () async {
+                        final time = await showTimePicker(
+                          context: context,
+                          initialTime: _reminderTime,
+                        );
+                        if (time != null) {
+                          setState(() => _reminderTime = time);
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.outlineVariant),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.access_time_rounded,
+                                    color: AppColors.primary, size: 20),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Reminder Time',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              _reminderTime.format(context),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: AppColors.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await _saveToFirestore();
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.20),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.check_rounded,
+                                    color: Colors.white, size: 16),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _enabled
+                                      ? 'Reminder set for ${_reminderTime.format(context)}'
+                                      : 'Reminders disabled',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: const Color(0xFF16A34A),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: Text(
+                      'Save Settings',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
