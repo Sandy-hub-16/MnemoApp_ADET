@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import 'deck_quiz_results_screen.dart';
+import '../settings/settings_screen.dart'
+    show kQuizTimerEnabledKey, kShuffleCardsKey;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz
@@ -281,7 +283,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final prefs = await SharedPreferences.getInstance();
       if (mounted) {
-        _timerEnabled = prefs.getBool('quiz_timer_enabled') ?? false;
+        _timerEnabled = prefs.getBool(kQuizTimerEnabledKey) ?? false;
       }
       _loadCards();
     });
@@ -328,12 +330,23 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           rawTag == null || rawTag.trim().isEmpty ? 'Other' : rawTag.trim();
       _clonedFromUsername = deckData?['clonedFromUsername'] as String?;
 
-      final snap = await deckRef.collection('cards').get();
+      final prefs = await SharedPreferences.getInstance();
+      final shuffleEnabled = prefs.getBool(kShuffleCardsKey) ?? true;
+
+      // Fetch cards: ordered by creation time when shuffle is off,
+      // unordered (Firestore default) when shuffle is on.
+      final cardsQuery = shuffleEnabled
+          ? deckRef.collection('cards').get()
+          : deckRef.collection('cards').orderBy('createdAt').get();
+
+      final snap = await cardsQuery;
 
       final loaded = snap.docs.map(_QuizCard.fromDoc).toList();
 
-      // 🔀 Shuffle card order — different every session
-      loaded.shuffle(Random());
+      // 🔀 Shuffle card order only when the setting is enabled
+      if (shuffleEnabled) {
+        loaded.shuffle(Random());
+      }
 
       // 🔀 Independently shuffle + pick ~25% of the deck to get the
       // "think first" gate this session — re-rolled every time, so it's

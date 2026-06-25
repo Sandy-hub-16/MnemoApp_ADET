@@ -11,8 +11,9 @@ import '../../../main.dart';
 // SETTINGS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 
-// SharedPreferences key used by both SettingsScreen and QuizScreen.
+// SharedPreferences keys used by both SettingsScreen and QuizScreen.
 const String kQuizTimerEnabledKey = 'quiz_timer_enabled';
+const String kShuffleCardsKey = 'shuffle_cards_enabled';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,6 +24,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _quizTimerEnabled = false;
+  bool _shuffleCardsEnabled = true; // default on, matches original behaviour
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     setState(() {
       _quizTimerEnabled = prefs.getBool(kQuizTimerEnabledKey) ?? false;
+      _shuffleCardsEnabled = prefs.getBool(kShuffleCardsKey) ?? true;
     });
   }
 
@@ -43,6 +46,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setBool(kQuizTimerEnabledKey, value);
     if (!mounted) return;
     setState(() => _quizTimerEnabled = value);
+  }
+
+  Future<void> _setShuffleCards(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kShuffleCardsKey, value);
+    if (!mounted) return;
+    setState(() => _shuffleCardsEnabled = value);
   }
 
   void _showAmnesiaConfirmation(BuildContext context) {
@@ -152,8 +162,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: 'Shuffle Cards',
                       subtitle: 'Randomize card order in quizzes',
                       trailing: Switch(
-                        value: true,
-                        onChanged: (val) {},
+                        value: _shuffleCardsEnabled,
+                        onChanged: _setShuffleCards,
                         activeColor: AppColors.primary,
                       ),
                       onTap: null,
