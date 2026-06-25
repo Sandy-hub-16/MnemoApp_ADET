@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/auth_google_service.dart';
+import '../../../business-layer/services/account_deletion_service.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/auth_buttons.dart';
@@ -113,6 +114,8 @@ class _Step3BodyState extends State<_Step3Body> {
       } else {
         _showError('Registration failed. Please try again.');
       }
+    } on AccountDeletionException catch (e) {
+      _showError(e.message);
     } catch (e) {
       _showError('An error occurred: $e');
     } finally {
@@ -169,6 +172,8 @@ class _Step3BodyState extends State<_Step3Body> {
       }
 
       if (mounted) Navigator.pushReplacementNamed(context, '/home');
+    } on AccountDeletionException catch (e) {
+      _showError(e.message);
     } catch (e) {
       _showError('Google sign-in failed: $e');
     } finally {
