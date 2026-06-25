@@ -34,7 +34,7 @@ class _LandingScreenState extends State<LandingScreen>
     // Wait for first frame so layout/images have a chance to begin loading,
     // then fade in the real content after a short breathing room.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 350), () {
+      Future.delayed(const Duration(milliseconds: 1200), () {
         if (mounted) {
           setState(() => _ready = true);
           _fadeCtrl.forward();
@@ -53,46 +53,48 @@ class _LandingScreenState extends State<LandingScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          const _BackgroundBlobs(),
-          // ── Skeleton layer (shown until _ready flips) ──────────────────────
-          if (!_ready) const _FullPageSkeleton(),
-          // ── Real content (fades in once ready) ────────────────────────────
-          if (_ready)
-            FadeTransition(
-              opacity: _fade,
-              child: CustomScrollView(
-                slivers: [
-                  const SliverToBoxAdapter(child: SizedBox(height: 88)),
-                  SliverToBoxAdapter(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1280),
-                        child: Column(
-                          children: [
-                            const _HeroSection(),
-                            _LazyMount(
-                              placeholder: const _FeaturesSectionSkeleton(),
-                              builder: (_) => const _FeaturesSection(),
-                            ),
-                          ],
+      body: _ShimmerScope(
+        child: Stack(
+          children: [
+            const _BackgroundBlobs(),
+            // ── Skeleton layer (shown until _ready flips) ──────────────────────
+            if (!_ready) const _FullPageSkeleton(),
+            // ── Real content (fades in once ready) ────────────────────────────
+            if (_ready)
+              FadeTransition(
+                opacity: _fade,
+                child: CustomScrollView(
+                  slivers: [
+                    const SliverToBoxAdapter(child: SizedBox(height: 88)),
+                    SliverToBoxAdapter(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1280),
+                          child: Column(
+                            children: [
+                              const _HeroSection(),
+                              _LazyMount(
+                                placeholder: const _FeaturesSectionSkeleton(),
+                                builder: (_) => const _FeaturesSection(),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _LazyMount(
-                      placeholder: const _FooterSectionSkeleton(),
-                      builder: (_) => const _FooterSection(),
+                    SliverToBoxAdapter(
+                      child: _LazyMount(
+                        placeholder: const _FooterSectionSkeleton(),
+                        builder: (_) => const _FooterSection(),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          // Glass nav always on top
-          const Positioned(top: 0, left: 0, right: 0, child: _NavBar()),
-        ],
+            // Glass nav always on top
+            const Positioned(top: 0, left: 0, right: 0, child: _NavBar()),
+          ],
+        ),
       ),
     );
   }
@@ -114,8 +116,8 @@ class _NavBar extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.surfaceContainerLow.withValues(alpha: 0.82),
             border: Border(
-              bottom:
-                  BorderSide(color: AppColors.outlineVariant.withValues(alpha: 0.12)),
+              bottom: BorderSide(
+                  color: AppColors.outlineVariant.withValues(alpha: 0.12)),
             ),
           ),
           child: SafeArea(
@@ -395,8 +397,8 @@ class _HeroVisualState extends State<_HeroVisual>
                       Text(
                         'Ready for your daily breakthrough? Start your session now.',
                         style: AppTextStyles.bodyBase.copyWith(
-                            color:
-                                AppColors.onTertiaryContainer.withValues(alpha: 0.8),
+                            color: AppColors.onTertiaryContainer
+                                .withValues(alpha: 0.8),
                             fontSize: 12),
                       ),
                     ],
@@ -542,6 +544,26 @@ class _FeatureCardState extends State<_FeatureCard> {
     }
   }
 
+  // Skeleton bar widths matched to the actual line-wrap of each card's
+  // description text. Wide cards (flex:2) wrap at ~3 lines; narrow cards
+  // (flex:1) wrap at ~4 lines. Last line is always shorter (trailing word).
+  List<double> get _descriptionSkeletonLines {
+    switch (widget.item.variant) {
+      case CardVariant.wideWithImage:
+        // "MnemoApp organizes every challenge…Build a lifelong asset as you study."
+        return const [1.0, 1.0, 0.55];
+      case CardVariant.narrowAccentTertiary:
+        // "Engagement is key…retrieve and apply information in real-time."
+        return const [1.0, 1.0, 1.0, 0.60];
+      case CardVariant.narrowAccentSecondary:
+        // "Passivity is the enemy…smart sketching, typing, and speaking."
+        return const [1.0, 1.0, 1.0, 0.70];
+      case CardVariant.wideWithSkeleton:
+        // "Don't just read summaries…across your entire collection."
+        return const [1.0, 1.0, 0.65];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = _tokens;
@@ -577,11 +599,23 @@ class _FeatureCardState extends State<_FeatureCard> {
               child: Icon(widget.item.icon, color: t.iconColor, size: 26),
             ),
             const SizedBox(height: 16),
-            Text(widget.item.title,
-                style: AppTextStyles.cardHeading.copyWith(color: t.title)),
+
+            // Title — all titles fit on 1 line across both wide and narrow cards
+            _TextReveal(
+              text: widget.item.title,
+              style: AppTextStyles.cardHeading.copyWith(color: t.title),
+              skeletonLines: const [0.80],
+              skeletonLineHeight: 20,
+            ),
             const SizedBox(height: 12),
-            Text(widget.item.description,
-                style: AppTextStyles.bodyBase.copyWith(color: t.body)),
+
+            // Description — line count differs by card width (wide vs narrow)
+            _TextReveal(
+              text: widget.item.description,
+              style: AppTextStyles.bodyBase.copyWith(color: t.body),
+              skeletonLines: _descriptionSkeletonLines,
+              skeletonLineHeight: 14,
+            ),
 
             // Image (wideWithImage)
             if (widget.item.variant == CardVariant.wideWithImage &&
@@ -600,36 +634,154 @@ class _FeatureCardState extends State<_FeatureCard> {
                 ),
               ),
             ],
-
-            // Skeleton lines (wideWithSkeleton)
-            if (widget.item.variant == CardVariant.wideWithSkeleton) ...[
-              const SizedBox(height: 32),
-              _skeletonLine(0.83, 0.20),
-              const SizedBox(height: 10),
-              _skeletonLine(1.0, 0.10),
-              const SizedBox(height: 10),
-              _skeletonLine(0.67, 0.10),
-              const SizedBox(height: 10),
-              _skeletonLine(0.55, 0.15),
-            ],
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _skeletonLine(double widthFactor, double opacity) =>
-      FractionallySizedBox(
-        widthFactor: widthFactor,
-        alignment: Alignment.centerLeft,
-        child: Container(
-          height: 10,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: opacity),
-            borderRadius: BorderRadius.circular(999),
+// ─────────────────────────────────────────────────────────────────────────────
+// TEXT REVEAL
+// Generic scroll-triggered skeleton → real text widget used by every feature
+// card title and description. Only starts counting down once the widget enters
+// the viewport. After [delay] the shimmer bars crossfade into real text via
+// AnimatedSwitcher — keeping only ONE child in the layout tree at all times.
+//
+// [skeletonLines]      — widthFactors (0.0–1.0), one bar per line.
+// [skeletonLineHeight] — bar height in logical pixels; match the text style.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TextReveal extends StatefulWidget {
+  const _TextReveal({
+    required this.text,
+    required this.style,
+    required this.skeletonLines,
+    required this.skeletonLineHeight,
+  });
+
+  final String text;
+  final TextStyle style;
+  final List<double> skeletonLines;
+  final double skeletonLineHeight;
+
+  @override
+  State<_TextReveal> createState() => _TextRevealState();
+}
+
+class _TextRevealState extends State<_TextReveal> {
+  final _key = GlobalKey();
+  ScrollPosition? _position;
+  bool _visible = false;
+  bool _revealed = false;
+  // Guards against queuing more than one post-frame check at a time.
+  bool _checkScheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final newPos = Scrollable.maybeOf(context)?.position;
+    if (newPos != _position) {
+      _position?.removeListener(_onScroll);
+      _position = newPos;
+      _position?.addListener(_onScroll);
+      // Only schedule a check when the position itself changes (e.g. first
+      // mount or scroll view swap) — not on every rebuild.
+      _scheduleCheck();
+    }
+  }
+
+  // Called on every scroll pixel — kept as cheap as possible.
+  // Just schedules one post-frame check rather than doing RenderBox
+  // lookups inline on every pixel event.
+  void _onScroll() {
+    if (!_visible) _scheduleCheck();
+  }
+
+  void _scheduleCheck() {
+    if (_checkScheduled || _visible) return;
+    _checkScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkScheduled = false;
+      _checkVisibility();
+    });
+  }
+
+  void _checkVisibility() {
+    if (_visible || !context.mounted) return;
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) return;
+
+    final viewport = RenderAbstractViewport.of(box);
+    final offsetToViewport = viewport.getOffsetToReveal(box, 0.0).offset;
+    final scrollPos = _position;
+    if (scrollPos == null) {
+      _startCountdown();
+      return;
+    }
+
+    final distanceIntoView =
+        offsetToViewport - scrollPos.pixels - scrollPos.viewportDimension;
+    if (distanceIntoView <= 200) _startCountdown();
+  }
+
+  void _startCountdown() {
+    if (_visible) return;
+    // Stop listening — we no longer need scroll updates.
+    _position?.removeListener(_onScroll);
+    setState(() => _visible = true);
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (mounted) setState(() => _revealed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _position?.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyedSubtree(
+      key: _key,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 500),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        child: _revealed ? _buildText() : _buildSkeleton(),
+      ),
+    );
+  }
+
+  Widget _buildText() {
+    return SizedBox(
+      key: const ValueKey('text'),
+      width: double.infinity,
+      child: Text(widget.text, style: widget.style),
+    );
+  }
+
+  Widget _buildSkeleton() {
+    return Column(
+      key: const ValueKey('skeleton'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (int i = 0; i < widget.skeletonLines.length; i++) ...[
+          FractionallySizedBox(
+            widthFactor: widget.skeletonLines[i],
+            alignment: Alignment.centerLeft,
+            child: _SkeletonBlock(
+                height: widget.skeletonLineHeight, borderRadius: 4),
           ),
-        ),
-      );
+          if (i < widget.skeletonLines.length - 1)
+            SizedBox(height: (widget.skeletonLineHeight * 0.6).roundToDouble()),
+        ],
+      ],
+    );
+  }
 }
 
 class _FeaturesSectionSkeleton extends StatelessWidget {
@@ -1166,20 +1318,29 @@ class _LazyMountState extends State<_LazyMount> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHIMMER SKELETON
-// A self-contained pulsing placeholder — used both for block skeletons
-// (matching the existing wideWithSkeleton card style) and as the loading
-// state for every network image on this page.
+// One AnimationController for the entire page, shared via _ShimmerScope.
+// Previously every _SkeletonBlock had its own controller — with 30+ bars
+// active simultaneously that was 30+ tickers all rebuilding independently
+// on every frame. Now there is exactly one ticker; all bars read the same
+// animation value through the InheritedWidget and rebuild together.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _Shimmer extends StatefulWidget {
-  const _Shimmer({required this.child});
+/// Holds the single shared shimmer animation for the whole subtree.
+class _ShimmerScope extends StatefulWidget {
+  const _ShimmerScope({required this.child});
   final Widget child;
 
   @override
-  State<_Shimmer> createState() => _ShimmerState();
+  State<_ShimmerScope> createState() => _ShimmerScopeState();
+
+  static Animation<double>? of(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<_ShimmerInherited>()
+        ?.animation;
+  }
 }
 
-class _ShimmerState extends State<_Shimmer>
+class _ShimmerScopeState extends State<_ShimmerScope>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl = AnimationController(
     vsync: this,
@@ -1194,19 +1355,26 @@ class _ShimmerState extends State<_Shimmer>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
+    return _ShimmerInherited(
       animation: _ctrl,
-      builder: (_, child) => Opacity(
-        opacity: 0.45 + (_ctrl.value * 0.35),
-        child: child,
-      ),
       child: widget.child,
     );
   }
 }
 
-/// A solid-colour block sized to [width]/[height], pulsing via [_Shimmer].
-/// Used as the loading placeholder for images and as generic skeleton bars.
+class _ShimmerInherited extends InheritedWidget {
+  const _ShimmerInherited({
+    required this.animation,
+    required super.child,
+  });
+  final Animation<double> animation;
+
+  @override
+  bool updateShouldNotify(_ShimmerInherited old) => false;
+}
+
+/// A solid-colour block sized to [width]/[height], pulsing via the shared
+/// _ShimmerScope animation. Falls back to a static block if no scope is found.
 class _SkeletonBlock extends StatelessWidget {
   const _SkeletonBlock({
     this.width,
@@ -1219,17 +1387,28 @@ class _SkeletonBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _Shimmer(
-      child: Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          color: AppColors.outlineVariant.withValues(alpha: 0.25),
-          borderRadius: BorderRadius.circular(borderRadius),
-        ),
+    final animation = _ShimmerScope.of(context);
+    if (animation == null) {
+      return _block(0.18);
+    }
+    // Lerp the color alpha directly — avoids creating a compositing layer
+    // (which Opacity does) so the repaint stays cheap and isolated.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (_, __) => _block(0.18 + animation.value * 0.14),
       ),
     );
   }
+
+  Widget _block(double alpha) => Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.outlineVariant.withValues(alpha: alpha),
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
+      );
 }
 
 /// Drop-in replacement for Image.network that shows a shimmering skeleton
@@ -1292,12 +1471,14 @@ class _BackgroundBlobs extends StatelessWidget {
           Positioned(
             top: 80,
             left: -80,
-            child: _Blob(380, AppColors.secondaryFixedDim.withValues(alpha: 0.18)),
+            child:
+                _Blob(380, AppColors.secondaryFixedDim.withValues(alpha: 0.18)),
           ),
           Positioned(
             top: 320,
             right: -80,
-            child: _Blob(500, AppColors.tertiaryContainer.withValues(alpha: 0.16)),
+            child:
+                _Blob(500, AppColors.tertiaryContainer.withValues(alpha: 0.16)),
           ),
         ]),
       ),

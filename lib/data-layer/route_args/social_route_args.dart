@@ -21,7 +21,14 @@ class SharedDeckDetailArgs {
 class PublicProfileArgs {
   const PublicProfileArgs({
     required this.targetUid,
+    this.suppressViewNotification = false,
   });
 
   final String targetUid;
+
+  /// When true, the PublicProfileScreen will NOT fire a "profile_viewed"
+  /// notification to the owner. Set to true when navigating here from a
+  /// profile_viewed notification tile, to break the infinite ping-pong loop
+  /// where viewing the notifier's profile sends them another notification.
+  final bool suppressViewNotification;
 }

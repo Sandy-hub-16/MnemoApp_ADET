@@ -93,6 +93,7 @@ class _CardResult {
     required this.cardId,
     required this.question,
     required this.correct,
+    this.answer = '',
     int? repetitionsNeeded,
     bool? firstAttemptCorrect,
     bool? skipped,
@@ -108,6 +109,8 @@ class _CardResult {
 
   final String cardId;
   final String question;
+  final String
+      answer; // correct answer text — forwarded to QuizCardAnswer for Needs Review
   bool correct;
   int repetitionsNeeded;
   bool firstAttemptCorrect;
@@ -479,6 +482,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       () => _CardResult(
         cardId: card.id,
         question: card.question,
+        answer: card.answer,
         correct: false,
         firstAttemptCorrect: false,
       ),
@@ -534,6 +538,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       () => _CardResult(
         cardId: card.id,
         question: card.question,
+        answer: card.answer,
         correct: false,
         firstAttemptCorrect: correct,
       ),
@@ -602,6 +607,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       () => _CardResult(
         cardId: card.id,
         question: card.question,
+        answer: card.answer,
         correct: false,
         firstAttemptCorrect: correct,
       ),
@@ -970,6 +976,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               .map((result) => QuizCardAnswer(
                     cardId: result.cardId,
                     question: result.question,
+                    answer: result.answer,
                     correct: result.correct,
                     repetitionsNeeded: result.repetitionsNeeded,
                     firstAttemptCorrect: result.firstAttemptCorrect,

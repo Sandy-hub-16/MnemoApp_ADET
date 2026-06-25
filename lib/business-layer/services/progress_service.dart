@@ -51,6 +51,7 @@ class QuizCardAnswer {
     required this.cardId,
     required this.question,
     required this.correct,
+    this.answer = '',
     this.repetitionsNeeded = 1,
     this.firstAttemptCorrect = true,
     this.skipped = false,
@@ -59,6 +60,8 @@ class QuizCardAnswer {
   final String cardId;
   final String question;
   final bool correct;
+  final String
+      answer; // correct answer text — stored so Needs Review can show it
   final int repetitionsNeeded;
   final bool firstAttemptCorrect;
   final bool skipped;
@@ -68,6 +71,7 @@ class QuizCardAnswer {
       'cardId': cardId,
       'question': question,
       'correct': correct,
+      'answer': answer,
       'repetitionsNeeded': repetitionsNeeded,
       'firstAttemptCorrect': firstAttemptCorrect,
       'skipped': skipped,
@@ -177,12 +181,20 @@ class WeakSpotSummary {
     required this.category,
     required this.deckTitle,
     required this.missCount,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
   final String category;
   final String deckTitle;
   final int missCount;
+
+  /// Firestore deck ID — used to navigate to the full deck from the review sheet.
+  final String deckId;
+
+  /// The correct answer text, captured from the quiz attempt's answers array.
+  final String? answer;
 }
 
 class ForgottenCardSummary {
@@ -192,6 +204,8 @@ class ForgottenCardSummary {
     required this.deckTitle,
     required this.failureCount,
     required this.lastFailedAt,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
@@ -199,6 +213,12 @@ class ForgottenCardSummary {
   final String deckTitle;
   final int failureCount;
   final DateTime? lastFailedAt;
+
+  /// Firestore deck ID — used to navigate to the full deck from the review sheet.
+  final String deckId;
+
+  /// The correct answer text, sourced from the best-session answer.
+  final String? answer;
 }
 
 class ProgressDashboard {
@@ -706,6 +726,18 @@ abstract final class ProgressService {
       final missedCards = data['missedCards'];
       if (missedCards is! List) continue;
 
+      // Build a cardId → answer text lookup from this attempt's full answers list
+      final answerLookup = <String, String>{};
+      final answers = data['answers'];
+      if (answers is List) {
+        for (final a in answers) {
+          if (a is! Map) continue;
+          final id = a['cardId']?.toString() ?? '';
+          final ans = a['answer']?.toString() ?? '';
+          if (id.isNotEmpty && ans.isNotEmpty) answerLookup[id] = ans;
+        }
+      }
+
       for (final item in missedCards) {
         if (item is! Map) continue;
         final question = _cleanLabel(item['question']?.toString(), 'Untitled');
@@ -718,6 +750,8 @@ abstract final class ProgressService {
             category: _cleanLabel(item['category']?.toString(), 'Other'),
             deckTitle:
                 _cleanLabel(item['deckTitle']?.toString(), 'Untitled Deck'),
+            deckId: deckId,
+            answer: answerLookup[cardId],
           ),
         );
         bucket.missCount += 1;
@@ -833,6 +867,8 @@ abstract final class ProgressService {
                 bestSession['deckTitle']?.toString(), 'Untitled Deck'),
             failureCount: entry.value,
             lastFailedAt: lastFailedAt,
+            deckId: deckId,
+            answer: originalAnswer['answer']?.toString(),
           );
         }
       }
@@ -1229,11 +1265,15 @@ class _WeakSpotBucket {
     required this.question,
     required this.category,
     required this.deckTitle,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
   final String category;
   final String deckTitle;
+  final String deckId;
+  final String? answer;
   int missCount = 0;
 
   WeakSpotSummary toSummary() {
@@ -1242,6 +1282,8 @@ class _WeakSpotBucket {
       category: category,
       deckTitle: deckTitle,
       missCount: missCount,
+      deckId: deckId,
+      answer: answer,
     );
   }
 }
@@ -1253,6 +1295,8 @@ class _ForgottenCardBucket {
     required this.deckTitle,
     required this.failureCount,
     required this.lastFailedAt,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
@@ -1260,6 +1304,8 @@ class _ForgottenCardBucket {
   final String deckTitle;
   final int failureCount;
   final DateTime? lastFailedAt;
+  final String deckId;
+  final String? answer;
 
   ForgottenCardSummary toSummary() {
     return ForgottenCardSummary(
@@ -1268,6 +1314,8 @@ class _ForgottenCardBucket {
       deckTitle: deckTitle,
       failureCount: failureCount,
       lastFailedAt: lastFailedAt,
+      deckId: deckId,
+      answer: answer,
     );
   }
 }

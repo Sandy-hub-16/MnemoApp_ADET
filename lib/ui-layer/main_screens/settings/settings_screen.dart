@@ -178,19 +178,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onTap: null,
                     ),
                     _SettingsTile(
-                      icon: Icons.auto_awesome_rounded,
-                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                      iconColor: AppColors.onTertiaryContainer,
-                      label: 'Smart Review',
-                      subtitle: 'Prioritize cards you struggle with',
-                      trailing: Switch(
-                        value: false,
-                        onChanged: (val) {},
-                        activeColor: AppColors.primary,
-                      ),
-                      onTap: null,
-                    ),
-                    _SettingsTile(
                       icon: Icons.notifications_outlined,
                       iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
                       iconColor: AppColors.onTertiaryContainer,
