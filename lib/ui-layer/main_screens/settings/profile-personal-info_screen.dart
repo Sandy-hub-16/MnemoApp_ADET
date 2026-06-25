@@ -86,7 +86,7 @@ class _SettingsScaffold extends StatelessWidget {
               width: 340,
               height: 340,
               decoration: BoxDecoration(
-                color: AppColors.secondaryContainer.withOpacity(0.18),
+                color: AppColors.secondaryContainer.withValues(alpha: 0.18),
                 shape: BoxShape.circle,
               ),
             ),
@@ -98,7 +98,7 @@ class _SettingsScaffold extends StatelessWidget {
               width: 300,
               height: 300,
               decoration: BoxDecoration(
-                color: AppColors.tertiaryContainer.withOpacity(0.15),
+                color: AppColors.tertiaryContainer.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
             ),
@@ -740,8 +740,8 @@ class _SettingsBodyState extends State<_SettingsBody> {
                             height: 40,
                             decoration: BoxDecoration(
                               color: _isPrivate
-                                  ? AppColors.errorContainer.withOpacity(0.3)
-                                  : AppColors.primaryContainer.withOpacity(0.3),
+                                  ? AppColors.errorContainer.withValues(alpha: 0.3)
+                                  : AppColors.primaryContainer.withValues(alpha: 0.3),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -790,7 +790,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                               setState(() => _isPrivate = !isPublic);
                               _checkDirty();
                             },
-                            activeColor: AppColors.primary,
+                            activeThumbColor: AppColors.primary,
                             inactiveThumbColor: AppColors.outline,
                             inactiveTrackColor: AppColors.surfaceContainerLow,
                           ),
@@ -840,14 +840,14 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                       horizontal: 18, vertical: 14),
                                   decoration: BoxDecoration(
                                     color: AppColors.surfaceContainerLow
-                                        .withOpacity(0.7),
+                                        .withValues(alpha: 0.7),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Row(
                                     children: [
                                       Icon(Icons.stairs_outlined,
                                           color: AppColors.outline
-                                              .withOpacity(0.6),
+                                              .withValues(alpha: 0.6),
                                           size: 19),
                                       const SizedBox(width: 12),
                                       Expanded(
@@ -862,7 +862,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                       ),
                                       Icon(Icons.lock_outline_rounded,
                                           color: AppColors.outline
-                                              .withOpacity(0.35),
+                                              .withValues(alpha: 0.35),
                                           size: 14),
                                     ],
                                   ),
@@ -875,7 +875,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                       Icon(Icons.schedule_rounded,
                                           size: 12,
                                           color: AppColors.outline
-                                              .withOpacity(0.5)),
+                                              .withValues(alpha: 0.5)),
                                       const SizedBox(width: 4),
                                       Text(
                                         'Editable again in '
@@ -883,7 +883,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                         style: GoogleFonts.plusJakartaSans(
                                             fontSize: 11,
                                             color: AppColors.outline
-                                                .withOpacity(0.55)),
+                                                .withValues(alpha: 0.55)),
                                       ),
                                     ],
                                   ),
@@ -957,7 +957,7 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withOpacity(0.80),
+      color: AppColors.background.withValues(alpha: 0.80),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
         children: [
@@ -968,7 +968,7 @@ class _TopBar extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: AppColors.primaryContainer.withOpacity(0.18),
+                color: AppColors.primaryContainer.withValues(alpha: 0.18),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.arrow_back_rounded,
@@ -1011,7 +1011,7 @@ class _TopBar extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withOpacity(0.28),
+                            color: AppColors.primary.withValues(alpha: 0.28),
                             blurRadius: 12,
                             offset: const Offset(0, 4),
                           ),
@@ -1073,8 +1073,8 @@ class _AvatarSection extends StatelessWidget {
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  AppColors.primary.withOpacity(0.25),
-                  AppColors.primaryContainer.withOpacity(0.35),
+                  AppColors.primary.withValues(alpha: 0.25),
+                  AppColors.primaryContainer.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -1100,7 +1100,7 @@ class _AvatarSection extends StatelessWidget {
                       : Icon(
                           Icons.person_rounded,
                           size: 48,
-                          color: AppColors.primary.withOpacity(0.5),
+                          color: AppColors.primary.withValues(alpha: 0.5),
                         ))
                   : null,
             ),
@@ -1116,7 +1116,7 @@ class _AvatarSection extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.black.withOpacity(0.45),
+                  color: Colors.black.withValues(alpha: 0.45),
                 ),
                 child: const Center(
                   child: CircularProgressIndicator(
@@ -1143,7 +1143,7 @@ class _AvatarSection extends StatelessWidget {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.3),
+                    color: AppColors.primary.withValues(alpha: 0.3),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -1172,12 +1172,10 @@ class _SectionCard extends StatelessWidget {
   const _SectionCard({
     required this.label,
     required this.children,
-    this.trailing,
   });
 
   final String label;
   final List<Widget> children;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1187,7 +1185,7 @@ class _SectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
+            color: AppColors.onSurface.withValues(alpha: 0.04),
             blurRadius: 28,
             offset: const Offset(0, 8),
           ),
@@ -1211,7 +1209,7 @@ class _SectionCard extends StatelessWidget {
                     letterSpacing: 1.2,
                   ),
                 ),
-                if (trailing != null) trailing!,
+
               ],
             ),
           ),
@@ -1221,7 +1219,7 @@ class _SectionCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             child: Divider(
               height: 1,
-              color: AppColors.outlineVariant.withOpacity(0.3),
+              color: AppColors.outlineVariant.withValues(alpha: 0.3),
             ),
           ),
 
@@ -1271,14 +1269,12 @@ class _ReadOnlyTile extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.lockReason,
-    this.compact = false,
   });
 
   final String label;
   final String value;
   final IconData icon;
   final String lockReason;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1293,12 +1289,12 @@ class _ReadOnlyTile extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLow.withOpacity(0.7),
+            color: AppColors.surfaceContainerLow.withValues(alpha: 0.7),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Row(
             children: [
-              Icon(icon, color: AppColors.outline.withOpacity(0.6), size: 19),
+              Icon(icon, color: AppColors.outline.withValues(alpha: 0.6), size: 19),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -1314,7 +1310,7 @@ class _ReadOnlyTile extends StatelessWidget {
                 Row(
                   children: [
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withOpacity(0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
                   ],
                 ),
             ],
@@ -1327,7 +1323,7 @@ class _ReadOnlyTile extends StatelessWidget {
             child: Text(
               lockReason,
               style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11, color: AppColors.outline.withOpacity(0.55)),
+                  fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
             ),
           ),
         ],
@@ -1372,13 +1368,13 @@ class _EditableOrLockedField extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow.withOpacity(0.7),
+                  color: AppColors.surfaceContainerLow.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
                   children: [
                     Icon(icon,
-                        color: AppColors.outline.withOpacity(0.6), size: 19),
+                        color: AppColors.outline.withValues(alpha: 0.6), size: 19),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -1393,7 +1389,7 @@ class _EditableOrLockedField extends StatelessWidget {
                       ),
                     ),
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withOpacity(0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
                   ],
                 ),
               )
@@ -1410,12 +1406,12 @@ class _EditableOrLockedField extends StatelessWidget {
             child: Row(
               children: [
                 Icon(Icons.schedule_rounded,
-                    size: 12, color: AppColors.outline.withOpacity(0.5)),
+                    size: 12, color: AppColors.outline.withValues(alpha: 0.5)),
                 const SizedBox(width: 4),
                 Text(
                   lockSubtitle!,
                   style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppColors.outline.withOpacity(0.55)),
+                      fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
                 ),
               ],
             ),
@@ -1460,13 +1456,13 @@ class _LockedOrEditableTextField extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow.withOpacity(0.7),
+                  color: AppColors.surfaceContainerLow.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
                   children: [
                     Icon(icon,
-                        color: AppColors.outline.withOpacity(0.6), size: 19),
+                        color: AppColors.outline.withValues(alpha: 0.6), size: 19),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -1479,7 +1475,7 @@ class _LockedOrEditableTextField extends StatelessWidget {
                       ),
                     ),
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withOpacity(0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
                   ],
                 ),
               )
@@ -1495,12 +1491,12 @@ class _LockedOrEditableTextField extends StatelessWidget {
             child: Row(
               children: [
                 Icon(Icons.schedule_rounded,
-                    size: 12, color: AppColors.outline.withOpacity(0.5)),
+                    size: 12, color: AppColors.outline.withValues(alpha: 0.5)),
                 const SizedBox(width: 4),
                 Text(
                   lockSubtitle!,
                   style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppColors.outline.withOpacity(0.55)),
+                      fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
                 ),
               ],
             ),
@@ -1540,7 +1536,7 @@ class _EditableField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 14, color: AppColors.outline.withOpacity(0.45)),
+            fontSize: 14, color: AppColors.outline.withValues(alpha: 0.45)),
         prefixIcon: Icon(icon, color: AppColors.primary, size: 19),
         prefixText: prefix,
         prefixStyle: GoogleFonts.plusJakartaSans(
@@ -1562,7 +1558,7 @@ class _EditableField extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(999),
           borderSide:
-              BorderSide(color: AppColors.primary.withOpacity(0.4), width: 2),
+              BorderSide(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
         ),
       ),
     );
@@ -1588,12 +1584,12 @@ class _BioTextArea extends StatelessWidget {
       decoration: InputDecoration(
         hintText: 'Tell us about your learning journey…',
         hintStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 14, color: AppColors.outline.withOpacity(0.45)),
+            fontSize: 14, color: AppColors.outline.withValues(alpha: 0.45)),
         filled: true,
         fillColor: AppColors.surfaceContainerLow,
         contentPadding: const EdgeInsets.all(18),
         counterStyle: GoogleFonts.plusJakartaSans(
-            fontSize: 11, color: AppColors.outline.withOpacity(0.5)),
+            fontSize: 11, color: AppColors.outline.withValues(alpha: 0.5)),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
@@ -1605,7 +1601,7 @@ class _BioTextArea extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide:
-              BorderSide(color: AppColors.primary.withOpacity(0.4), width: 2),
+              BorderSide(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
         ),
       ),
     );
@@ -1649,12 +1645,12 @@ class _OneTimeDateTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             decoration: BoxDecoration(
               color: isLocked
-                  ? AppColors.surfaceContainerLow.withOpacity(0.7)
+                  ? AppColors.surfaceContainerLow.withValues(alpha: 0.7)
                   : AppColors.surfaceContainerLow,
               borderRadius: BorderRadius.circular(999),
               border: !isLocked && !hasValue
                   ? Border.all(
-                      color: AppColors.primary.withOpacity(0.25),
+                      color: AppColors.primary.withValues(alpha: 0.25),
                       width: 1.5,
                       strokeAlign: BorderSide.strokeAlignInside,
                     )
@@ -1666,9 +1662,9 @@ class _OneTimeDateTile extends StatelessWidget {
                   icon,
                   color: hasValue
                       ? (isLocked
-                          ? AppColors.outline.withOpacity(0.6)
+                          ? AppColors.outline.withValues(alpha: 0.6)
                           : AppColors.primary)
-                      : AppColors.primary.withOpacity(0.7),
+                      : AppColors.primary.withValues(alpha: 0.7),
                   size: 19,
                 ),
                 const SizedBox(width: 12),
@@ -1680,16 +1676,16 @@ class _OneTimeDateTile extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: hasValue
                           ? (isLocked ? AppColors.outline : AppColors.onSurface)
-                          : AppColors.primary.withOpacity(0.7),
+                          : AppColors.primary.withValues(alpha: 0.7),
                     ),
                   ),
                 ),
                 if (isLocked)
                   Icon(Icons.lock_outline_rounded,
-                      color: AppColors.outline.withOpacity(0.35), size: 14)
+                      color: AppColors.outline.withValues(alpha: 0.35), size: 14)
                 else
                   Icon(Icons.edit_calendar_outlined,
-                      color: AppColors.primary.withOpacity(0.6), size: 17),
+                      color: AppColors.primary.withValues(alpha: 0.6), size: 17),
               ],
             ),
           ),
@@ -1701,7 +1697,7 @@ class _OneTimeDateTile extends StatelessWidget {
             child: Text(
               'Cannot be changed after being set',
               style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11, color: AppColors.outline.withOpacity(0.55)),
+                  fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
             ),
           ),
         ],
@@ -1749,13 +1745,13 @@ class _OneTimeDropdownTile extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow.withOpacity(0.7),
+                  color: AppColors.surfaceContainerLow.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Row(
                   children: [
                     Icon(icon,
-                        color: AppColors.outline.withOpacity(0.6), size: 19),
+                        color: AppColors.outline.withValues(alpha: 0.6), size: 19),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -1768,7 +1764,7 @@ class _OneTimeDropdownTile extends StatelessWidget {
                       ),
                     ),
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withOpacity(0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
                   ],
                 ),
               )
@@ -1779,7 +1775,7 @@ class _OneTimeDropdownTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(999),
                   border: !hasValue
                       ? Border.all(
-                          color: AppColors.primary.withOpacity(0.25),
+                          color: AppColors.primary.withValues(alpha: 0.25),
                           width: 1.5,
                           strokeAlign: BorderSide.strokeAlignInside,
                         )
@@ -1793,7 +1789,7 @@ class _OneTimeDropdownTile extends StatelessWidget {
                     hint: Row(
                       children: [
                         Icon(icon,
-                            color: AppColors.primary.withOpacity(0.7),
+                            color: AppColors.primary.withValues(alpha: 0.7),
                             size: 19),
                         const SizedBox(width: 12),
                         Text(
@@ -1801,7 +1797,7 @@ class _OneTimeDropdownTile extends StatelessWidget {
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.primary.withOpacity(0.7),
+                            color: AppColors.primary.withValues(alpha: 0.7),
                           ),
                         ),
                       ],
@@ -1840,7 +1836,7 @@ class _OneTimeDropdownTile extends StatelessWidget {
             child: Text(
               'Cannot be changed after being set',
               style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11, color: AppColors.outline.withOpacity(0.55)),
+                  fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
             ),
           ),
         ],
@@ -1899,37 +1895,7 @@ class _YearDropdown extends StatelessWidget {
 // LOCK BADGE  (shown on card header when section is locked)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _LockBadge extends StatelessWidget {
-  const _LockBadge(this.text);
-  final String text;
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.tertiaryContainer.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.schedule_rounded,
-              size: 11, color: AppColors.onTertiaryContainer),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: AppColors.onTertiaryContainer,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SAVE CONFIRM DIALOG
@@ -1950,7 +1916,7 @@ class _SaveConfirmDialog extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: AppColors.primaryContainer.withOpacity(0.35),
+                color: AppColors.primaryContainer.withValues(alpha: 0.35),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.save_outlined,
@@ -2016,7 +1982,7 @@ class _SaveConfirmDialog extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withOpacity(0.25),
+                            color: AppColors.primary.withValues(alpha: 0.25),
                             blurRadius: 14,
                             offset: const Offset(0, 4),
                           ),
@@ -2068,7 +2034,7 @@ class _BottomSaveButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(0.25),
+              color: AppColors.primary.withValues(alpha: 0.25),
               blurRadius: 24,
               offset: const Offset(0, 8),
             ),
@@ -2120,7 +2086,7 @@ class _ImageSourceSheet extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: AppColors.outline.withOpacity(0.3),
+              color: AppColors.outline.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(99),
             ),
           ),
@@ -2151,7 +2117,7 @@ class _ImageSourceSheet extends StatelessWidget {
                     icon: Icons.camera_alt_rounded,
                     label: 'Camera',
                     color: AppColors.primary,
-                    bgColor: AppColors.primaryContainer.withOpacity(0.25),
+                    bgColor: AppColors.primaryContainer.withValues(alpha: 0.25),
                     onTap: () => Navigator.of(context).pop(ImageSource.camera),
                   ),
                 ),
@@ -2161,7 +2127,7 @@ class _ImageSourceSheet extends StatelessWidget {
                     icon: Icons.photo_library_rounded,
                     label: 'Gallery',
                     color: AppColors.secondary,
-                    bgColor: AppColors.secondaryContainer.withOpacity(0.25),
+                    bgColor: AppColors.secondaryContainer.withValues(alpha: 0.25),
                     onTap: () => Navigator.of(context).pop(ImageSource.gallery),
                   ),
                 ),
@@ -2210,7 +2176,7 @@ class _SourceOption extends StatelessWidget {
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.2)),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
         ),
         child: Column(
           children: [

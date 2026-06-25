@@ -837,6 +837,7 @@ class _OutlineButton extends StatefulWidget {
   const _OutlineButton({
     required this.label,
     required this.onTap,
+    // ignore: unused_element_parameter
     this.fullWidth = false,
   });
   final String label;
@@ -1083,6 +1084,7 @@ class _LazyMount extends StatefulWidget {
   const _LazyMount({
     required this.builder,
     required this.placeholder,
+    // ignore: unused_element_parameter
     this.preloadExtent = 400.0,
   });
 

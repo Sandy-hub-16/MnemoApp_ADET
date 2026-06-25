@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -331,7 +330,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
             width: 88,
             height: 88,
             decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withOpacity(0.28),
+              color: AppColors.primaryContainer.withValues(alpha: 0.28),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -417,7 +416,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
           text: 'Click the link in the email to verify your account. '
               'This page automatically checks every few seconds and '
               'will redirect you once verified.',
-          color: AppColors.secondaryContainer.withOpacity(0.35),
+          color: AppColors.secondaryContainer.withValues(alpha: 0.35),
           iconColor: AppColors.secondary,
           textColor: AppColors.onSecondaryContainer,
         ),
@@ -490,8 +489,8 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
               height: 108,
               decoration: BoxDecoration(
                 color: success
-                    ? AppColors.primaryContainer.withOpacity(0.28)
-                    : Colors.red.withOpacity(0.08),
+                    ? AppColors.primaryContainer.withValues(alpha: 0.28)
+                    : Colors.red.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -575,10 +574,10 @@ class _CountdownCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
       decoration: BoxDecoration(
-        color: timerColor.withOpacity(0.06),
+        color: timerColor.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: timerColor.withOpacity(0.22),
+          color: timerColor.withValues(alpha: 0.22),
           width: 1.5,
         ),
       ),
@@ -591,7 +590,7 @@ class _CountdownCard extends StatelessWidget {
               Icon(
                 Icons.timer_outlined,
                 size: 13,
-                color: timerColor.withOpacity(0.60),
+                color: timerColor.withValues(alpha: 0.60),
               ),
               const SizedBox(width: 6),
               Text(
@@ -600,7 +599,7 @@ class _CountdownCard extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.6,
-                  color: timerColor.withOpacity(0.60),
+                  color: timerColor.withValues(alpha: 0.60),
                 ),
               ),
             ],
@@ -626,7 +625,7 @@ class _CountdownCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 5,
-              backgroundColor: timerColor.withOpacity(0.12),
+              backgroundColor: timerColor.withValues(alpha: 0.12),
               valueColor: AlwaysStoppedAnimation<Color>(timerColor),
             ),
           ),
@@ -639,7 +638,7 @@ class _CountdownCard extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               height: 1.5,
-              color: timerColor.withOpacity(0.55),
+              color: timerColor.withValues(alpha: 0.55),
             ),
           ),
         ],
@@ -666,7 +665,7 @@ class _ResendCooldownButton extends StatelessWidget {
         color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: AppColors.outlineVariant.withOpacity(0.45),
+          color: AppColors.outlineVariant.withValues(alpha: 0.45),
         ),
       ),
       child: Row(
