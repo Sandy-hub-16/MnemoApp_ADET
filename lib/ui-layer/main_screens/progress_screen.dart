@@ -218,6 +218,8 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
         subject: spot.category,
         deckTitle: spot.deckTitle,
         termCount: spot.missCount,
+        deckId: spot.deckId,
+        answer: spot.answer,
       );
     }).toList();
   }
@@ -229,6 +231,8 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
         subject: card.category,
         deckTitle: card.deckTitle,
         failureCount: card.failureCount,
+        deckId: card.deckId,
+        answer: card.answer,
       );
     }).toList();
   }
@@ -1529,6 +1533,9 @@ class _NeedsReviewCardState extends State<_NeedsReviewCard> {
             severity: s.termCount,
             icon: Icons.error_outline_rounded,
             color: AppColors.error,
+            deckId: s.deckId,
+            deckTitle: s.deckTitle,
+            answer: s.answer,
           )),
       ...widget.forgottenCards.map((c) => _ReviewItem(
             topic: c.topic,
@@ -1537,6 +1544,9 @@ class _NeedsReviewCardState extends State<_NeedsReviewCard> {
             severity: c.failureCount,
             icon: Icons.history_rounded,
             color: AppColors.tertiary,
+            deckId: c.deckId,
+            deckTitle: c.deckTitle,
+            answer: c.answer,
           )),
     ]..sort((a, b) => b.severity.compareTo(a.severity));
 
@@ -1654,6 +1664,9 @@ class _ReviewItem {
     required this.severity,
     required this.icon,
     required this.color,
+    required this.deckId,
+    required this.deckTitle,
+    this.answer,
   });
 
   final String topic;
@@ -1662,6 +1675,9 @@ class _ReviewItem {
   final int severity;
   final IconData icon;
   final Color color;
+  final String deckId;
+  final String deckTitle;
+  final String? answer;
 }
 
 class _ReviewTile extends StatelessWidget {
@@ -1676,7 +1692,7 @@ class _ReviewTile extends StatelessWidget {
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
-          onTap: () {},
+          onTap: () => _showCardReviewSheet(context, item),
           borderRadius: BorderRadius.circular(14),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1737,6 +1753,389 @@ class _ReviewTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showCardReviewSheet(BuildContext context, _ReviewItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _CardReviewSheet(item: item),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CARD REVIEW SHEET
+// Shows the focused Q&A for a single struggling/forgotten card inline.
+// The user can reveal the answer and optionally jump to the full deck.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CardReviewSheet extends StatefulWidget {
+  const _CardReviewSheet({required this.item});
+  final _ReviewItem item;
+
+  @override
+  State<_CardReviewSheet> createState() => _CardReviewSheetState();
+}
+
+class _CardReviewSheetState extends State<_CardReviewSheet> {
+  bool _answerVisible = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final hasAnswer = item.answer != null && item.answer!.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Handle ───────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.outlineVariant,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Header: icon + reason badge + deck title ──────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: item.color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(item.icon, color: item.color, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Needs Review',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(Icons.layers_rounded,
+                              size: 12, color: AppColors.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              item.deckTitle,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: item.color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    item.reason,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: item.color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Question block ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppColors.primary.withOpacity(0.18), width: 1),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.help_outline_rounded,
+                            color: AppColors.primary, size: 16),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'QUESTION',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    item.topic,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Answer block (tap to reveal) ──────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: hasAnswer
+                  ? () => setState(() => _answerVisible = !_answerVisible)
+                  : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: _answerVisible
+                      ? AppColors.tertiaryContainer.withOpacity(0.25)
+                      : AppColors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _answerVisible
+                        ? AppColors.tertiary.withOpacity(0.22)
+                        : AppColors.outlineVariant.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: hasAnswer
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: _answerVisible
+                                      ? AppColors.tertiaryContainer
+                                      : AppColors.outlineVariant
+                                          .withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  _answerVisible
+                                      ? Icons.check_circle_outline_rounded
+                                      : Icons.lock_outline_rounded,
+                                  color: _answerVisible
+                                      ? AppColors.tertiary
+                                      : AppColors.outline,
+                                  size: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _answerVisible ? 'ANSWER' : 'TAP TO REVEAL',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: _answerVisible
+                                      ? AppColors.tertiary
+                                      : AppColors.outline,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            child: _answerVisible
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      item.answer!,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onSurface,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded,
+                              size: 16, color: AppColors.outline),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Answer not recorded — take a quiz to populate this',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: AppColors.outline,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Action buttons ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            child: Column(
+              children: [
+                // Primary: reveal / hide answer
+                if (hasAnswer)
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () =>
+                            setState(() => _answerVisible = !_answerVisible),
+                        icon: Icon(
+                          _answerVisible
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _answerVisible ? 'Hide Answer' : 'Reveal Answer',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (hasAnswer) const SizedBox(height: 10),
+
+                // Secondary: open full deck in study mode
+                if (item.deckId.isNotEmpty)
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).pushNamed(
+                            '/study',
+                            arguments: StudyScreenArgs(
+                              deckId: item.deckId,
+                              deckTitle: item.deckTitle,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.auto_stories_rounded, size: 18),
+                        label: Text(
+                          'View Full Deck',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: BorderSide(
+                              color: AppColors.primary.withOpacity(0.4)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Safe-area bottom padding
+          SizedBox(
+              height: MediaQuery.of(context).padding.bottom > 0
+                  ? MediaQuery.of(context).padding.bottom + 8
+                  : 20),
+        ],
       ),
     );
   }
@@ -1913,11 +2312,15 @@ class _WeakSpot {
     required this.subject,
     required this.deckTitle,
     required this.termCount,
+    required this.deckId,
+    this.answer,
   });
   final String topic;
   final String subject;
   final String deckTitle;
   final int termCount;
+  final String deckId;
+  final String? answer;
 }
 
 class _ForgottenCard {
@@ -1926,11 +2329,15 @@ class _ForgottenCard {
     required this.subject,
     required this.deckTitle,
     required this.failureCount,
+    required this.deckId,
+    this.answer,
   });
   final String topic;
   final String subject;
   final String deckTitle;
   final int failureCount;
+  final String deckId;
+  final String? answer;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

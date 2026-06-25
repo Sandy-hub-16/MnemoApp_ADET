@@ -8,7 +8,15 @@ class StudyScreenArgs {
   final String deckId;
   final String deckTitle;
 
-  StudyScreenArgs({required this.deckId, required this.deckTitle});
+  /// When set, the screen scrolls to this card and highlights it.
+  /// Matched by comparing against card['question'].
+  final String? highlightQuestion;
+
+  StudyScreenArgs({
+    required this.deckId,
+    required this.deckTitle,
+    this.highlightQuestion,
+  });
 }
 
 class DeckStudyScreen extends StatefulWidget {
@@ -23,11 +31,21 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
   Map<String, dynamic>? _deckData;
   bool _isLoading = true;
   String? _error;
+  final ScrollController _scrollController = ScrollController();
+  final List<GlobalKey> _cardKeys = [];
+  String? _highlightQuestion;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = ModalRoute.of(context)!.settings.arguments as StudyScreenArgs;
+    _highlightQuestion = args.highlightQuestion;
     _loadDeckAndCards(args.deckId);
   }
 
@@ -53,17 +71,52 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
           .collection('cards')
           .get();
 
+      final cards = cardsSnapshot.docs.map((doc) => doc.data()).toList();
+
+      // Build one GlobalKey per card for targeted scrolling
+      final keys = List.generate(cards.length, (_) => GlobalKey());
+
       setState(() {
         _deckData = deckDoc.data();
-        _cards = cardsSnapshot.docs.map((doc) => doc.data()).toList();
+        _cards = cards;
+        _cardKeys
+          ..clear()
+          ..addAll(keys);
         _isLoading = false;
       });
+
+      // Scroll to highlighted card after the list has been built
+      if (_highlightQuestion != null && _highlightQuestion!.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToHighlighted();
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
         _isLoading = false;
       });
     }
+  }
+
+  void _scrollToHighlighted() {
+    final target = _highlightQuestion;
+    if (target == null) return;
+
+    final idx = _cards.indexWhere(
+      (c) => (c['question'] as String? ?? '') == target,
+    );
+    if (idx < 0 || idx >= _cardKeys.length) return;
+
+    final ctx = _cardKeys[idx].currentContext;
+    if (ctx == null) return;
+
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutCubic,
+      alignment: 0.15, // slight top offset so card isn't right at the edge
+    );
   }
 
   @override
@@ -146,6 +199,7 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
                       ),
                     )
                   : ListView(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(20),
                       children: [
                         _DeckDetailsHeader(
@@ -157,12 +211,19 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
                         ..._cards.asMap().entries.map((entry) {
                           final index = entry.key;
                           final card = entry.value;
+                          final question = card['question'] as String? ?? '';
+                          final isHighlighted = _highlightQuestion != null &&
+                              _highlightQuestion == question;
                           return Padding(
+                            key: _cardKeys.length > index
+                                ? _cardKeys[index]
+                                : null,
                             padding: const EdgeInsets.only(bottom: 16),
                             child: _CardItem(
                               cardNumber: index + 1,
-                              question: card['question'] ?? '',
+                              question: question,
                               answer: card['answer'] ?? '',
+                              isHighlighted: isHighlighted,
                             ),
                           );
                         }),
@@ -350,27 +411,37 @@ class _CardItem extends StatelessWidget {
     required this.cardNumber,
     required this.question,
     required this.answer,
+    this.isHighlighted = false,
   });
 
   final int cardNumber;
   final String question;
   final String answer;
+  final bool isHighlighted;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
+        color: isHighlighted
+            ? AppColors.errorContainer.withOpacity(0.18)
+            : AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppColors.outlineVariant.withOpacity(0.3),
-          width: 1,
+          color: isHighlighted
+              ? AppColors.error.withOpacity(0.45)
+              : AppColors.outlineVariant.withOpacity(0.3),
+          width: isHighlighted ? 2 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.onSurface.withOpacity(0.04),
-            blurRadius: 12,
+            color: isHighlighted
+                ? AppColors.error.withOpacity(0.08)
+                : AppColors.onSurface.withOpacity(0.04),
+            blurRadius: isHighlighted ? 20 : 12,
             offset: const Offset(0, 4),
           ),
         ],
@@ -378,23 +449,59 @@ class _CardItem extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryFixedDim],
+          // Card number badge + optional "Needs Review" pill
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.primary, AppColors.primaryFixedDim],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Card $cardNumber',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
               ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              'Card $cardNumber',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                letterSpacing: 0.5,
-              ),
-            ),
+              if (isHighlighted) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: AppColors.error.withOpacity(0.3), width: 1),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.flag_rounded,
+                          color: AppColors.error, size: 11),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Needs Review',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.error,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 16),
           Row(
