@@ -544,6 +544,26 @@ class _FeatureCardState extends State<_FeatureCard> {
     }
   }
 
+  // Skeleton bar widths matched to the actual line-wrap of each card's
+  // description text. Wide cards (flex:2) wrap at ~3 lines; narrow cards
+  // (flex:1) wrap at ~4 lines. Last line is always shorter (trailing word).
+  List<double> get _descriptionSkeletonLines {
+    switch (widget.item.variant) {
+      case CardVariant.wideWithImage:
+        // "MnemoApp organizes every challenge…Build a lifelong asset as you study."
+        return const [1.0, 1.0, 0.55];
+      case CardVariant.narrowAccentTertiary:
+        // "Engagement is key…retrieve and apply information in real-time."
+        return const [1.0, 1.0, 1.0, 0.60];
+      case CardVariant.narrowAccentSecondary:
+        // "Passivity is the enemy…smart sketching, typing, and speaking."
+        return const [1.0, 1.0, 1.0, 0.70];
+      case CardVariant.wideWithSkeleton:
+        // "Don't just read summaries…across your entire collection."
+        return const [1.0, 1.0, 0.65];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = _tokens;
@@ -580,20 +600,20 @@ class _FeatureCardState extends State<_FeatureCard> {
             ),
             const SizedBox(height: 16),
 
-            // Title — skeleton → real text
+            // Title — all titles fit on 1 line across both wide and narrow cards
             _TextReveal(
               text: widget.item.title,
               style: AppTextStyles.cardHeading.copyWith(color: t.title),
-              skeletonLines: const [1.0, 0.65],
+              skeletonLines: const [0.80],
               skeletonLineHeight: 20,
             ),
             const SizedBox(height: 12),
 
-            // Description — skeleton → real text
+            // Description — line count differs by card width (wide vs narrow)
             _TextReveal(
               text: widget.item.description,
               style: AppTextStyles.bodyBase.copyWith(color: t.body),
-              skeletonLines: const [1.0, 1.0, 0.85, 0.70],
+              skeletonLines: _descriptionSkeletonLines,
               skeletonLineHeight: 14,
             ),
 
@@ -654,17 +674,37 @@ class _TextRevealState extends State<_TextReveal> {
   ScrollPosition? _position;
   bool _visible = false;
   bool _revealed = false;
+  // Guards against queuing more than one post-frame check at a time.
+  bool _checkScheduled = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final newPos = Scrollable.maybeOf(context)?.position;
     if (newPos != _position) {
-      _position?.removeListener(_checkVisibility);
+      _position?.removeListener(_onScroll);
       _position = newPos;
-      _position?.addListener(_checkVisibility);
+      _position?.addListener(_onScroll);
+      // Only schedule a check when the position itself changes (e.g. first
+      // mount or scroll view swap) — not on every rebuild.
+      _scheduleCheck();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkVisibility());
+  }
+
+  // Called on every scroll pixel — kept as cheap as possible.
+  // Just schedules one post-frame check rather than doing RenderBox
+  // lookups inline on every pixel event.
+  void _onScroll() {
+    if (!_visible) _scheduleCheck();
+  }
+
+  void _scheduleCheck() {
+    if (_checkScheduled || _visible) return;
+    _checkScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkScheduled = false;
+      _checkVisibility();
+    });
   }
 
   void _checkVisibility() {
@@ -687,8 +727,9 @@ class _TextRevealState extends State<_TextReveal> {
 
   void _startCountdown() {
     if (_visible) return;
+    // Stop listening — we no longer need scroll updates.
+    _position?.removeListener(_onScroll);
     setState(() => _visible = true);
-    _position?.removeListener(_checkVisibility);
     Future.delayed(const Duration(milliseconds: 900), () {
       if (mounted) setState(() => _revealed = true);
     });
@@ -696,7 +737,7 @@ class _TextRevealState extends State<_TextReveal> {
 
   @override
   void dispose() {
-    _position?.removeListener(_checkVisibility);
+    _position?.removeListener(_onScroll);
     super.dispose();
   }
 
@@ -1286,7 +1327,7 @@ class _LazyMountState extends State<_LazyMount> {
 
 /// Holds the single shared shimmer animation for the whole subtree.
 class _ShimmerScope extends StatefulWidget {
-  const _ShimmerScope({required this.child, super.key});
+  const _ShimmerScope({required this.child});
   final Widget child;
 
   @override
@@ -1347,22 +1388,27 @@ class _SkeletonBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final animation = _ShimmerScope.of(context);
-    final block = Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: AppColors.outlineVariant.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(borderRadius),
+    if (animation == null) {
+      return _block(0.18);
+    }
+    // Lerp the color alpha directly — avoids creating a compositing layer
+    // (which Opacity does) so the repaint stays cheap and isolated.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (_, __) => _block(0.18 + animation.value * 0.14),
       ),
     );
-    if (animation == null) return block;
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (_, child) =>
-          Opacity(opacity: 0.45 + (animation.value * 0.35), child: child),
-      child: block,
-    );
   }
+
+  Widget _block(double alpha) => Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: AppColors.outlineVariant.withValues(alpha: alpha),
+          borderRadius: BorderRadius.circular(borderRadius),
+        ),
+      );
 }
 
 /// Drop-in replacement for Image.network that shows a shimmering skeleton

@@ -21,7 +21,7 @@ import '../../data-layer/models/social/public_deck_summary.dart';
 //
 // ⚠ PRESERVATION RULES (do not change):
 //   • _ProfileScaffoldState keeps _bodyKey (GlobalKey<_ProfileBodyState>)
-//   • _ProfileBodyState keeps _loadProfile(), _loading, _uploadingPhoto,
+//   • _ProfileBodyState keeps _loadProfile(), _loading,
 //     _fullName, _bio, _course, _deckCount, _cardCount, _draftCount
 //   • All three Navigator.pushNamed routes are unchanged
 //   • _LogOutButton uses AuthService().signOut() then pushNamedAndRemoveUntil
@@ -105,9 +105,6 @@ class _ProfileBody extends StatefulWidget {
 class _ProfileBodyState extends State<_ProfileBody> {
   // ── Original fields (must not be removed) ────────────────────────────────
   bool _loading = true;
-  bool _uploadingPhoto =
-      false; // kept for compatibility; photo upload is in account-settings
-
   String _fullName = '';
   String _bio = '';
   String _course = '';
