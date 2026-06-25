@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../main.dart';
 import '../widgets/auth_scaffold.dart';
@@ -38,6 +39,7 @@ class _Step1BodyState extends State<_Step1Body> {
   final _usernameCtrl = TextEditingController();
   final _nameFocus = FocusNode();
   final _usernameFocus = FocusNode();
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -48,7 +50,7 @@ class _Step1BodyState extends State<_Step1Body> {
     super.dispose();
   }
 
-  void _handleNext() {
+  Future<void> _handleNext() async {
     // Validate form fields
     final name = _nameCtrl.text.trim();
     final username = _usernameCtrl.text.trim();
@@ -81,6 +83,41 @@ class _Step1BodyState extends State<_Step1Body> {
       );
       return;
     }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('username', isEqualTo: username)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This username is already taken. Please choose another one.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking username: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
 
     Navigator.of(context).pushNamed(
       AppRoutes.signUp2,
@@ -160,10 +197,12 @@ class _Step1BodyState extends State<_Step1Body> {
         const SizedBox(height: 36),
 
         // ── Next CTA ──────────────────────────────────────────────────────
-        AuthPrimaryButton(
-          label: 'Next Step',
-          onTap: _handleNext,
-        ),
+        _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : AuthPrimaryButton(
+                label: 'Next Step',
+                onTap: _handleNext,
+              ),
         const SizedBox(height: 32),
       ],
     );

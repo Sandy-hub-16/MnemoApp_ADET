@@ -101,6 +101,7 @@ class _Step3BodyState extends State<_Step3Body> {
         username: args['username'] ?? '',
         age: args['age'] ?? 0,
         country: args['country'] ?? '',
+        educationLevel: args['education'] ?? 'general',
       );
 
       if (user != null) {
@@ -142,13 +143,23 @@ class _Step3BodyState extends State<_Step3Body> {
       final username = args['username'] as String?;
       final age = args['age'] as int?;
       final country = args['country'] as String?;
+      final education = args['education'] as String?;
 
-      if (fullName != null && fullName.isNotEmpty)
+      if (fullName != null && fullName.isNotEmpty) {
         updates['fullName'] = fullName;
-      if (username != null && username.isNotEmpty)
+      }
+      if (username != null && username.isNotEmpty) {
         updates['username'] = username;
-      if (age != null) updates['age'] = age;
-      if (country != null && country.isNotEmpty) updates['country'] = country;
+      }
+      if (age != null) {
+        updates['age'] = age;
+      }
+      if (country != null && country.isNotEmpty) {
+        updates['country'] = country;
+      }
+      if (education != null && education.isNotEmpty) {
+        updates['educationLevel'] = education;
+      }
 
       if (updates.isNotEmpty) {
         await FirebaseFirestore.instance
