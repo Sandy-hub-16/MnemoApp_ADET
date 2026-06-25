@@ -10,8 +10,44 @@ import '../../main.dart';
 // The single screen that composes every section.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class LandingScreen extends StatelessWidget {
+class LandingScreen extends StatefulWidget {
   const LandingScreen({super.key});
+
+  @override
+  State<LandingScreen> createState() => _LandingScreenState();
+}
+
+class _LandingScreenState extends State<LandingScreen>
+    with SingleTickerProviderStateMixin {
+  // One frame after mount we swap skeleton → real content with a fade.
+  bool _ready = false;
+  late final AnimationController _fadeCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+
+  @override
+  void initState() {
+    super.initState();
+    // Wait for first frame so layout/images have a chance to begin loading,
+    // then fade in the real content after a short breathing room.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) {
+          setState(() => _ready = true);
+          _fadeCtrl.forward();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _fadeCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,33 +56,40 @@ class LandingScreen extends StatelessWidget {
       body: Stack(
         children: [
           const _BackgroundBlobs(),
-          CustomScrollView(
-            slivers: [
-              const SliverToBoxAdapter(child: SizedBox(height: 88)),
-              SliverToBoxAdapter(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1280),
-                    child: Column(
-                      children: [
-                        const _HeroSection(),
-                        _LazyMount(
-                          placeholder: const _FeaturesSectionSkeleton(),
-                          builder: (_) => const _FeaturesSection(),
+          // ── Skeleton layer (shown until _ready flips) ──────────────────────
+          if (!_ready) const _FullPageSkeleton(),
+          // ── Real content (fades in once ready) ────────────────────────────
+          if (_ready)
+            FadeTransition(
+              opacity: _fade,
+              child: CustomScrollView(
+                slivers: [
+                  const SliverToBoxAdapter(child: SizedBox(height: 88)),
+                  SliverToBoxAdapter(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1280),
+                        child: Column(
+                          children: [
+                            const _HeroSection(),
+                            _LazyMount(
+                              placeholder: const _FeaturesSectionSkeleton(),
+                              builder: (_) => const _FeaturesSection(),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                  SliverToBoxAdapter(
+                    child: _LazyMount(
+                      placeholder: const _FooterSectionSkeleton(),
+                      builder: (_) => const _FooterSection(),
+                    ),
+                  ),
+                ],
               ),
-              SliverToBoxAdapter(
-                child: _LazyMount(
-                  placeholder: const _FooterSectionSkeleton(),
-                  builder: (_) => const _FooterSection(),
-                ),
-              ),
-            ],
-          ),
+            ),
           // Glass nav always on top
           const Positioned(top: 0, left: 0, right: 0, child: _NavBar()),
         ],
@@ -69,10 +112,10 @@ class _NavBar extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           decoration: BoxDecoration(
-            color: AppColors.surfaceContainerLow.withOpacity(0.82),
+            color: AppColors.surfaceContainerLow.withValues(alpha: 0.82),
             border: Border(
               bottom:
-                  BorderSide(color: AppColors.outlineVariant.withOpacity(0.12)),
+                  BorderSide(color: AppColors.outlineVariant.withValues(alpha: 0.12)),
             ),
           ),
           child: SafeArea(
@@ -99,23 +142,11 @@ class _NavBar extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Row(
-                    children: [
-                      // "Features" link — desktop only
-                      if (MediaQuery.sizeOf(context).width >= 768)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 24),
-                          child: Text('Features',
-                              style: AppTextStyles.labelCaps
-                                  .copyWith(color: AppColors.primary)),
-                        ),
-                      _PillButton(
-                        label: 'Sign In',
-                        onTap: () =>
-                            Navigator.of(context).pushNamed(AppRoutes.signIn),
-                        small: true,
-                      ),
-                    ],
+                  _PillButton(
+                    label: 'Sign In',
+                    onTap: () =>
+                        Navigator.of(context).pushNamed(AppRoutes.signIn),
+                    small: true,
                   ),
                 ],
               ),
@@ -179,7 +210,7 @@ class _HeroCopy extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
-            color: AppColors.primaryContainer.withOpacity(0.30),
+            color: AppColors.primaryContainer.withValues(alpha: 0.30),
             borderRadius: BorderRadius.circular(999),
           ),
           child: Row(
@@ -313,7 +344,7 @@ class _HeroVisualState extends State<_HeroVisual>
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: AppColors.primary.withValues(alpha: 0.12),
                     blurRadius: 30,
                     offset: const Offset(0, 10),
                   ),
@@ -341,7 +372,7 @@ class _HeroVisualState extends State<_HeroVisual>
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 20,
                         offset: const Offset(0, 8),
                       )
@@ -365,7 +396,7 @@ class _HeroVisualState extends State<_HeroVisual>
                         'Ready for your daily breakthrough? Start your session now.',
                         style: AppTextStyles.bodyBase.copyWith(
                             color:
-                                AppColors.onTertiaryContainer.withOpacity(0.8),
+                                AppColors.onTertiaryContainer.withValues(alpha: 0.8),
                             fontSize: 12),
                       ),
                     ],
@@ -483,27 +514,27 @@ class _FeatureCardState extends State<_FeatureCard> {
     switch (widget.item.variant) {
       case CardVariant.narrowAccentTertiary:
         return (
-          bg: AppColors.tertiaryContainer.withOpacity(0.22),
-          border: AppColors.tertiaryContainer.withOpacity(0.35),
+          bg: AppColors.tertiaryContainer.withValues(alpha: 0.22),
+          border: AppColors.tertiaryContainer.withValues(alpha: 0.35),
           iconBg: AppColors.tertiaryContainer,
           iconColor: AppColors.tertiary,
           title: AppColors.onTertiaryContainer,
-          body: AppColors.onTertiaryContainer.withOpacity(0.8),
+          body: AppColors.onTertiaryContainer.withValues(alpha: 0.8),
         );
       case CardVariant.narrowAccentSecondary:
         return (
-          bg: AppColors.secondaryContainer.withOpacity(0.22),
-          border: AppColors.secondaryContainer.withOpacity(0.35),
+          bg: AppColors.secondaryContainer.withValues(alpha: 0.22),
+          border: AppColors.secondaryContainer.withValues(alpha: 0.35),
           iconBg: AppColors.secondaryContainer,
           iconColor: AppColors.secondary,
           title: AppColors.onSecondaryContainer,
-          body: AppColors.onSecondaryContainer.withOpacity(0.8),
+          body: AppColors.onSecondaryContainer.withValues(alpha: 0.8),
         );
       default:
         return (
           bg: AppColors.surfaceContainerLowest,
-          border: AppColors.outlineVariant.withOpacity(0.12),
-          iconBg: AppColors.primaryContainer.withOpacity(0.5),
+          border: AppColors.outlineVariant.withValues(alpha: 0.12),
+          iconBg: AppColors.primaryContainer.withValues(alpha: 0.5),
           iconColor: AppColors.primary,
           title: AppColors.onSurface,
           body: AppColors.onSurfaceVariant,
@@ -528,7 +559,7 @@ class _FeatureCardState extends State<_FeatureCard> {
             if (widget.item.variant == CardVariant.wideWithImage ||
                 widget.item.variant == CardVariant.wideWithSkeleton)
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.07),
+                color: AppColors.primary.withValues(alpha: 0.07),
                 blurRadius: 28,
                 offset: const Offset(0, 8),
               ),
@@ -594,7 +625,7 @@ class _FeatureCardState extends State<_FeatureCard> {
         child: Container(
           height: 10,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(opacity),
+            color: AppColors.primary.withValues(alpha: opacity),
             borderRadius: BorderRadius.circular(999),
           ),
         ),
@@ -631,8 +662,8 @@ class _FooterSectionSkeleton extends StatelessWidget {
     final wide = MediaQuery.sizeOf(context).width >= 768;
     return Container(
       color: AppColors.surfaceContainerLow,
-      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 64),
-      child: _SkeletonBlock(height: wide ? 60 : 140, borderRadius: 8),
+      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 24),
+      child: _SkeletonBlock(height: 28, borderRadius: 8),
     );
   }
 }
@@ -650,46 +681,38 @@ class _FooterSection extends StatelessWidget {
 
     return Container(
       color: AppColors.surfaceContainerLow,
-      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 64),
-      child: wide
-          ? Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [_Brand(), _Links()],
-            )
-          : Column(children: [_Brand(), const SizedBox(height: 32), _Links()]),
-    );
-  }
-}
-
-class _Brand extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.auto_stories, color: AppColors.primary, size: 20),
-          const SizedBox(width: 8),
-          Text('MnemoApp',
-              style: AppTextStyles.navBrand
-                  .copyWith(color: AppColors.primary, fontSize: 18)),
-        ]),
-        const SizedBox(height: 6),
-        Text('© 2026 MnemoApp. Built for the curious.',
-            style: AppTextStyles.bodyBase.copyWith(fontSize: 13)),
-      ],
-    );
-  }
-}
-
-class _Links extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 32,
-      runSpacing: 12,
-      children: footerLinks.map((l) => _FooterLink(label: l)).toList(),
+      padding: EdgeInsets.symmetric(horizontal: wide ? 48 : 24, vertical: 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Brand wordmark + copyright — single compact line
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.auto_stories,
+                  color: AppColors.primary, size: 16),
+              const SizedBox(width: 6),
+              Text(
+                'MnemoApp',
+                style: AppTextStyles.navBrand.copyWith(
+                  color: AppColors.primary,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '© 2026',
+                style: AppTextStyles.bodyBase.copyWith(fontSize: 12),
+              ),
+            ],
+          ),
+          // Links — always horizontal, condensed spacing
+          Wrap(
+            spacing: wide ? 24 : 16,
+            children: footerLinks.map((l) => _FooterLink(label: l)).toList(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -790,7 +813,7 @@ class _PillButtonState extends State<_PillButton>
             borderRadius: BorderRadius.circular(999),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.22),
+                color: AppColors.primary.withValues(alpha: 0.22),
                 blurRadius: 18,
                 offset: const Offset(0, 5),
               ),
@@ -867,7 +890,7 @@ class _OutlineButtonState extends State<_OutlineButton>
                   : AppColors.surfaceContainerLowest,
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
-                  color: AppColors.primary.withOpacity(0.15), width: 2),
+                  color: AppColors.primary.withValues(alpha: 0.15), width: 2),
             ),
             child: Text(widget.label,
                 style: AppTextStyles.buttonLabel
@@ -913,6 +936,135 @@ class _AvatarStack extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FULL-PAGE SKELETON
+// Shown for ~350 ms on first load before real content fades in.
+// Mirrors the rough shape of the hero + features + footer so there's zero
+// layout jump when the real content appears.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FullPageSkeleton extends StatelessWidget {
+  const _FullPageSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 1024;
+    final hPad = wide ? 48.0 : 24.0;
+
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Nav bar stand-in
+          const SizedBox(height: 88),
+
+          // ── Hero skeleton ────────────────────────────────────────────────
+          Padding(
+            padding: EdgeInsets.symmetric(
+                horizontal: hPad, vertical: wide ? 96 : 48),
+            child: wide
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Copy side
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _SkeletonBlock(
+                                width: 140, height: 36, borderRadius: 999),
+                            const SizedBox(height: 32),
+                            _SkeletonBlock(
+                                width: double.infinity,
+                                height: 56,
+                                borderRadius: 10),
+                            const SizedBox(height: 12),
+                            _SkeletonBlock(
+                                width: 320, height: 56, borderRadius: 10),
+                            const SizedBox(height: 24),
+                            _SkeletonBlock(
+                                width: double.infinity,
+                                height: 18,
+                                borderRadius: 6),
+                            const SizedBox(height: 8),
+                            _SkeletonBlock(
+                                width: double.infinity,
+                                height: 18,
+                                borderRadius: 6),
+                            const SizedBox(height: 8),
+                            _SkeletonBlock(
+                                width: 200, height: 18, borderRadius: 6),
+                            const SizedBox(height: 40),
+                            _SkeletonBlock(
+                                width: 200, height: 56, borderRadius: 999),
+                            const SizedBox(height: 40),
+                            _SkeletonBlock(
+                                width: 240, height: 42, borderRadius: 8),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 64),
+                      // Image side
+                      Expanded(
+                        child: _SkeletonBlock(height: 480, borderRadius: 16),
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _SkeletonBlock(width: 120, height: 34, borderRadius: 999),
+                      const SizedBox(height: 32),
+                      _SkeletonBlock(
+                          width: double.infinity, height: 46, borderRadius: 10),
+                      const SizedBox(height: 10),
+                      _SkeletonBlock(width: 260, height: 46, borderRadius: 10),
+                      const SizedBox(height: 24),
+                      _SkeletonBlock(
+                          width: double.infinity, height: 16, borderRadius: 6),
+                      const SizedBox(height: 8),
+                      _SkeletonBlock(
+                          width: double.infinity, height: 16, borderRadius: 6),
+                      const SizedBox(height: 8),
+                      _SkeletonBlock(width: 180, height: 16, borderRadius: 6),
+                      const SizedBox(height: 40),
+                      _SkeletonBlock(
+                          width: double.infinity,
+                          height: 54,
+                          borderRadius: 999),
+                      const SizedBox(height: 48),
+                      _SkeletonBlock(height: 300, borderRadius: 16),
+                    ],
+                  ),
+          ),
+
+          // ── Features skeleton ────────────────────────────────────────────
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 96),
+            child: Column(
+              children: [
+                _SkeletonBlock(width: 320, height: 40, borderRadius: 8),
+                const SizedBox(height: 16),
+                _SkeletonBlock(width: 420, height: 20, borderRadius: 6),
+                const SizedBox(height: 64),
+                _SkeletonBlock(height: wide ? 520 : 760, borderRadius: 20),
+              ],
+            ),
+          ),
+
+          // ── Footer skeleton ──────────────────────────────────────────────
+          Container(
+            color: AppColors.surfaceContainerLow,
+            padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 24),
+            child: const _SkeletonBlock(height: 28, borderRadius: 8),
+          ),
+        ],
       ),
     );
   }
@@ -1070,7 +1222,7 @@ class _SkeletonBlock extends StatelessWidget {
         width: width,
         height: height,
         decoration: BoxDecoration(
-          color: AppColors.outlineVariant.withOpacity(0.25),
+          color: AppColors.outlineVariant.withValues(alpha: 0.25),
           borderRadius: BorderRadius.circular(borderRadius),
         ),
       ),
@@ -1116,7 +1268,7 @@ class _LazyNetworkImage extends StatelessWidget {
         errorBuilder: (context, error, stackTrace) => Container(
           height: height,
           width: width,
-          color: AppColors.outlineVariant.withOpacity(0.18),
+          color: AppColors.outlineVariant.withValues(alpha: 0.18),
           alignment: Alignment.center,
           child: Icon(Icons.image_not_supported_outlined,
               color: AppColors.outline, size: 28),
@@ -1138,12 +1290,12 @@ class _BackgroundBlobs extends StatelessWidget {
           Positioned(
             top: 80,
             left: -80,
-            child: _Blob(380, AppColors.secondaryFixedDim.withOpacity(0.18)),
+            child: _Blob(380, AppColors.secondaryFixedDim.withValues(alpha: 0.18)),
           ),
           Positioned(
             top: 320,
             right: -80,
-            child: _Blob(500, AppColors.tertiaryContainer.withOpacity(0.16)),
+            child: _Blob(500, AppColors.tertiaryContainer.withValues(alpha: 0.16)),
           ),
         ]),
       ),
