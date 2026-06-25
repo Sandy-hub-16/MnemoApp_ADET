@@ -1,15 +1,19 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'account_deletion_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AccountDeletionService _deletionService = AccountDeletionService();
 
   Future<void> sendVerificationEmail() async {
     final user = FirebaseAuth.instance.currentUser;
     await user?.sendEmailVerification();
   }
 
+  // Thrown when an email is still inside its 7-day post-deletion cooldown.
+  // Callers should catch this specifically and show e.message to the user.
   Future<User?> registerWithDetails({
     required String email,
     required String password,
@@ -19,6 +23,17 @@ class AuthService {
     required String country,
     required String educationLevel,
   }) async {
+    // ── Cooldown check ────────────────────────────────────────────────────
+    // NOTE: this is a client-side convenience check against the
+    // `deletedAccounts` Firestore ledger. It gives a fast, friendly error
+    // message, but it is NOT a hard security boundary — see the warning
+    // at the top of account_deletion_service.dart. For airtight enforcement,
+    // pair this with an Auth Blocking Function (beforeCreate trigger).
+    final cooldownMessage = await _deletionService.checkEmailCooldown(email);
+    if (cooldownMessage != null) {
+      throw AccountDeletionException(cooldownMessage, code: 'email-cooldown');
+    }
+
     UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email, password: password);
 
@@ -89,6 +104,20 @@ class AuthService {
       final userDoc = await _db.collection('users').doc(user.uid).get();
 
       if (!userDoc.exists) {
+        // ── Cooldown check (new Google users only) ─────────────────────────
+        // Google's popup already created the Auth user by this point, so if
+        // the email is in cooldown we have to roll that back: delete the
+        // freshly-created Auth user and sign out, then surface the error.
+        // Same caveat as the email path — this is a UX check, not a hard
+        // security boundary. Pair with an Auth Blocking Function for that.
+        final cooldownMessage =
+            await _deletionService.checkEmailCooldown(user.email ?? '');
+        if (cooldownMessage != null) {
+          await user.delete();
+          throw AccountDeletionException(cooldownMessage,
+              code: 'email-cooldown');
+        }
+
         // 🆕 First time login → create document
         await _db.collection('users').doc(user.uid).set({
           'uid': user.uid,
@@ -113,6 +142,8 @@ class AuthService {
       }
 
       return user;
+    } on AccountDeletionException {
+      rethrow;
     } catch (e) {
       print("Google Sign-in Error : $e");
       return null;

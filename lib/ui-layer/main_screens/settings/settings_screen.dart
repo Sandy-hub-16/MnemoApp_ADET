@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import '../../../main.dart';
+import 'delete_account_dialog.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS SCREEN
@@ -60,6 +61,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => const _AmnesiaConfirmationDialog(),
+    );
+  }
+
+  void _showDeleteAccountConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const DeleteAccountConfirmationDialog(),
     );
   }
 
@@ -242,6 +251,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 12),
                 _DangerZoneCard(
                   onAmnesiaTap: () => _showAmnesiaConfirmation(context),
+                  onDeleteAccountTap: () =>
+                      _showDeleteAccountConfirmation(context),
                 ),
                 const SizedBox(height: 40),
               ]),
@@ -424,10 +435,23 @@ class _SettingsTile extends StatelessWidget {
 // DANGER ZONE CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DangerZoneCard extends StatelessWidget {
-  const _DangerZoneCard({required this.onAmnesiaTap});
+class _DangerZoneCard extends StatefulWidget {
+  const _DangerZoneCard({
+    required this.onAmnesiaTap,
+    required this.onDeleteAccountTap,
+  });
 
   final VoidCallback onAmnesiaTap;
+  final VoidCallback onDeleteAccountTap;
+
+  @override
+  State<_DangerZoneCard> createState() => _DangerZoneCardState();
+}
+
+class _DangerZoneCardState extends State<_DangerZoneCard> {
+  // Collapsed by default — the user must deliberately expand this section
+  // before either destructive action becomes tappable at all.
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -447,60 +471,207 @@ class _DangerZoneCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onAmnesiaTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    Icons.psychology_rounded,
-                    color: AppColors.error,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Amnesia',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.error,
-                        ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          // ── Expand/collapse header — neutral styling on purpose, so it
+          // reads as "reveal this section" rather than as a destructive
+          // action itself. ───────────────────────────────────────────────
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(20),
+                bottom: _expanded ? Radius.zero : const Radius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Reset all progress data permanently',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.onSurfaceVariant,
-                        ),
+                      child: Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppColors.error,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Sensitive Actions',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _expanded
+                                ? 'Tap to hide'
+                                : 'Tap to reveal irreversible actions',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.onSurfaceVariant,
+                        size: 24,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Collapsible body ────────────────────────────────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? Column(
+                    children: [
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: AppColors.error.withOpacity(0.15),
+                        indent: 20,
+                        endIndent: 20,
+                      ),
+                      _DangerZoneRow(
+                        icon: Icons.psychology_rounded,
+                        title: 'Amnesia',
+                        subtitle: 'Reset all progress data permanently',
+                        onTap: widget.onAmnesiaTap,
+                        topRounded: false,
+                        bottomRounded: false,
+                      ),
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: AppColors.error.withOpacity(0.15),
+                        indent: 20,
+                        endIndent: 20,
+                      ),
+                      _DangerZoneRow(
+                        icon: Icons.no_accounts_rounded,
+                        title: 'Delete Account',
+                        subtitle:
+                            'Permanently delete your account and all your data',
+                        onTap: widget.onDeleteAccountTap,
+                        topRounded: false,
+                        bottomRounded: true,
                       ),
                     ],
-                  ),
+                  )
+                : const SizedBox(width: double.infinity, height: 0),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DANGER ZONE ROW — a single tappable row inside the Danger Zone card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DangerZoneRow extends StatelessWidget {
+  const _DangerZoneRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    required this.topRounded,
+    required this.bottomRounded,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool topRounded;
+  final bool bottomRounded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.vertical(
+          top: topRounded ? const Radius.circular(20) : Radius.zero,
+          bottom: bottomRounded ? const Radius.circular(20) : Radius.zero,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
+                child: Icon(
+                  icon,
                   color: AppColors.error,
                   size: 24,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.error,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.error,
+                size: 24,
+              ),
+            ],
           ),
         ),
       ),

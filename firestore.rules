@@ -108,5 +108,26 @@ service cloud.firestore {
                     && request.auth.uid == resource.data.ownerUid;
     }
 
+    // ── Deleted-account email cooldown ledger ───────────────────────────────
+    // Doc ID is sha256(lowercased email) — never the raw email.
+    // Used by AccountDeletionService to: (a) record a 7-day cooldown when an
+    // account is deleted, so the email can't immediately be reused for a new
+    // signup, and (b) let the registration flow check that cooldown before
+    // creating a new account.
+    //
+    // Reads must stay open to any signed-in OR signed-out client, since the
+    // cooldown check runs during sign-up, before the user has an account.
+    // Writes are restricted to authenticated users — the client deleting
+    // their own account is the only one expected to write here, but since
+    // the doc ID is a one-way hash with no way to target an arbitrary
+    // other user's email usefully, allowing any authenticated write is an
+    // acceptable trade-off here. Tighten further with a Cloud Function if
+    // you want this to be server-only.
+    match /deletedAccounts/{emailHash} {
+      allow read: if true;
+      allow create, update: if request.auth != null;
+      allow delete: if false;
+    }
+
   }
 }
