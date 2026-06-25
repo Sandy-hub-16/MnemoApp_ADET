@@ -14,8 +14,8 @@ exports.deleteUnverifiedUsers = onSchedule("every 1 minutes", async () => {
 
   const now = Date.now();
 
-  // 30 seconds for testing
-  const cutoff = now - (30 * 1000);
+  // 8 minutes (matching the app's verification window)
+  const cutoff = now - (8 * 60 * 1000);
 
   const snapshot = await admin.firestore()
     .collection("users")

@@ -17,6 +17,7 @@ class AuthService {
     required String username,
     required int age,
     required String country,
+    required String educationLevel,
   }) async {
     UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email, password: password);
@@ -38,7 +39,7 @@ class AuthService {
       'provider': 'email',
       'emailVerified': false,
       'createdAt': FieldValue.serverTimestamp(),
-      'educationLevel': 'general',
+      'educationLevel': educationLevel,
       'reminderEnabled': false,
       'reminderHourUTC': 1, // (default 9AM PH = UTC+8 → 1 UTC)
     });

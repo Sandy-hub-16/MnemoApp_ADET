@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -12,19 +11,24 @@ import '../widgets/auth_decorations.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // VERIFY EMAIL SCREEN
 //
-// States  loading → countdown → verified | declined
+// Responsibilities (deliberately limited):
+//   1. Show a countdown timer so the user knows how long they have.
+//   2. Poll Firebase every 3 s to detect when emailVerified becomes true.
+//   3. On verified  → show success UI, then trigger a token refresh so
+//      AuthGate's idTokenChanges() stream transitions to MainShell.
+//   4. On expired   → delete the unverified account, then sign out.
+//      AuthGate will react to the sign-out and show LandingScreen.
 //
-// • Timer starts from Firestore createdAt so it survives app restarts.
-// • Polls Firebase every 3 s; stops + shows success screen on emailVerified.
-// • At 0:00 → deletes Firestore doc + Auth account → shows declined screen.
-// • Resend button locked for 60 s after each send (1-min cooldown).
-// • Warning blob appears at ≤ 2 min; turns red at ≤ 1 min.
+// What this screen does NOT do:
+//   • Navigate via Navigator — AuthGate owns all routing.
+//   • Delete accounts that are already verified.
+//   • Delete accounts whose createdAt is older than 2× the window.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const int _kWindowSecs = 480; // 8 minutes total
-const int _kResendSecs = 60; // 1 minute between resends
+const int _kWindowSecs = 480; // 8 minutes
+const int _kResendSecs = 60; // 1 minute cooldown between resends
 
-enum _VerifyState { loading, countdown, verified, declined }
+enum _VerifyState { loading, countdown, verified, expired }
 
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
@@ -35,38 +39,34 @@ class VerifyEmailScreen extends StatefulWidget {
 
 class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     with TickerProviderStateMixin {
-  // ── State machine ──────────────────────────────────────────────────────────
   _VerifyState _uiState = _VerifyState.loading;
 
-  // ── Timers ─────────────────────────────────────────────────────────────────
   int _secondsLeft = _kWindowSecs;
-  int _resendLeft = _kResendSecs; // cooldown; starts at 60 s because the
-  // registration flow just sent an email
+  int _resendLeft = _kResendSecs;
   bool _isSending = false;
-  bool _emailSent = false; // becomes true after manual resend
+  bool _emailSent = false;
   String? _userEmail;
+
+  // Single source of truth — only one of these can become true.
+  bool _isVerified = false;
+  bool _isExpired = false;
 
   Timer? _tickTimer;
   Timer? _pollTimer;
 
-  // ── Animations ─────────────────────────────────────────────────────────────
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseScale;
-
   late final AnimationController _resultCtrl;
   late final Animation<double> _resultScale;
   late final Animation<double> _resultFade;
 
-  // ── Guard against double-expiry calls ─────────────────────────────────────
-  bool _expiring = false;
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
-  // ────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _userEmail = FirebaseAuth.instance.currentUser?.email;
 
-    // Slow pulse on the envelope icon while in countdown
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
@@ -75,7 +75,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
-    // Springy entrance for the result card
     _resultCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -92,29 +91,42 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     _initialize();
   }
 
+  @override
+  void dispose() {
+    _tickTimer?.cancel();
+    _pollTimer?.cancel();
+    _pulseCtrl.dispose();
+    _resultCtrl.dispose();
+    super.dispose();
+  }
+
   // ── Bootstrap ──────────────────────────────────────────────────────────────
 
   Future<void> _initialize() async {
-    // 1. Quick check — maybe already verified before the screen even loads.
+    // Reload first so we have a fresh emailVerified value.
     try {
       await FirebaseAuth.instance.currentUser?.reload();
     } catch (_) {}
 
+    // If already verified (e.g. user reopened app after clicking link),
+    // go straight to success.
     if (FirebaseAuth.instance.currentUser?.emailVerified == true) {
-      _onVerified();
+      _handleVerified();
       return;
     }
 
-    // 2. Calculate remaining seconds from Firestore createdAt so the
-    //    countdown is accurate even if the user backgrounded the app.
+    // Work out how much time is left based on Firestore createdAt.
+    // This makes the countdown survive app restarts.
     int remaining = _kWindowSecs;
     int resendElapsed = 0;
 
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
-        final doc =
-            await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
         final ts = doc.data()?['createdAt'] as Timestamp?;
         if (ts != null) {
           final elapsed = DateTime.now().difference(ts.toDate()).inSeconds;
@@ -126,15 +138,23 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
 
     if (!mounted) return;
 
-    // Already expired while the app was closed
+    // Window already closed while the app was away.
     if (remaining == 0) {
-      await _onExpired();
+      // One last chance — maybe they verified while the app was closed.
+      try {
+        await FirebaseAuth.instance.currentUser?.reload();
+      } catch (_) {}
+      if (FirebaseAuth.instance.currentUser?.emailVerified == true) {
+        _handleVerified();
+        return;
+      }
+      _handleExpired();
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _secondsLeft = remaining;
-      // If the initial email was sent less than 60 s ago, keep the cooldown.
       _resendLeft = (_kResendSecs - resendElapsed).clamp(0, _kResendSecs);
       _uiState = _VerifyState.countdown;
     });
@@ -145,23 +165,37 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
   // ── Timers ─────────────────────────────────────────────────────────────────
 
   void _startTimers() {
-    // One-second tick for countdown + resend cooldown
+    print('[VerifyEmail] Starting timers. secondsLeft=$_secondsLeft');
+    
+    // Tick every second: decrement counters, trigger expiry at 0.
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _uiState != _VerifyState.countdown) return;
+      if (_isVerified || _isExpired) return;
+
       setState(() {
         if (_resendLeft > 0) _resendLeft--;
         if (_secondsLeft > 0) _secondsLeft--;
       });
-      if (_secondsLeft == 0 && !_expiring) _onExpired();
+
+      if (_secondsLeft == 0) {
+        print('[VerifyEmail] Timer hit zero, calling _handleExpired');
+        _handleExpired();
+      }
     });
 
-    // Poll Firebase for emailVerified every 3 seconds
+    // Poll Firebase every 3 s to detect email verification.
+    // We use reload() here — NOT getIdToken(true). getIdToken forces a
+    // token refresh which would immediately trigger idTokenChanges() in
+    // AuthGate before _handleVerified() has a chance to show the animation.
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
-      if (_uiState != _VerifyState.countdown) return;
+      if (!mounted || _uiState != _VerifyState.countdown) return;
+      if (_isVerified || _isExpired) return;
       try {
         await FirebaseAuth.instance.currentUser?.reload();
-        if (FirebaseAuth.instance.currentUser?.emailVerified == true) {
-          _onVerified();
+        final isVerified = FirebaseAuth.instance.currentUser?.emailVerified == true;
+        if (isVerified) {
+          print('[VerifyEmail] Poll detected verification');
+          _handleVerified();
         }
       } catch (_) {}
     });
@@ -169,7 +203,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
 
   // ── Verified ───────────────────────────────────────────────────────────────
 
-  void _onVerified() {
+  void _handleVerified() {
+    // Guard: only run once; never run if we've already expired.
+    if (_isVerified || _isExpired) return;
+    _isVerified = true;
+
+    print('[VerifyEmail] _handleVerified called. _isExpired=$_isExpired');
+
     _tickTimer?.cancel();
     _pollTimer?.cancel();
     _pulseCtrl.stop();
@@ -178,46 +218,121 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     setState(() => _uiState = _VerifyState.verified);
     _resultCtrl.forward();
 
-    // Auto-navigate to home after the success animation settles
-    Future.delayed(const Duration(milliseconds: 3200), () {
-      if (mounted) Navigator.of(context).pushReplacementNamed('/home');
+    // CRITICAL: Update Firestore emailVerified field so Cloud Function doesn't delete us
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update({'emailVerified': true})
+          .catchError((_) {});
+    }
+
+    // Show success animation for 2 seconds, then manually navigate.
+    Future.delayed(const Duration(milliseconds: 2000), () {
+      if (!mounted) return;
+      print('[VerifyEmail] Navigating to /home');
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     });
   }
 
   // ── Expired ────────────────────────────────────────────────────────────────
 
-  Future<void> _onExpired() async {
-    if (_expiring) return;
-    _expiring = true;
+  Future<void> _handleExpired() async {
+    // Guard: only run once; never run if already verified.
+    if (_isExpired || _isVerified) return;
+    _isExpired = true;
+
+    print('[VerifyEmail] _handleExpired called. _isVerified=$_isVerified');
 
     _tickTimer?.cancel();
     _pollTimer?.cancel();
     _pulseCtrl.stop();
 
-    // Clean up the unverified account from both Auth and Firestore.
-    // Deletion may fail if the session is stale (requires-recent-login);
-    // we sign out instead so the account cannot be used.
+    // ── CRITICAL: Do a final reload before touching anything. ──────────────
+    // There is a real race between the 1-second tick and the 3-second poll.
+    // The tick can hit 0 in the same window the poll is mid-await. We must
+    // re-check emailVerified here before doing any deletion.
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .delete()
-            .catchError((_) {});
-        await user.delete();
-      }
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        await FirebaseAuth.instance.signOut().catchError((_) {});
-      }
-    } catch (_) {
-      await FirebaseAuth.instance.signOut().catchError((_) {});
+      await FirebaseAuth.instance.currentUser?.reload();
+    } catch (_) {}
+
+    final isVerified = FirebaseAuth.instance.currentUser?.emailVerified == true;
+    print('[VerifyEmail] After reload, emailVerified=$isVerified');
+
+    if (isVerified) {
+      // Verified just as the timer hit zero — treat as success, not expiry.
+      print('[VerifyEmail] User verified just in time, calling _handleVerified');
+      _isExpired = false;
+      _handleVerified();
+      return;
     }
 
-    if (!mounted) return;
-    setState(() => _uiState = _VerifyState.declined);
-    _resultCtrl.forward();
+    // ── Account age check ──────────────────────────────────────────────────
+    // Only delete accounts created within the verification window (+ buffer).
+    // If the account is older, this screen was shown incorrectly — sign out
+    // safely instead of destroying user data.
+    bool safeToDelete = false;
+    int? accountAgeSeconds;
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        final ts = doc.data()?['createdAt'] as Timestamp?;
+        if (ts != null) {
+          accountAgeSeconds =
+              DateTime.now().difference(ts.toDate()).inSeconds;
+          // Only delete if account is within 2× the verification window.
+          safeToDelete = accountAgeSeconds <= (_kWindowSecs * 2);
+        }
+      }
+    } catch (_) {}
+
+    print('[VerifyEmail] Account age: ${accountAgeSeconds}s, safeToDelete=$safeToDelete');
+
+    if (safeToDelete) {
+      print('[VerifyEmail] Deleting unverified account');
+      // Delete the Firestore document first, then the Auth account.
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .delete()
+              .catchError((_) {});
+          await user.delete();
+          print('[VerifyEmail] Account deleted successfully');
+          // user.delete() signs the user out automatically, which triggers
+          // idTokenChanges() → AuthGate shows LandingScreen. Done.
+          return;
+        }
+      } on FirebaseAuthException catch (e) {
+        print('[VerifyEmail] Delete failed: ${e.code}');
+        if (e.code == 'requires-recent-login') {
+          // Can't delete — session too old. Just sign out.
+          await FirebaseAuth.instance.signOut().catchError((_) {});
+          return;
+        }
+      } catch (e) {
+        print('[VerifyEmail] Delete failed with exception: $e');
+        await FirebaseAuth.instance.signOut().catchError((_) {});
+        return;
+      }
+    } else {
+      print('[VerifyEmail] Account too old to delete, signing out instead');
+      // Account is too old to be a fresh registration — don't delete it.
+      // Just sign out. The user can log back in.
+      await FirebaseAuth.instance.signOut().catchError((_) {});
+      return;
+    }
+
+    // Fallback: if we're still here, sign out.
+    print('[VerifyEmail] Fallback: signing out');
+    await FirebaseAuth.instance.signOut().catchError((_) {});
   }
 
   // ── Resend ─────────────────────────────────────────────────────────────────
@@ -261,17 +376,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     }
   }
 
-  // ── Dispose ────────────────────────────────────────────────────────────────
-
-  @override
-  void dispose() {
-    _tickTimer?.cancel();
-    _pollTimer?.cancel();
-    _pulseCtrl.dispose();
-    _resultCtrl.dispose();
-    super.dispose();
-  }
-
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   String get _timeString {
@@ -280,11 +384,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
-  /// Green → orange → red as time runs out.
   Color get _timerColor {
     final frac = _secondsLeft / _kWindowSecs;
     if (frac > 0.50) return AppColors.primary;
-    if (frac > 0.125) return const Color(0xFFD97706); // amber-600
+    if (frac > 0.125) return const Color(0xFFD97706);
     return Colors.red.shade600;
   }
 
@@ -299,12 +402,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
         _VerifyState.loading => _buildLoading(),
         _VerifyState.countdown => _buildCountdown(),
         _VerifyState.verified => _buildResult(success: true),
-        _VerifyState.declined => _buildResult(success: false),
+        _VerifyState.expired => _buildResult(success: false),
       },
     );
   }
-
-  // ── Loading ────────────────────────────────────────────────────────────────
 
   Widget _buildLoading() {
     return const SizedBox(
@@ -312,8 +413,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
       child: Center(child: CircularProgressIndicator()),
     );
   }
-
-  // ── Countdown ──────────────────────────────────────────────────────────────
 
   Widget _buildCountdown() {
     final timeIsLow = _secondsLeft <= 120;
@@ -323,15 +422,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const SizedBox(height: 36),
-
-        // ── Pulsing envelope icon ────────────────────────────────────────
         ScaleTransition(
           scale: _pulseScale,
           child: Container(
             width: 88,
             height: 88,
             decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withOpacity(0.28),
+              color: AppColors.primaryContainer.withValues(alpha: 0.28),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -342,8 +439,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
           ),
         ),
         const SizedBox(height: 24),
-
-        // ── Heading ──────────────────────────────────────────────────────
         Text(
           'Check Your Inbox',
           style: GoogleFonts.plusJakartaSans(
@@ -355,8 +450,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
-
-        // ── Email address ────────────────────────────────────────────────
         if (_userEmail != null) ...[
           Text(
             "We've sent a link to",
@@ -386,16 +479,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
           ),
         ],
         const SizedBox(height: 36),
-
-        // ── Countdown card ───────────────────────────────────────────────
         _CountdownCard(
           timeString: _timeString,
           timerColor: _timerColor,
           progress: _secondsLeft / _kWindowSecs,
         ),
         const SizedBox(height: 24),
-
-        // ── Urgency warning (animates in) ────────────────────────────────
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 350),
           transitionBuilder: (child, anim) => FadeTransition(
@@ -410,20 +499,16 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
                 )
               : const SizedBox.shrink(key: ValueKey('none')),
         ),
-
-        // ── Info blob ────────────────────────────────────────────────────
         InfoBlob(
           icon: Icons.info_outline_rounded,
           text: 'Click the link in the email to verify your account. '
               'This page automatically checks every few seconds and '
               'will redirect you once verified.',
-          color: AppColors.secondaryContainer.withOpacity(0.35),
+          color: AppColors.secondaryContainer.withValues(alpha: 0.35),
           iconColor: AppColors.secondary,
           textColor: AppColors.onSecondaryContainer,
         ),
         const SizedBox(height: 32),
-
-        // ── Resend / cooldown button ─────────────────────────────────────
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 250),
           child: _isSending
@@ -447,16 +532,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
                     ),
         ),
         const SizedBox(height: 20),
-
-        // ── Bail-out link ─────────────────────────────────────────────────
         TextButton(
           onPressed: () async {
             _tickTimer?.cancel();
             _pollTimer?.cancel();
             await FirebaseAuth.instance.signOut();
-            if (mounted) {
-              Navigator.of(context).pushReplacementNamed('/sign-in');
-            }
+            // AuthGate will handle routing to LandingScreen automatically.
           },
           child: Text(
             'Use a different account',
@@ -472,8 +553,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
     );
   }
 
-  // ── Result screen (success / declined) ────────────────────────────────────
-
   Widget _buildResult({required bool success}) {
     return FadeTransition(
       opacity: _resultFade,
@@ -483,15 +562,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 64),
-
-            // Icon circle
             Container(
               width: 108,
               height: 108,
               decoration: BoxDecoration(
                 color: success
-                    ? AppColors.primaryContainer.withOpacity(0.28)
-                    : Colors.red.withOpacity(0.08),
+                    ? AppColors.primaryContainer.withValues(alpha: 0.28)
+                    : Colors.red.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -501,8 +578,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
               ),
             ),
             const SizedBox(height: 28),
-
-            // Title
             Text(
               success ? 'Email Verified!' : 'Verification Expired',
               style: GoogleFonts.plusJakartaSans(
@@ -514,13 +589,11 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-
-            // Body
             Text(
               success
                   ? 'Your account is now active.\nLogging you in to Mnemo…'
                   : 'The 8-minute verification window has closed.\n'
-                      'Your account has been removed for security.\n'
+                      'Your account has been removed.\n'
                       'Please sign up again to create a new account.',
               textAlign: TextAlign.center,
               style: GoogleFonts.plusJakartaSans(
@@ -530,19 +603,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
               ),
             ),
             const SizedBox(height: 40),
-
-            // CTA
-            if (success)
-              // Spinner while auto-navigation is pending
-              const CircularProgressIndicator()
-            else
-              AuthPrimaryButton(
-                label: 'Sign Up Again',
-                trailingIcon: Icons.restart_alt_rounded,
-                onTap: () => Navigator.of(context)
-                    .pushReplacementNamed('/sign-up/step-1'),
-              ),
-
+            // In the success case, AuthGate handles navigation automatically
+            // once the token refresh fires. Show a spinner while waiting.
+            if (success) const CircularProgressIndicator(),
             const SizedBox(height: 48),
           ],
         ),
@@ -553,7 +616,6 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COUNTDOWN CARD
-// Large MM:SS display with depleting linear bar and colour-shifting border.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _CountdownCard extends StatelessWidget {
@@ -575,24 +637,20 @@ class _CountdownCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
       decoration: BoxDecoration(
-        color: timerColor.withOpacity(0.06),
+        color: timerColor.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: timerColor.withOpacity(0.22),
+          color: timerColor.withValues(alpha: 0.22),
           width: 1.5,
         ),
       ),
       child: Column(
         children: [
-          // Label
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.timer_outlined,
-                size: 13,
-                color: timerColor.withOpacity(0.60),
-              ),
+              Icon(Icons.timer_outlined,
+                  size: 13, color: timerColor.withValues(alpha: 0.60)),
               const SizedBox(width: 6),
               Text(
                 'TIME REMAINING',
@@ -600,14 +658,12 @@ class _CountdownCard extends StatelessWidget {
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.6,
-                  color: timerColor.withOpacity(0.60),
+                  color: timerColor.withValues(alpha: 0.60),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-
-          // Large MM:SS
           Text(
             timeString,
             style: GoogleFonts.plusJakartaSans(
@@ -619,27 +675,23 @@ class _CountdownCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-
-          // Depleting bar
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 5,
-              backgroundColor: timerColor.withOpacity(0.12),
+              backgroundColor: timerColor.withValues(alpha: 0.12),
               valueColor: AlwaysStoppedAnimation<Color>(timerColor),
             ),
           ),
           const SizedBox(height: 12),
-
-          // Sub-label
           Text(
             'Registration will be cancelled when the timer reaches 0:00',
             textAlign: TextAlign.center,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               height: 1.5,
-              color: timerColor.withOpacity(0.55),
+              color: timerColor.withValues(alpha: 0.55),
             ),
           ),
         ],
@@ -650,7 +702,6 @@ class _CountdownCard extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESEND COOLDOWN BUTTON
-// Shows a hourglass and the seconds left until the user can resend.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ResendCooldownButton extends StatelessWidget {
@@ -666,17 +717,13 @@ class _ResendCooldownButton extends StatelessWidget {
         color: AppColors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: AppColors.outlineVariant.withOpacity(0.45),
+          color: AppColors.outlineVariant.withValues(alpha: 0.45),
         ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.hourglass_top_rounded,
-            size: 17,
-            color: AppColors.outline,
-          ),
+          Icon(Icons.hourglass_top_rounded, size: 17, color: AppColors.outline),
           const SizedBox(width: 10),
           Text(
             'Resend available in ${secondsLeft}s',
@@ -694,7 +741,6 @@ class _ResendCooldownButton extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WARNING BLOB
-// Slides in at ≤ 2 min, switches to red at ≤ 1 min.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _WarningBlob extends StatelessWidget {
