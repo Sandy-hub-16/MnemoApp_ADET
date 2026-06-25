@@ -128,11 +128,17 @@ class _NotificationBodyState extends State<_NotificationBody> {
 
     // 2. Handle by notification type
     if (notification.type == 'profile_viewed') {
-      // Navigate to the viewer's public profile only if we have a valid UID
+      // Navigate to the viewer's public profile only if we have a valid UID.
+      // suppressViewNotification: true prevents PublicProfileScreen from
+      // firing another profile_viewed notification back at the viewer, which
+      // would create an infinite ping-pong loop between the two users.
       if (notification.fromUid.isNotEmpty) {
         Navigator.of(context).pushNamed(
           AppRoutes.publicProfile,
-          arguments: PublicProfileArgs(targetUid: notification.fromUid),
+          arguments: PublicProfileArgs(
+            targetUid: notification.fromUid,
+            suppressViewNotification: true,
+          ),
         );
       }
       return;

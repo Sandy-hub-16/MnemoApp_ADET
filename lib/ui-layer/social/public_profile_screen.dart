@@ -19,7 +19,12 @@ import 'widgets/follow_button.dart';
 //
 // The current user can follow or unfollow the profile owner from this screen.
 //
-// Arguments: PublicProfileArgs (targetUid) via settings.arguments
+// Arguments: PublicProfileArgs (targetUid, suppressViewNotification)
+//            via settings.arguments
+//
+// suppressViewNotification: when true, the screen skips firing the
+// "profile_viewed" notification. Set to true when navigating here from a
+// profile_viewed notification tile to prevent an infinite ping-pong loop.
 //
 // Architecture: public StatelessWidget → private StatefulWidget _Body
 //
@@ -39,31 +44,7 @@ class PublicProfileScreen extends StatelessWidget {
         body: SafeArea(
           child: Column(
             children: [
-              Container(
-                color: AppColors.background.withValues(alpha: 0.80),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        color: AppColors.onSurface,
-                        size: 20,
-                      ),
-                    ),
-                    Text(
-                      'Profile',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _ProfileTopBar(onBack: () => Navigator.of(context).pop()),
               Expanded(
                 child: Center(
                   child: Padding(
@@ -96,7 +77,10 @@ class PublicProfileScreen extends StatelessWidget {
         ),
       );
     }
-    return _PublicProfileBody(targetUid: args.targetUid);
+    return _PublicProfileBody(
+      targetUid: args.targetUid,
+      suppressViewNotification: args.suppressViewNotification,
+    );
   }
 }
 
@@ -105,9 +89,17 @@ class PublicProfileScreen extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _PublicProfileBody extends StatefulWidget {
-  const _PublicProfileBody({required this.targetUid});
+  const _PublicProfileBody({
+    required this.targetUid,
+    this.suppressViewNotification = false,
+  });
 
   final String targetUid;
+
+  /// When true, visiting this profile will NOT fire a "profile_viewed"
+  /// notification to the owner. Used when navigating here from a
+  /// profile_viewed notification to break the infinite loop.
+  final bool suppressViewNotification;
 
   @override
   State<_PublicProfileBody> createState() => _PublicProfileBodyState();
@@ -126,11 +118,22 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
 
   String? _errorMessage;
 
+  // ── FIX (Bug 1): hold the decks stream in state, not inside the
+  // StatelessWidget build method. Creating the stream inside a StatelessWidget
+  // that receives setState-driven rebuilds from the parent causes a brand-new
+  // stream to be created on every rebuild. The StreamBuilder then sees a new
+  // stream → resets to ConnectionState.waiting → shows the spinner briefly →
+  // then data arrives. Keeping the stream here means it is created once and
+  // survives follow/unfollow state changes.
+  late final Stream<List<PublicDeckSummary>> _decksStream;
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
+    // Create the stream once. It will live for the lifetime of this State.
+    _decksStream = ProfileService.userDecksStream(widget.targetUid);
     _loadProfile();
   }
 
@@ -146,7 +149,14 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
       final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final db = FirebaseFirestore.instance;
 
-      // Fetch profile, follow state, and sub-collection counts in parallel
+      // FIX (Bug 2): force a server fetch for the follow-state document.
+      // With Firestore offline persistence enabled (main.dart), a plain .get()
+      // can serve a stale cached doc — e.g. showing a deleted followers entry
+      // as still existing. That makes the Follow button display "Following"
+      // even though the user never followed (or already unfollowed). Fetching
+      // from the server guarantees we read the actual current state.
+      // Profile and counts are fine from cache; only the follow-state needs
+      // to be accurate to avoid the misleading "Following" button.
       final results = await Future.wait([
         ProfileService.getProfile(widget.targetUid),
         db
@@ -154,7 +164,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
             .doc(widget.targetUid)
             .collection('followers')
             .doc(currentUid)
-            .get(),
+            .get(const GetOptions(source: Source.server)), // ← server only
         db
             .collection('users')
             .doc(widget.targetUid)
@@ -185,9 +195,16 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
         return;
       }
 
-      // Send a "profile viewed" notification to the owner (fire-and-forget)
-      // Only when viewing someone else's public profile
-      if (currentUid.isNotEmpty && currentUid != widget.targetUid && !profile.isPrivate) {
+      // Send a "profile viewed" notification to the owner (fire-and-forget).
+      // Skipped when:
+      //   • viewing your own profile
+      //   • the profile is private
+      //   • suppressViewNotification is true (arrived from a profile_viewed
+      //     notification tile — firing here would create an infinite loop)
+      if (currentUid.isNotEmpty &&
+          currentUid != widget.targetUid &&
+          !profile.isPrivate &&
+          !widget.suppressViewNotification) {
         _sendProfileViewedNotification(
           viewerUid: currentUid,
           ownerUid: widget.targetUid,
@@ -220,23 +237,44 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
 
   // ── Profile viewed notification ───────────────────────────────────────────
 
-  /// Writes a "profile_viewed" notification to the profile owner so they know
-  /// someone visited their public profile. Fire-and-forget; errors are silent.
+  /// Writes a "profile_viewed" notification to the profile owner.
+  /// Fire-and-forget; errors are silent.
+  ///
+  /// Includes a 24-hour deduplication guard: if this viewer already triggered
+  /// a profile_viewed notification for this owner in the last 24 hours, the
+  /// write is skipped to prevent notification spam from repeat visits.
   Future<void> _sendProfileViewedNotification({
     required String viewerUid,
     required String ownerUid,
     required String ownerUsername,
   }) async {
     try {
-      // Get the viewer's username for the notification message
-      final viewerSnap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(viewerUid)
-          .get();
+      final db = FirebaseFirestore.instance;
+
+      // Fetch viewer's username for the notification message
+      final viewerSnap = await db.collection('users').doc(viewerUid).get();
       final viewerUsername =
           viewerSnap.data()?['username'] as String? ?? 'Someone';
 
-      await FirebaseFirestore.instance
+      // ── 24-hour dedup guard ───────────────────────────────────────────────
+      // Skip if this viewer already sent a profile_viewed notification to
+      // this owner within the last 24 hours.
+      final cutoff = Timestamp.fromDate(
+        DateTime.now().subtract(const Duration(hours: 24)),
+      );
+      final existing = await db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('notifications')
+          .where('type', isEqualTo: 'profile_viewed')
+          .where('fromUid', isEqualTo: viewerUid)
+          .where('createdAt', isGreaterThan: cutoff)
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) return; // already notified recently
+
+      await db
           .collection('users')
           .doc(ownerUid)
           .collection('notifications')
@@ -273,7 +311,8 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
         if (!mounted) return;
         setState(() {
           _isFollowing = false;
-          _followerCount = (_followerCount - 1).clamp(0, double.maxFinite.toInt());
+          _followerCount =
+              (_followerCount - 1).clamp(0, double.maxFinite.toInt());
         });
       } else {
         await ShareService.follow(
@@ -320,8 +359,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
         ),
         backgroundColor: AppColors.error,
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       ),
     );
@@ -381,7 +419,10 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
                               ? const SizedBox.shrink()
                               : _ProfileContent(
                                   profile: _profile!,
-                                  targetUid: widget.targetUid,
+                                  // Pass the stable stream instance — not a
+                                  // new call to userDecksStream() — so the
+                                  // StreamBuilder is never reset by a setState.
+                                  decksStream: _decksStream,
                                   isOwnProfile: isOwnProfile,
                                   isFollowing: _isFollowing,
                                   isFollowLoading: _isFollowLoading,
@@ -444,12 +485,15 @@ class _ProfileTopBar extends StatelessWidget {
 //
 // Renders the profile header (avatar, name, stats, follow button) and the
 // real-time list of the user's public decks via StreamBuilder.
+//
+// Receives [decksStream] from the parent State so that follow/unfollow
+// setState calls do NOT recreate the stream and reset the StreamBuilder.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileContent extends StatelessWidget {
   const _ProfileContent({
     required this.profile,
-    required this.targetUid,
+    required this.decksStream,
     required this.isOwnProfile,
     required this.isFollowing,
     required this.isFollowLoading,
@@ -460,7 +504,7 @@ class _ProfileContent extends StatelessWidget {
   });
 
   final PublicProfile profile;
-  final String targetUid;
+  final Stream<List<PublicDeckSummary>> decksStream;
   final bool isOwnProfile;
   final bool isFollowing;
   final bool isFollowLoading;
@@ -507,8 +551,11 @@ class _ProfileContent extends StatelessWidget {
         ),
 
         // ── Decks list (real-time) ───────────────────────────────────────
+        // Uses the stable [decksStream] passed from the parent State.
+        // This stream is created once in initState() and is never recreated
+        // by follow/unfollow or other setState calls.
         StreamBuilder<List<PublicDeckSummary>>(
-          stream: ProfileService.userDecksStream(targetUid),
+          stream: decksStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const SliverToBoxAdapter(
