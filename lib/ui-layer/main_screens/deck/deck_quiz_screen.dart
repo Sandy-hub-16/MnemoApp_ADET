@@ -418,6 +418,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       });
       _setupCard();
       _cardSlideCtrl.forward();
+
+      // Track the moment the deck is actually opened for studying — not just
+      // answered. Edit Deck and Browse Cards live on separate screens/routes
+      // and never reach this code, so they're naturally excluded.
+      if (!_sessionTracked) {
+        _sessionTracked = true;
+        _trackDeckStarted();
+      }
     } catch (e) {
       debugPrint('❌ QuizScreen._loadCards error: $e');
       if (!mounted) return;
@@ -553,12 +561,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       });
     }
 
-    // Track session on first time-out (same as a normal submit)
-    if (!_sessionTracked) {
-      _sessionTracked = true;
-      _trackDeckStarted();
-    }
-
     // Auto-advance after a brief pause so the user sees the result
     Future.delayed(const Duration(milliseconds: 1800), () {
       if (mounted && _cardSession.answered) _advance();
@@ -602,14 +604,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       _cardSession.isCorrect = correct;
       _cardSession.selectedShuffledIndex = shuffledPos;
     });
-
-    // Track session on first submitted answer (fire-and-forget).
-    // Fires the instant a choice is tapped — before Next is ever pressed —
-    // so the deck appears in Recent Activity even if the user exits early.
-    if (!_sessionTracked) {
-      _sessionTracked = true;
-      _trackDeckStarted();
-    }
 
     if (correct) {
       result.correct = true;
@@ -671,14 +665,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       _cardSession.isCorrect = correct;
       if (!correct) _cardSession.correctAnswerReveal = card.answer;
     });
-
-    // Track session on first submitted answer (fire-and-forget).
-    // Fires the instant "Check Answer" is tapped — before Next is ever pressed —
-    // so the deck appears in Recent Activity even if the user exits early.
-    if (!_sessionTracked) {
-      _sessionTracked = true;
-      _trackDeckStarted();
-    }
 
     if (correct) {
       result.correct = true;
