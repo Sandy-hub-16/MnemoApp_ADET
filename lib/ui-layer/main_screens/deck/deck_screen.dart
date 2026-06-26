@@ -46,17 +46,12 @@ class _DeckHubScaffold extends StatefulWidget {
 }
 
 class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
-  int _selectedFilter = 0;
+  String? _selectedTag; // null = "All Decks"; set to a tag string to filter
+  List<String> _availableTags = []; // derived live from Firestore
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _deckSubscription;
+
   bool _draftsExpanded = false;
-
-  static const _filters = [
-    'All Decks',
-    'Biology',
-    'Physics',
-    'Organic Chem',
-    'World History',
-  ];
-
+  
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
   String _searchQuery = '';
@@ -72,12 +67,30 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       ShareService.repairCardCounts(uid: uid).catchError((_) {});
     }
     _searchController.addListener(_onSearchChanged);
+    _deckSubscription = _deckStream().listen((snap) {
+      final tags = snap.docs
+          .map((d) => d.data()['tag'] as String? ?? '')
+          .where((t) => t.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      if (mounted) {
+        setState(() {
+          _availableTags = tags;
+          // If the user deleted all decks of the selected tag, reset to All
+          if (_selectedTag != null && !tags.contains(_selectedTag)) {
+            _selectedTag = null;
+          }
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _debounce?.cancel();
+    _deckSubscription?.cancel();
     super.dispose();
   }
 
@@ -93,8 +106,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
           });
         }
       } else {
-        final activeTag =
-            _selectedFilter == 0 ? null : _filters[_selectedFilter];
+        final activeTag = _selectedTag;
         try {
           await compute(runIsolateQuery, (
             index: _engine.snapshot(
@@ -206,30 +218,36 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                             _HeroGreeting(),
                             const SizedBox(height: 20),
                             _SearchBar(controller: _searchController),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              height: 40,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _filters.length + 1,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, i) {
-                                  if (i == _filters.length) {
+                            if (_availableTags.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                height: 40,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _availableTags.length +
+                                      1, // +1 for "All Decks"
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 8),
+                                  itemBuilder: (context, i) {
+                                    if (i == 0) {
+                                      return _FilterChip(
+                                        label: 'All Decks',
+                                        active: _selectedTag == null,
+                                        onTap: () =>
+                                            setState(() => _selectedTag = null),
+                                      );
+                                    }
+                                    final tag = _availableTags[i - 1];
                                     return _FilterChip(
-                                        label: '+ Add Filter',
-                                        active: false,
-                                        onTap: () {});
-                                  }
-                                  return _FilterChip(
-                                    label: _filters[i],
-                                    active: _selectedFilter == i,
-                                    onTap: () =>
-                                        setState(() => _selectedFilter = i),
-                                  );
-                                },
+                                      label: tag,
+                                      active: _selectedTag == tag,
+                                      onTap: () =>
+                                          setState(() => _selectedTag = tag),
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
+                            ],
                             const SizedBox(height: 28),
                           ]),
                         ),
@@ -260,11 +278,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                                     .toLowerCase(),
                           );
 
-                          final selectedCategory = _filters[_selectedFilter];
-                          final String? tagFilter =
-                              selectedCategory == 'All Decks'
-                                  ? null
-                                  : selectedCategory;
+                          final String? tagFilter = _selectedTag;
 
                           // Apply search + tag filter via the engine
                           final filteredDocs =

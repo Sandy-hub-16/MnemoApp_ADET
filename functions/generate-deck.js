@@ -4,6 +4,9 @@ const { PNG } = require("pngjs");
 const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 
+const admin = require("firebase-admin");
+if (!admin.apps.length) admin.initializeApp();
+
 const groqKey = defineSecret("GROQ_API_KEY");
 const openRouterKey = defineSecret("OPENROUTER_API_KEY");
 
@@ -29,6 +32,10 @@ const OPENROUTER_VISION_MODEL = "meta-llama/llama-4-scout";
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_HEADERS = { "HTTP-Referer": "https://mnemoapp.com" };
+
+// ── Rate limiting ──────────────────────────────────────────────────────────
+const DAILY_LIMIT = 5;        // generations per user per window
+const WINDOW_MS = 24 * 60 * 60 * 1000; // 24-hour rolling window
 
 const JSON_SCHEMA = `{"title":"...","cards":[{"question":"...","answer":"...","options":["...","...","...","..."]}]}`;
 
@@ -130,42 +137,46 @@ function _getPdfjsLib() {
 }
 
 /** Full DOMMatrix-compatible stub — pdfjs v2 reads and mutates these. */
-function _makeMatrix(a=1,b=0,c=0,d=1,e=0,f=0) {
+function _makeMatrix(a = 1, b = 0, c = 0, d = 1, e = 0, f = 0) {
     return {
         a, b, c, d, e, f,
-        is2D: true, isIdentity: (a===1&&b===0&&c===0&&d===1&&e===0&&f===0),
-        invertSelf()      { return _makeMatrix(d,-b,-c,a,(c*f-d*e),(b*e-a*f)); },
-        multiplySelf(m)   { return Object.assign(this, _multiply(this, m)); },
-        multiply(m)       { return Object.assign(_makeMatrix(), _multiply(this, m)); },
-        preMultiplySelf(m){ return Object.assign(this, _multiply(m, this)); },
-        translateSelf(tx=0,ty=0) { this.e+=tx; this.f+=ty; return this; },
-        scaleSelf(sx=1,sy=sx)    { this.a*=sx; this.d*=sy; return this; },
-        rotateSelf(deg)          { const r=deg*Math.PI/180, cos=Math.cos(r), sin=Math.sin(r);
-                                   return this.multiplySelf(_makeMatrix(cos,sin,-sin,cos,0,0)); },
-        transformPoint(p={x:0,y:0}) {
-            return { x: this.a*p.x+this.c*p.y+this.e, y: this.b*p.x+this.d*p.y+this.f };
+        is2D: true, isIdentity: (a === 1 && b === 0 && c === 0 && d === 1 && e === 0 && f === 0),
+        invertSelf() { return _makeMatrix(d, -b, -c, a, (c * f - d * e), (b * e - a * f)); },
+        multiplySelf(m) { return Object.assign(this, _multiply(this, m)); },
+        multiply(m) { return Object.assign(_makeMatrix(), _multiply(this, m)); },
+        preMultiplySelf(m) { return Object.assign(this, _multiply(m, this)); },
+        translateSelf(tx = 0, ty = 0) { this.e += tx; this.f += ty; return this; },
+        scaleSelf(sx = 1, sy = sx) { this.a *= sx; this.d *= sy; return this; },
+        rotateSelf(deg) {
+            const r = deg * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
+            return this.multiplySelf(_makeMatrix(cos, sin, -sin, cos, 0, 0));
         },
-        toFloat32Array() { return new Float32Array([this.a,this.b,0,0,this.c,this.d,0,0,0,0,1,0,this.e,this.f,0,1]); },
-        toFloat64Array() { return new Float64Array([this.a,this.b,0,0,this.c,this.d,0,0,0,0,1,0,this.e,this.f,0,1]); },
+        transformPoint(p = { x: 0, y: 0 }) {
+            return { x: this.a * p.x + this.c * p.y + this.e, y: this.b * p.x + this.d * p.y + this.f };
+        },
+        toFloat32Array() { return new Float32Array([this.a, this.b, 0, 0, this.c, this.d, 0, 0, 0, 0, 1, 0, this.e, this.f, 0, 1]); },
+        toFloat64Array() { return new Float64Array([this.a, this.b, 0, 0, this.c, this.d, 0, 0, 0, 0, 1, 0, this.e, this.f, 0, 1]); },
     };
 }
 function _multiply(a, m) {
-    return { a: a.a*m.a+a.c*m.b, b: a.b*m.a+a.d*m.b,
-             c: a.a*m.c+a.c*m.d, d: a.b*m.c+a.d*m.d,
-             e: a.a*m.e+a.c*m.f+a.e, f: a.b*m.e+a.d*m.f+a.f };
+    return {
+        a: a.a * m.a + a.c * m.b, b: a.b * m.a + a.d * m.b,
+        c: a.a * m.c + a.c * m.d, d: a.b * m.c + a.d * m.d,
+        e: a.a * m.e + a.c * m.f + a.e, f: a.b * m.e + a.d * m.f + a.f
+    };
 }
 
 function _buildFakeContext(rgbaBuffer, width, height) {
     // White background
     for (let i = 0; i < rgbaBuffer.length; i += 4) {
-        rgbaBuffer[i]=255; rgbaBuffer[i+1]=255; rgbaBuffer[i+2]=255; rgbaBuffer[i+3]=255;
+        rgbaBuffer[i] = 255; rgbaBuffer[i + 1] = 255; rgbaBuffer[i + 2] = 255; rgbaBuffer[i + 3] = 255;
     }
 
     let _currentTransform = _makeMatrix();
 
     return {
         // ── ImageData ──────────────────────────────────────────────────────────
-        createImageData: (w, h) => ({ data: new Uint8ClampedArray(w*h*4), width: w, height: h }),
+        createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
         putImageData: (imgData, dx, dy) => {
             for (let row = 0; row < imgData.height; row++) {
                 const dstY = dy + row;
@@ -194,38 +205,40 @@ function _buildFakeContext(rgbaBuffer, width, height) {
             return { data, width: w, height: h };
         },
         // ── Transforms ────────────────────────────────────────────────────────
-        save: () => {}, restore: () => {},
-        scale: () => {}, rotate: () => {}, translate: () => {},
-        transform: () => {}, setTransform: () => {}, resetTransform: () => {
+        save: () => { }, restore: () => { },
+        scale: () => { }, rotate: () => { }, translate: () => { },
+        transform: () => { }, setTransform: () => { }, resetTransform: () => {
             _currentTransform = _makeMatrix();
         },
         getTransform: () => Object.assign(Object.create(Object.getPrototypeOf(_currentTransform)), _currentTransform),
         // ── Drawing stubs ──────────────────────────────────────────────────────
-        beginPath:()=>{}, closePath:()=>{}, moveTo:()=>{}, lineTo:()=>{},
-        bezierCurveTo:()=>{}, quadraticCurveTo:()=>{}, arc:()=>{}, arcTo:()=>{},
-        ellipse:()=>{}, rect:()=>{}, clip:()=>{}, fill:()=>{}, stroke:()=>{},
-        fillRect:()=>{}, clearRect:()=>{}, strokeRect:()=>{},
-        fillText:()=>{}, strokeText:()=>{},
-        measureText:()=>({width:0,actualBoundingBoxAscent:0,actualBoundingBoxDescent:0,
-                          fontBoundingBoxAscent:0,fontBoundingBoxDescent:0}),
-        drawImage:()=>{},
-        createPattern:()=>null,
-        createLinearGradient:()=>({addColorStop:()=>{}}),
-        createRadialGradient:()=>({addColorStop:()=>{}}),
-        createConicGradient:()=>({addColorStop:()=>{}}),
-        isPointInPath:()=>false, isPointInStroke:()=>false,
+        beginPath: () => { }, closePath: () => { }, moveTo: () => { }, lineTo: () => { },
+        bezierCurveTo: () => { }, quadraticCurveTo: () => { }, arc: () => { }, arcTo: () => { },
+        ellipse: () => { }, rect: () => { }, clip: () => { }, fill: () => { }, stroke: () => { },
+        fillRect: () => { }, clearRect: () => { }, strokeRect: () => { },
+        fillText: () => { }, strokeText: () => { },
+        measureText: () => ({
+            width: 0, actualBoundingBoxAscent: 0, actualBoundingBoxDescent: 0,
+            fontBoundingBoxAscent: 0, fontBoundingBoxDescent: 0
+        }),
+        drawImage: () => { },
+        createPattern: () => null,
+        createLinearGradient: () => ({ addColorStop: () => { } }),
+        createRadialGradient: () => ({ addColorStop: () => { } }),
+        createConicGradient: () => ({ addColorStop: () => { } }),
+        isPointInPath: () => false, isPointInStroke: () => false,
         // ── Settable props ─────────────────────────────────────────────────────
-        set fillStyle(_){}, set strokeStyle(_){}, set lineWidth(_){},
-        set lineCap(_){}, set lineJoin(_){}, set miterLimit(_){},
-        set globalAlpha(_){}, set globalCompositeOperation(_){},
-        set font(_){}, set textBaseline(_){}, set textAlign(_){},
-        set shadowColor(_){}, set shadowBlur(_){},
-        set shadowOffsetX(_){}, set shadowOffsetY(_){},
-        set imageSmoothingEnabled(_){}, set imageSmoothingQuality(_){},
-        set lineDashOffset(_){}, set direction(_){}, set letterSpacing(_){},
-        set wordSpacing(_){}, set fontKerning(_){}, set fontStretch(_){},
-        set fontVariantCaps(_){}, set textRendering(_){},
-        setLineDash:()=>{}, getLineDash:()=>[],
+        set fillStyle(_) { }, set strokeStyle(_) { }, set lineWidth(_) { },
+        set lineCap(_) { }, set lineJoin(_) { }, set miterLimit(_) { },
+        set globalAlpha(_) { }, set globalCompositeOperation(_) { },
+        set font(_) { }, set textBaseline(_) { }, set textAlign(_) { },
+        set shadowColor(_) { }, set shadowBlur(_) { },
+        set shadowOffsetX(_) { }, set shadowOffsetY(_) { },
+        set imageSmoothingEnabled(_) { }, set imageSmoothingQuality(_) { },
+        set lineDashOffset(_) { }, set direction(_) { }, set letterSpacing(_) { },
+        set wordSpacing(_) { }, set fontKerning(_) { }, set fontStretch(_) { },
+        set fontVariantCaps(_) { }, set textRendering(_) { },
+        setLineDash: () => { }, getLineDash: () => [],
         get canvas() { return { width, height }; },
     };
 }
@@ -249,9 +262,9 @@ async function renderPdfToImages(buffer, pageLimit) {
             canvasContext: ctx,
             viewport,
             canvasFactory: {
-                create:  (w, h) => ({ canvas: { width: w, height: h }, context: ctx }),
-                reset:   (obj, w, h) => { obj.canvas.width=w; obj.canvas.height=h; },
-                destroy: () => {},
+                create: (w, h) => ({ canvas: { width: w, height: h }, context: ctx }),
+                reset: (obj, w, h) => { obj.canvas.width = w; obj.canvas.height = h; },
+                destroy: () => { },
             },
         }).promise;
 
@@ -395,11 +408,107 @@ async function runVisionGeneration(images, count, questionType) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// RATE LIMIT CHECK (HELPERS)
+// Uses a Firestore transaction so concurrent requests can't race past the limit.
+// Returns { allowed: bool, remaining: int, resetAt?: ISO string }
+// Separated into check and increment so the quota is only consumed on success.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Read-only check — does NOT touch the counter. */
+async function checkRateLimit(uid) {
+    const db = admin.firestore();
+    const ref = db
+        .collection("users")
+        .doc(uid)
+        .collection("rateLimits")
+        .doc("aiGeneration");
+
+    const snap = await ref.get();
+    const now = Date.now();
+
+    if (!snap.exists) return { allowed: true, remaining: DAILY_LIMIT };
+
+    const data = snap.data();
+    const windowStart = data.windowStart?.toMillis() ?? now;
+    const count = data.dailyCount ?? 0;
+
+    if (now - windowStart >= WINDOW_MS) return { allowed: true, remaining: DAILY_LIMIT };
+
+    if (count >= DAILY_LIMIT) {
+        const resetAt = new Date(windowStart + WINDOW_MS).toISOString();
+        return { allowed: false, remaining: 0, resetAt };
+    }
+
+    return { allowed: true, remaining: DAILY_LIMIT - count };
+}
+
+/** Atomically increments the counter. Called only after successful generation. */
+async function incrementRateLimit(uid) {
+    const db = admin.firestore();
+    const ref = db
+        .collection("users")
+        .doc(uid)
+        .collection("rateLimits")
+        .doc("aiGeneration");
+
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const now = Date.now();
+
+        if (!snap.exists) {
+            tx.set(ref, {
+                dailyCount: 1,
+                windowStart: admin.firestore.Timestamp.fromMillis(now),
+            });
+            return;
+        }
+
+        const data = snap.data();
+        const windowStart = data.windowStart?.toMillis() ?? now;
+
+        // Window expired — reset instead of continuing the old count
+        if (now - windowStart >= WINDOW_MS) {
+            tx.set(ref, {
+                dailyCount: 1,
+                windowStart: admin.firestore.Timestamp.fromMillis(now),
+            });
+            return;
+        }
+
+        tx.update(ref, { dailyCount: admin.firestore.FieldValue.increment(1) });
+    });
+}
 
 exports.generateDeck = onRequest(
     { secrets: [groqKey, openRouterKey], cors: true, timeoutSeconds: 300, memory: "512MiB" },
     async (req, res) => {
         try {
+
+            // ── Auth: verify Firebase ID token ────────────────────────────────
+            const authHeader = req.headers.authorization;
+            if (!authHeader?.startsWith("Bearer ")) {
+                return res.status(401).json({ error: "Missing authentication token." });
+            }
+            let uid;
+            try {
+                const decoded = await admin.auth().verifyIdToken(authHeader.slice(7));
+                uid = decoded.uid;
+            } catch {
+                return res.status(401).json({ error: "Invalid or expired authentication token." });
+            }
+
+            // ──  Rate limit: check only — increment happens on success ───────
+            const rateLimit = await checkRateLimit(uid);
+            if (!rateLimit.allowed) {
+                return res.status(429).json({
+                    error: "Daily limit reached",
+                    remaining: 0,
+                    resetAt: rateLimit.resetAt,
+                    dailyLimit: DAILY_LIMIT,
+                });
+            }
+
             const pageLimit = parseInt(req.body.pageLimit, 10) || 0;
             const parsedCount = parseInt(req.body.questionCount, 10);
             const count = isNaN(parsedCount) ? 20 : Math.min(30, Math.max(1, parsedCount));
@@ -431,7 +540,7 @@ exports.generateDeck = onRequest(
                 try {
                     const parsed = await pdfParse(buffer);
                     pageCount = parsed.numpages || 1;
-                } catch (_) {}
+                } catch (_) { }
 
                 const extractedText = await extractPdfText(buffer, pageLimit);
 
@@ -462,7 +571,7 @@ exports.generateDeck = onRequest(
                     generationResult = await runVisionGeneration(images, count, questionType);
                 }
 
-            // ── Plain text ─────────────────────────────────────────────────────
+                // ── Plain text ─────────────────────────────────────────────────────
             } else {
                 let text = req.body.text;
                 if (!text?.trim()) {
@@ -475,6 +584,8 @@ exports.generateDeck = onRequest(
 
             const { result, provider } = generationResult;
             const cards = Array.isArray(result.cards) ? result.cards.slice(0, count) : [];
+            // ── Charge the quota only on confirmed success ────────────────────
+            await incrementRateLimit(uid);
             return res.json({ title: result.title, cards, provider });
 
         } catch (error) {

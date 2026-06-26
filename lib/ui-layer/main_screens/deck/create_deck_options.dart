@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../../landing_page/app_theme.dart';
+import '../../../business-layer/services/rate_limit_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE DECK OPTIONS
@@ -1480,10 +1480,94 @@ Future<int?> _showPageRangeDialog(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RATE LIMIT HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Gets the current user's Firebase ID token to send with generation requests.
+Future<String?> _getIdToken() async {
+  try {
+    return await FirebaseAuth.instance.currentUser?.getIdToken();
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Shows a friendly dialog when the user has hit their daily generation limit.
+void _showRateLimitDialog(BuildContext context, DateTime? resetTime) {
+  showDialog(
+    context: context,
+    builder: (_) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      title: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.hourglass_bottom_rounded,
+                color: AppColors.primary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Daily Limit Reached',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: AppColors.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Text(
+        'You\'ve used all ${RateLimitService.dailyLimit} AI generations for today. '
+        'Your limit resets ${RateLimitService.formatResetTime(resetTime)}.',
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 14,
+          color: AppColors.onSurfaceVariant,
+          height: 1.5,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(_),
+          style: TextButton.styleFrom(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: Text(
+            'Got it',
+            style: GoogleFonts.plusJakartaSans(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AI IMPORT HANDLER  (PDF + TXT, with question type & count dialogs)
 // ─────────────────────────────────────────────────────────────────────────────
 
 Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
+  // ── Rate limit gate (client-side; server re-enforces independently) ────────
+  final remaining = await RateLimitService.getRemainingGenerations();
+  if (remaining <= 0) {
+    if (context.mounted) {
+      final resetTime = await RateLimitService.getResetTime();
+      _showRateLimitDialog(context, resetTime);
+    }
+    return;
+  }
+
   // ── Step 1: Pick file (PDF or TXT) ────────────────────────────────────────
   FilePickerResult? result;
   try {
@@ -1680,13 +1764,28 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     }
 
     // ── Step 8: Call Cloud Run endpoint ─────────────────────────────────────
+    final idToken = await _getIdToken();
+    if (idToken == null)
+      throw Exception('Authentication error. Please sign in again.');
+
     final response = await http
         .post(
           Uri.parse('https://generatedeck-x2xze3qnza-uc.a.run.app'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
           body: jsonEncode(requestBody),
         )
         .timeout(const Duration(seconds: 120));
+
+    if (response.statusCode == 429) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final resetAt = DateTime.tryParse(body['resetAt'] as String? ?? '');
+      throw Exception(
+        'Daily limit reached. Your limit resets ${RateLimitService.formatResetTime(resetAt)}.',
+      );
+    }
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -1874,6 +1973,15 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
 // ─────────────────────────────────────────────────────────────────────────────
 
 Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
+  // ── Rate limit gate (client-side; server re-enforces independently) ────────
+  final remaining = await RateLimitService.getRemainingGenerations();
+  if (remaining <= 0) {
+    if (context.mounted) {
+      final resetTime = await RateLimitService.getResetTime();
+      _showRateLimitDialog(context, resetTime);
+    }
+    return;
+  }
   // ── Step 1: Show paste dialog ──────────────────────────────────────────────
   if (!context.mounted) return;
   final pastedText = await _showPasteNotesDialog(context);
@@ -1953,10 +2061,17 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
 
   try {
     // ── Step 6: Call Cloud Run endpoint ────────────────────────────────────
+    final idToken = await _getIdToken();
+    if (idToken == null)
+      throw Exception('Authentication error. Please sign in again.');
+
     final response = await http
         .post(
           Uri.parse('https://generatedeck-x2xze3qnza-uc.a.run.app'),
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
           body: jsonEncode({
             'text': pastedText,
             'fileType': 'txt',
@@ -1965,6 +2080,14 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
           }),
         )
         .timeout(const Duration(seconds: 120));
+
+    if (response.statusCode == 429) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final resetAt = DateTime.tryParse(body['resetAt'] as String? ?? '');
+      throw Exception(
+        'Daily limit reached. Your limit resets ${RateLimitService.formatResetTime(resetAt)}.',
+      );
+    }
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -2151,9 +2274,14 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
 // AI IMPORT CARD  (public — used by HomeScreen and DeckHubScreen)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class AIImportCard extends StatelessWidget {
+class AIImportCard extends StatefulWidget {
   const AIImportCard({super.key});
 
+  @override
+  State<AIImportCard> createState() => _AIImportCardState();
+}
+
+class _AIImportCardState extends State<AIImportCard> {
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -2210,6 +2338,69 @@ class AIImportCard extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const Spacer(),
+              // ── Usage badge ────────────────────────────────────────────
+              StreamBuilder<int>(
+                stream: RateLimitService.remainingStream(),
+                builder: (context, snapshot) {
+                  // Don't render until we have data
+                  if (!snapshot.hasData) return const SizedBox.shrink();
+                  final remaining = snapshot.data!;
+                  final isEmpty = remaining <= 0;
+                  final isLow = remaining <= 2 && !isEmpty;
+
+                  final bgColor = isEmpty
+                      ? Colors.redAccent.withOpacity(0.25)
+                      : isLow
+                          ? const Color(0xFFFFB800).withOpacity(0.25)
+                          : Colors.white.withOpacity(0.15);
+
+                  final borderColor = isEmpty
+                      ? Colors.redAccent.withOpacity(0.5)
+                      : isLow
+                          ? const Color(0xFFFFB800).withOpacity(0.5)
+                          : Colors.white.withOpacity(0.25);
+
+                  final textColor = isEmpty
+                      ? Colors.redAccent.withOpacity(0.9)
+                      : isLow
+                          ? const Color(0xFFFFE082)
+                          : Colors.white;
+
+                  final label = isEmpty ? 'Limit reached' : '$remaining left';
+
+                  final icon = isEmpty
+                      ? Icons.block_rounded
+                      : isLow
+                          ? Icons.warning_amber_rounded
+                          : Icons.auto_awesome_rounded;
+
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: borderColor, width: 1),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 11, color: textColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          label,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: textColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
           ),
