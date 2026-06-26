@@ -1,3 +1,9 @@
 node_modules/
 *.local
 env.json
+
+# reset_discover.js — admin credentials and data backups, never commit these
+serviceAccountKey.json
+backups/
+
+resetFunc_codeCMD.txt

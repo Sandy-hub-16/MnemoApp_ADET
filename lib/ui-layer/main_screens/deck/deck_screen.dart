@@ -1259,6 +1259,7 @@ class _DeckCardState extends State<_DeckCard> {
   }
 
   void _onVisibilityChanged(String newVisibility) {
+    if (!mounted) return;
     setState(() => _currentVisibility = newVisibility);
   }
 
