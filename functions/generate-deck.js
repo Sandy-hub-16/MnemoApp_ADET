@@ -409,11 +409,14 @@ async function runVisionGeneration(images, count, questionType) {
 // MAIN HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-// RATE LIMIT CHECK
+// RATE LIMIT CHECK (HELPERS)
 // Uses a Firestore transaction so concurrent requests can't race past the limit.
 // Returns { allowed: bool, remaining: int, resetAt?: ISO string }
+// Separated into check and increment so the quota is only consumed on success.
 // ─────────────────────────────────────────────────────────────────────────────
-async function checkAndIncrementRateLimit(uid) {
+
+/** Read-only check — does NOT touch the counter. */
+async function checkRateLimit(uid) {
     const db = admin.firestore();
     const ref = db
         .collection("users")
@@ -421,7 +424,35 @@ async function checkAndIncrementRateLimit(uid) {
         .collection("rateLimits")
         .doc("aiGeneration");
 
-    return db.runTransaction(async (tx) => {
+    const snap = await ref.get();
+    const now = Date.now();
+
+    if (!snap.exists) return { allowed: true, remaining: DAILY_LIMIT };
+
+    const data = snap.data();
+    const windowStart = data.windowStart?.toMillis() ?? now;
+    const count = data.dailyCount ?? 0;
+
+    if (now - windowStart >= WINDOW_MS) return { allowed: true, remaining: DAILY_LIMIT };
+
+    if (count >= DAILY_LIMIT) {
+        const resetAt = new Date(windowStart + WINDOW_MS).toISOString();
+        return { allowed: false, remaining: 0, resetAt };
+    }
+
+    return { allowed: true, remaining: DAILY_LIMIT - count };
+}
+
+/** Atomically increments the counter. Called only after successful generation. */
+async function incrementRateLimit(uid) {
+    const db = admin.firestore();
+    const ref = db
+        .collection("users")
+        .doc(uid)
+        .collection("rateLimits")
+        .doc("aiGeneration");
+
+    await db.runTransaction(async (tx) => {
         const snap = await tx.get(ref);
         const now = Date.now();
 
@@ -430,31 +461,22 @@ async function checkAndIncrementRateLimit(uid) {
                 dailyCount: 1,
                 windowStart: admin.firestore.Timestamp.fromMillis(now),
             });
-            return { allowed: true, remaining: DAILY_LIMIT - 1 };
+            return;
         }
 
         const data = snap.data();
         const windowStart = data.windowStart?.toMillis() ?? now;
-        const count = data.dailyCount ?? 0;
 
-        // Window expired — reset and allow
+        // Window expired — reset instead of continuing the old count
         if (now - windowStart >= WINDOW_MS) {
             tx.set(ref, {
                 dailyCount: 1,
                 windowStart: admin.firestore.Timestamp.fromMillis(now),
             });
-            return { allowed: true, remaining: DAILY_LIMIT - 1 };
+            return;
         }
 
-        // Over limit — reject
-        if (count >= DAILY_LIMIT) {
-            const resetAt = new Date(windowStart + WINDOW_MS).toISOString();
-            return { allowed: false, remaining: 0, resetAt };
-        }
-
-        // Within limit — increment
         tx.update(ref, { dailyCount: admin.firestore.FieldValue.increment(1) });
-        return { allowed: true, remaining: DAILY_LIMIT - count - 1 };
     });
 }
 
@@ -476,8 +498,8 @@ exports.generateDeck = onRequest(
                 return res.status(401).json({ error: "Invalid or expired authentication token." });
             }
 
-            // ── Rate limit: atomic check + increment ──────────────────────────
-            const rateLimit = await checkAndIncrementRateLimit(uid);
+            // ──  Rate limit: check only — increment happens on success ───────
+            const rateLimit = await checkRateLimit(uid);
             if (!rateLimit.allowed) {
                 return res.status(429).json({
                     error: "Daily limit reached",
@@ -486,7 +508,7 @@ exports.generateDeck = onRequest(
                     dailyLimit: DAILY_LIMIT,
                 });
             }
-            
+
             const pageLimit = parseInt(req.body.pageLimit, 10) || 0;
             const parsedCount = parseInt(req.body.questionCount, 10);
             const count = isNaN(parsedCount) ? 20 : Math.min(30, Math.max(1, parsedCount));
@@ -562,6 +584,8 @@ exports.generateDeck = onRequest(
 
             const { result, provider } = generationResult;
             const cards = Array.isArray(result.cards) ? result.cards.slice(0, count) : [];
+            // ── Charge the quota only on confirmed success ────────────────────
+            await incrementRateLimit(uid);
             return res.json({ title: result.title, cards, provider });
 
         } catch (error) {
