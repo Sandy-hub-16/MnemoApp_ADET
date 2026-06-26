@@ -351,7 +351,7 @@ class _DeckDetailsHeader extends StatelessWidget {
                       size: 14, color: Colors.white),
                   const SizedBox(width: 6),
                   Text(
-                    'Created by @$clonedFromUsername',
+                    'Created by $clonedFromUsername',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       color: Colors.white,

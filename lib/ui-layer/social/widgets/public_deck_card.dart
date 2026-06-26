@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../data-layer/models/social/public_deck_summary.dart';
 import '../../landing_page/app_theme.dart';
 
@@ -118,12 +119,16 @@ class PublicDeckCard extends StatelessWidget {
             Row(
               children: [
                 // Avatar
-                _OwnerAvatar(photoUrl: deck.ownerPhotoUrl, size: 26),
+                _OwnerAvatar(
+                  ownerUid: deck.ownerUid,
+                  fallbackPhotoUrl: deck.ownerPhotoUrl,
+                  size: 26,
+                ),
                 const SizedBox(width: 8),
-                // Username
+                // Full name
                 Expanded(
                   child: Text(
-                    deck.ownerUsername,
+                    deck.ownerFullName,
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -172,46 +177,70 @@ class PublicDeckCard extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // OWNER AVATAR
 //
-// Circular avatar that shows [photoUrl] when available, or a person icon
-// placeholder otherwise. Shared by PublicDeckCard and FeedItemCard.
+// Circular avatar that shows the owner's CURRENT profile photo, fetched live
+// from users/{ownerUid} — unlike the title/owner name, the photo is meant to
+// stay in sync if the owner changes their picture after sharing the deck.
+// Falls back to [fallbackPhotoUrl] (the frozen snapshot stored on the public
+// deck doc) while the live read is in flight or if it fails, and falls back
+// to a person icon if no photo is available at all.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _OwnerAvatar extends StatelessWidget {
-  const _OwnerAvatar({required this.photoUrl, this.size = 32});
+  const _OwnerAvatar({
+    required this.ownerUid,
+    this.fallbackPhotoUrl,
+    this.size = 32,
+  });
 
-  final String? photoUrl;
+  final String ownerUid;
+  final String? fallbackPhotoUrl;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.primaryContainer,
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.2),
-          width: 1.5,
-        ),
-      ),
-      child: ClipOval(
-        child: photoUrl != null && photoUrl!.isNotEmpty
-            ? Image.network(
-                photoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.person_rounded,
-                  color: AppColors.primary,
-                  size: 16,
-                ),
-              )
-            : const Icon(
-                Icons.person_rounded,
-                color: AppColors.primary,
-                size: 16,
-              ),
-      ),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: ownerUid.isEmpty
+          ? null
+          : FirebaseFirestore.instance
+              .collection('users')
+              .doc(ownerUid)
+              .snapshots(),
+      builder: (context, snapshot) {
+        final livePhotoUrl = snapshot.data?.data()?['photoUrl'] as String?;
+        final photoUrl = (livePhotoUrl != null && livePhotoUrl.isNotEmpty)
+            ? livePhotoUrl
+            : fallbackPhotoUrl;
+
+        return Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primaryContainer,
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.2),
+              width: 1.5,
+            ),
+          ),
+          child: ClipOval(
+            child: photoUrl != null && photoUrl.isNotEmpty
+                ? Image.network(
+                    photoUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.person_rounded,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                  )
+                : const Icon(
+                    Icons.person_rounded,
+                    color: AppColors.primary,
+                    size: 16,
+                  ),
+          ),
+        );
+      },
     );
   }
 }

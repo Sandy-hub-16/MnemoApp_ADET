@@ -175,7 +175,7 @@ class QuizResultsScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Deck by @${args.clonedFromUsername}',
+                              'Deck by ${args.clonedFromUsername}',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 11,
                                 color: AppColors.outline,

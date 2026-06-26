@@ -124,6 +124,7 @@ abstract final class ShareService {
     final userData =
         (results[0] as DocumentSnapshot<Map<String, dynamic>>).data() ?? {};
     final ownerUsername = userData['username'] as String? ?? '';
+    final ownerFullName = userData['fullName'] as String? ?? '';
     final ownerPhotoUrl = userData['photoUrl'] as String?;
     final realCardCount = (results[1] as AggregateQuerySnapshot).count ?? 0;
 
@@ -145,6 +146,7 @@ abstract final class ShareService {
         'cardCount': realCardCount,
         'ownerUid': uid,
         'ownerUsername': ownerUsername,
+        'ownerFullName': ownerFullName,
         'ownerPhotoUrl': ownerPhotoUrl,
         'sharedAt': FieldValue.serverTimestamp(),
         'cloneCount': 0,
@@ -241,7 +243,7 @@ abstract final class ShareService {
       'isDraft': false,
       'visibility': 'private',
       'clonedFrom': sourceDeckId,
-      'clonedFromUsername': publicData['ownerUsername'] as String? ?? '',
+      'clonedFromUsername': publicData['ownerFullName'] as String? ?? '',
       'cardCount': cardsSnap.docs.length,
       'targetCardCount': cardsSnap.docs.length,
       'progress': 0.0,
@@ -296,8 +298,8 @@ abstract final class ShareService {
   }) async {
     try {
       final clonerSnap = await _db.collection('users').doc(clonerUid).get();
-      final clonerUsername =
-          clonerSnap.data()?['username'] as String? ?? 'Someone';
+      final clonerFullName =
+          clonerSnap.data()?['fullName'] as String? ?? 'Someone';
 
       await _db
           .collection('users')
@@ -306,7 +308,7 @@ abstract final class ShareService {
           .add({
         'type': 'deck_cloned',
         'fromUid': clonerUid,
-        'fromUsername': clonerUsername,
+        'fromUsername': clonerFullName,
         'deckId': deckId,
         'deckTitle': deckTitle,
         'createdAt': FieldValue.serverTimestamp(),
@@ -386,9 +388,9 @@ abstract final class ShareService {
     final latestDeck = publicDecksSnap.docs.first;
     final latestDeckData = latestDeck.data();
 
-    // Read the followee's username for the notification
+    // Read the followee's full name for the notification
     final followeeSnap = await _db.collection('users').doc(followeeUid).get();
-    final followeeUsername = followeeSnap.data()?['username'] as String? ?? '';
+    final followeeFullName = followeeSnap.data()?['fullName'] as String? ?? '';
 
     // Read all current followers of the followee
     final followersSnap = await _db
@@ -409,7 +411,7 @@ abstract final class ShareService {
       fanOutBatch.set(notifRef, {
         'type': 'new_shared_deck',
         'fromUid': followeeUid,
-        'fromUsername': followeeUsername,
+        'fromUsername': followeeFullName,
         'deckId': latestDeck.id,
         'deckTitle': latestDeckData['title'] as String? ?? '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -429,8 +431,8 @@ abstract final class ShareService {
   }) async {
     try {
       final followerSnap = await _db.collection('users').doc(followerUid).get();
-      final followerUsername =
-          followerSnap.data()?['username'] as String? ?? 'Someone';
+      final followerFullName =
+          followerSnap.data()?['fullName'] as String? ?? 'Someone';
 
       await _db
           .collection('users')
@@ -439,7 +441,7 @@ abstract final class ShareService {
           .add({
         'type': 'new_follower',
         'fromUid': followerUid,
-        'fromUsername': followerUsername,
+        'fromUsername': followerFullName,
         'deckId': '',
         'deckTitle': '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -498,7 +500,7 @@ abstract final class ShareService {
     required String ownerUid,
     required String deckId,
     required String deckTitle,
-    required String ownerUsername,
+    required String ownerFullName,
   }) async {
     final followersSnap = await _db
         .collection('users')
@@ -521,7 +523,7 @@ abstract final class ShareService {
       batch.set(notifRef, {
         'type': 'new_shared_deck',
         'fromUid': ownerUid,
-        'fromUsername': ownerUsername,
+        'fromUsername': ownerFullName,
         'deckId': deckId,
         'deckTitle': deckTitle,
         'createdAt': FieldValue.serverTimestamp(),

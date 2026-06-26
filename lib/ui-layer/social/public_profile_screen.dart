@@ -251,10 +251,10 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
     try {
       final db = FirebaseFirestore.instance;
 
-      // Fetch viewer's profile — used for both username and privacy check.
+      // Fetch viewer's profile — used for both full name and privacy check.
       final viewerSnap = await db.collection('users').doc(viewerUid).get();
       final viewerData = viewerSnap.data() ?? {};
-      final viewerUsername = viewerData['username'] as String? ?? 'Someone';
+      final viewerFullName = viewerData['fullName'] as String? ?? 'Someone';
 
       // ── Private viewer guard ──────────────────────────────────────────────
       // If the viewer has set their account to private they browse anonymously
@@ -287,7 +287,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
           .add({
         'type': 'profile_viewed',
         'fromUid': viewerUid,
-        'fromUsername': viewerUsername,
+        'fromUsername': viewerFullName,
         'deckId': '',
         'deckTitle': '',
         'createdAt': FieldValue.serverTimestamp(),

@@ -51,7 +51,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _deckSubscription;
 
   bool _draftsExpanded = false;
-  
+
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
   String _searchQuery = '';
@@ -1398,7 +1398,7 @@ class _DeckCardState extends State<_DeckCard> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Cloned from @${widget.clonedFromUsername}',
+                      'Cloned from ${widget.clonedFromUsername}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 10,
                         color: AppColors.outline,
