@@ -16,6 +16,15 @@ import 'delete_account_dialog.dart';
 const String kQuizTimerEnabledKey = 'quiz_timer_enabled';
 const String kShuffleCardsKey = 'shuffle_cards_enabled';
 
+// ── Reactive notifiers — updated instantly when a toggle changes.
+// Any screen can listen to these directly so that toggling a setting takes
+// effect without needing a full navigation round-trip or page refresh.
+final ValueNotifier<bool> quizTimerNotifier = ValueNotifier<bool>(false);
+final ValueNotifier<bool> shuffleCardsNotifier = ValueNotifier<bool>(true);
+// true = public account, false = private. ProfileScreen listens to this so
+// the privacy badge updates the moment the toggle is flipped in Settings.
+final ValueNotifier<bool> accountPrivacyNotifier = ValueNotifier<bool>(true);
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -27,24 +36,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _quizTimerEnabled = false;
   bool _shuffleCardsEnabled = true; // default on, matches original behaviour
 
+  // ── Account privacy (moved here from profile-personal-info_screen) ──────────
+  bool _isPublicAccount = true; // true = public, false = private
+  bool _privacyLoading = true;
+  bool _privacySaving = false;
+
   @override
   void initState() {
     super.initState();
     _loadPrefs();
+    _loadPrivacy();
   }
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    final timerOn = prefs.getBool(kQuizTimerEnabledKey) ?? false;
+    final shuffleOn = prefs.getBool(kShuffleCardsKey) ?? true;
+    quizTimerNotifier.value = timerOn;
+    shuffleCardsNotifier.value = shuffleOn;
     setState(() {
-      _quizTimerEnabled = prefs.getBool(kQuizTimerEnabledKey) ?? false;
-      _shuffleCardsEnabled = prefs.getBool(kShuffleCardsKey) ?? true;
+      _quizTimerEnabled = timerOn;
+      _shuffleCardsEnabled = shuffleOn;
     });
+  }
+
+  Future<void> _loadPrivacy() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _privacyLoading = false);
+      return;
+    }
+    try {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final isPrivate = doc.data()?['isPrivate'] as bool? ?? false;
+      if (mounted) {
+        accountPrivacyNotifier.value = !isPrivate; // notify listeners
+        setState(() {
+          _isPublicAccount = !isPrivate;
+          _privacyLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _privacyLoading = false);
+    }
   }
 
   Future<void> _setQuizTimer(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(kQuizTimerEnabledKey, value);
+    quizTimerNotifier.value = value; // notify listeners immediately
     if (!mounted) return;
     setState(() => _quizTimerEnabled = value);
   }
@@ -52,8 +94,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _setShuffleCards(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(kShuffleCardsKey, value);
+    shuffleCardsNotifier.value = value; // notify listeners immediately
     if (!mounted) return;
     setState(() => _shuffleCardsEnabled = value);
+  }
+
+  // ── Instant-apply public/private toggle ─────────────────────────────────────
+  Future<void> _setPublicAccount(bool isPublic) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    // Optimistically update UI and notify all listeners (e.g. ProfileScreen)
+    accountPrivacyNotifier.value = isPublic;
+    setState(() {
+      _isPublicAccount = isPublic;
+      _privacySaving = true;
+    });
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update(
+          {'isPrivate': !isPublic, 'updatedAt': FieldValue.serverTimestamp()});
+    } catch (_) {
+      // Revert both UI state and notifier on failure
+      accountPrivacyNotifier.value = !isPublic;
+      if (mounted) setState(() => _isPublicAccount = !isPublic);
+    } finally {
+      if (mounted) setState(() => _privacySaving = false);
+    }
   }
 
   void _showAmnesiaConfirmation(BuildContext context) {
@@ -185,6 +252,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: 'Set daily study notifications',
                       onTap: () => _showStudyRemindersDialog(context),
                       isLast: true,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+
+                // ── Account ───────────────────────────────────────────────────
+                _SectionHeader(
+                  icon: Icons.manage_accounts_rounded,
+                  label: 'ACCOUNT',
+                  color: AppColors.secondary,
+                ),
+                const SizedBox(height: 12),
+                _SettingsGroup(
+                  children: [
+                    _PrivacyTile(
+                      isPublic: _isPublicAccount,
+                      loading: _privacyLoading,
+                      saving: _privacySaving,
+                      onChanged: _setPublicAccount,
                     ),
                   ],
                 ),
@@ -661,6 +747,94 @@ class _DangerZoneRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRIVACY TILE — instant-apply public/private account toggle
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PrivacyTile extends StatelessWidget {
+  const _PrivacyTile({
+    required this.isPublic,
+    required this.loading,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  final bool isPublic;
+  final bool loading;
+  final bool saving;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isPublic
+                  ? AppColors.primaryContainer.withOpacity(0.5)
+                  : AppColors.errorContainer.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              isPublic ? Icons.public_rounded : Icons.lock_outline_rounded,
+              size: 20,
+              color: isPublic ? AppColors.primary : AppColors.error,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isPublic ? 'Public Account' : 'Private Account',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isPublic
+                      ? 'Anyone can view your profile'
+                      : 'Only you can see your profile',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (loading || saving)
+            const SizedBox(
+              width: 36,
+              height: 36,
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            Switch(
+              value: isPublic,
+              onChanged: onChanged,
+              activeColor: AppColors.primary,
+            ),
+        ],
       ),
     );
   }

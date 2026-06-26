@@ -53,6 +53,42 @@ class NotificationTile extends StatelessWidget {
     return '$y ${y == 1 ? 'year' : 'years'} ago';
   }
 
+  /// Picks the icon for this notification's type and read state.
+  IconData _iconFor(String type, bool isUnread) {
+    switch (type) {
+      case 'profile_viewed':
+        return isUnread ? Icons.person_rounded : Icons.person_outline_rounded;
+      case 'new_follower':
+        return isUnread ? Icons.person_add_rounded : Icons.person_add_outlined;
+      case 'deck_cloned':
+        return isUnread
+            ? Icons.content_copy_rounded
+            : Icons.content_copy_outlined;
+      default: // new_shared_deck and any future deck-related type
+        return isUnread
+            ? Icons.notifications_rounded
+            : Icons.notifications_none_rounded;
+    }
+  }
+
+  /// Picks the middle clause of the message line (after the bold username).
+  String _messageFor(String type) {
+    switch (type) {
+      case 'profile_viewed':
+        return ' viewed your profile';
+      case 'new_follower':
+        return ' started following you';
+      case 'deck_cloned':
+        return ' cloned your deck: ';
+      default: // new_shared_deck and any future deck-related type
+        return ' shared a new deck: ';
+    }
+  }
+
+  /// Whether this notification type has an associated deck title to show.
+  bool _hasDeckTitle(String type) =>
+      type != 'profile_viewed' && type != 'new_follower';
+
   @override
   Widget build(BuildContext context) {
     final isUnread = !notification.read;
@@ -89,13 +125,7 @@ class NotificationTile extends StatelessWidget {
                     : AppColors.surfaceContainerLow,
               ),
               child: Icon(
-                notification.type == 'profile_viewed'
-                    ? (isUnread
-                        ? Icons.person_rounded
-                        : Icons.person_outline_rounded)
-                    : (isUnread
-                        ? Icons.notifications_rounded
-                        : Icons.notifications_none_rounded),
+                _iconFor(notification.type, isUnread),
                 size: 20,
                 color: isUnread ? AppColors.primary : AppColors.outline,
               ),
@@ -124,11 +154,9 @@ class NotificationTile extends StatelessWidget {
                           ),
                         ),
                         TextSpan(
-                          text: notification.type == 'profile_viewed'
-                              ? ' viewed your profile'
-                              : ' shared a new deck: ',
+                          text: _messageFor(notification.type),
                         ),
-                        if (notification.type != 'profile_viewed')
+                        if (_hasDeckTitle(notification.type))
                           TextSpan(
                             text: notification.deckTitle,
                             style: GoogleFonts.plusJakartaSans(

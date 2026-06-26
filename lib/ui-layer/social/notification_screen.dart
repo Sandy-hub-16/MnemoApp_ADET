@@ -30,8 +30,10 @@ import 'widgets/notification_tile.dart';
 //
 // ACTIONS
 // ───────
-//   Tap tile       → mark read: true; check public_decks/{deckId} exists;
-//                    navigate to sharedDeckDetail or show SnackBar
+//   Tap tile       → mark read: true; profile_viewed/new_follower navigate to
+//                    the other user's profile; new_shared_deck/deck_cloned
+//                    check public_decks/{deckId} exists, then navigate to
+//                    sharedDeckDetail or show a SnackBar
 //   Mark all read  → batch-update all unread docs with read: true
 //
 // Requirements: 7.2, 7.3, 7.4, 7.5
@@ -127,10 +129,11 @@ class _NotificationBodyState extends State<_NotificationBody> {
     if (!mounted) return;
 
     // 2. Handle by notification type
-    if (notification.type == 'profile_viewed') {
-      // Navigate to the viewer's public profile only if we have a valid UID.
-      // suppressViewNotification: true prevents PublicProfileScreen from
-      // firing another profile_viewed notification back at the viewer, which
+    if (notification.type == 'profile_viewed' ||
+        notification.type == 'new_follower') {
+      // Navigate to the other user's public profile only if we have a valid
+      // UID. suppressViewNotification: true prevents PublicProfileScreen
+      // from firing another profile_viewed notification back at them, which
       // would create an infinite ping-pong loop between the two users.
       if (notification.fromUid.isNotEmpty) {
         Navigator.of(context).pushNamed(
@@ -144,7 +147,7 @@ class _NotificationBodyState extends State<_NotificationBody> {
       return;
     }
 
-    // 3. new_shared_deck — check whether the deck still exists
+    // 3. new_shared_deck / deck_cloned — check whether the deck still exists
     final deckDoc = await FirebaseFirestore.instance
         .collection('public_decks')
         .doc(notification.deckId)
@@ -335,7 +338,7 @@ class _NotificationBodyState extends State<_NotificationBody> {
             ),
             const SizedBox(height: 10),
             Text(
-              'When someone you follow shares a new deck, you\'ll see it here.',
+              'When someone follows you, clones your deck, or shares a new one, you\'ll see it here.',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w400,

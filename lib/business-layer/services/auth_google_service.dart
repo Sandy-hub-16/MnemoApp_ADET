@@ -93,6 +93,14 @@ class AuthService {
     try {
       GoogleAuthProvider googleProvider = GoogleAuthProvider();
 
+      // Force Google's account chooser to show every time instead of
+      // silently reusing whatever Google session is still active in the
+      // browser. Without this, signing out of Firebase only clears our
+      // own session — the browser's Google login cookie is untouched —
+      // so the next signInWithPopup() call auto-picks the previous
+      // account instead of letting the user choose/switch accounts.
+      googleProvider.setCustomParameters({'prompt': 'select_account'});
+
       UserCredential userCredential =
           await FirebaseAuth.instance.signInWithPopup(googleProvider);
 
@@ -130,9 +138,9 @@ class AuthService {
           'provider': 'google',
           'emailVerified': true, // Google emails are already verified
           'createdAt': FieldValue.serverTimestamp(),
-          'educationLevel': 'general', 
-          'reminderEnabled': false, 
-          'reminderHourUTC': 1, 
+          'educationLevel': 'general',
+          'reminderEnabled': false,
+          'reminderHourUTC': 1,
         });
       } else {
         // update existing user (if needed)

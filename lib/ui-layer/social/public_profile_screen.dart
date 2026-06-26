@@ -251,10 +251,16 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
     try {
       final db = FirebaseFirestore.instance;
 
-      // Fetch viewer's username for the notification message
+      // Fetch viewer's profile — used for both username and privacy check.
       final viewerSnap = await db.collection('users').doc(viewerUid).get();
-      final viewerUsername =
-          viewerSnap.data()?['username'] as String? ?? 'Someone';
+      final viewerData = viewerSnap.data() ?? {};
+      final viewerUsername = viewerData['username'] as String? ?? 'Someone';
+
+      // ── Private viewer guard ──────────────────────────────────────────────
+      // If the viewer has set their account to private they browse anonymously
+      // — no notification footprint left on the profiles they visit.
+      final viewerIsPrivate = viewerData['isPrivate'] as bool? ?? false;
+      if (viewerIsPrivate) return;
 
       // ── 24-hour dedup guard ───────────────────────────────────────────────
       // Skip if this viewer already sent a profile_viewed notification to

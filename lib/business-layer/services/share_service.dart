@@ -15,17 +15,21 @@ import 'package:flutter/foundation.dart';
 //   CLONE
 //   ─────
 //   cloneDeck()                  → copies a public deck + its cards into the
-//                                  current user's library
+//                                  current user's library; notifies the deck
+//                                  owner ("deck_cloned")
 //
 //   FOLLOW GRAPH
 //   ────────────
-//   follow()                     → writes both sides of the follow relationship
+//   follow()                     → writes both sides of the follow relationship;
+//                                  notifies the followee ("new_follower")
 //   unfollow()                   → deletes both sides in a batched write
 //
 //   NOTIFICATIONS
 //   ─────────────
 //   fanOutNewDeckNotification()  → writes one notification doc per follower
 //                                  when the owner publishes a new deck
+//   (deck_cloned / new_follower notifications are written inline by
+//   cloneDeck() / follow() via private helpers, fire-and-forget)
 //
 // All methods are static; the class is never instantiated.
 //
@@ -74,7 +78,8 @@ abstract final class ShareService {
     final uid = _uid;
 
     // ── Read current deck state ───────────────────────────────────────────
-    final deckRef = _db.collection('users').doc(uid).collection('decks').doc(deckId);
+    final deckRef =
+        _db.collection('users').doc(uid).collection('decks').doc(deckId);
     final deckSnap = await deckRef.get();
 
     if (!deckSnap.exists) {
@@ -90,11 +95,13 @@ abstract final class ShareService {
 
     // Prevent cloned decks from being made public
     if (visibility == 'public' && deckData['clonedFrom'] != null) {
-      throw StateError('Cannot share a cloned deck. Only original decks can be made public.');
+      throw StateError(
+          'Cannot share a cloned deck. Only original decks can be made public.');
     }
 
     final currentVisibility = deckData['visibility'] as String? ?? 'private';
-    debugPrint('[ShareService.setVisibility] currentVisibility=$currentVisibility, requested=$visibility');
+    debugPrint(
+        '[ShareService.setVisibility] currentVisibility=$currentVisibility, requested=$visibility');
     if (currentVisibility == visibility) {
       throw ArgumentError('Deck visibility is already "$visibility".');
     }
@@ -112,8 +119,10 @@ abstract final class ShareService {
           .get(),
     ]);
 
-    debugPrint('[ShareService.setVisibility] userSnap.exists=${(results[0] as DocumentSnapshot).exists}');
-    final userData = (results[0] as DocumentSnapshot<Map<String, dynamic>>).data() ?? {};
+    debugPrint(
+        '[ShareService.setVisibility] userSnap.exists=${(results[0] as DocumentSnapshot).exists}');
+    final userData =
+        (results[0] as DocumentSnapshot<Map<String, dynamic>>).data() ?? {};
     final ownerUsername = userData['username'] as String? ?? '';
     final ownerPhotoUrl = userData['photoUrl'] as String?;
     final realCardCount = (results[1] as AggregateQuerySnapshot).count ?? 0;
@@ -165,6 +174,7 @@ abstract final class ShareService {
   ///     with `isDraft: false`, `visibility: "private"`, `clonedFrom: sourceDeckId`.
   ///   • Copies all cards preserving `question`, `answer`, and `order`.
   ///   • Increments `cloneCount` on `public_decks/{sourceDeckId}`.
+  ///   • Notifies [sourceOwnerUid] with a "deck_cloned" notification.
   ///
   /// Returns the new deck's Firestore document ID.
   static Future<String> cloneDeck({
@@ -219,11 +229,8 @@ abstract final class ShareService {
     }
 
     // ── Build the new deck reference ──────────────────────────────────────
-    final newDeckRef = _db
-        .collection('users')
-        .doc(currentUid)
-        .collection('decks')
-        .doc();
+    final newDeckRef =
+        _db.collection('users').doc(currentUid).collection('decks').doc();
 
     final batch = _db.batch();
 
@@ -260,7 +267,54 @@ abstract final class ShareService {
     );
 
     await batch.commit();
+
+    // ── Notify the deck owner that their deck was cloned ───────────────────
+    // Fire-and-forget; a notification failure should never fail the clone
+    // itself, and we never notify someone about their own clone of their
+    // own deck (shouldn't happen since you can't clone your own public
+    // deck via the UI, but guarded here for safety).
+    if (sourceOwnerUid != currentUid) {
+      _notifyDeckCloned(
+        ownerUid: sourceOwnerUid,
+        clonerUid: currentUid,
+        deckId: sourceDeckId,
+        deckTitle: publicData['title'] as String? ?? '',
+      );
+    }
+
     return newDeckRef.id;
+  }
+
+  /// Writes a "deck_cloned" notification to [ownerUid] letting them know
+  /// [clonerUid] cloned their deck. Fire-and-forget; errors are silent so a
+  /// notification hiccup never surfaces as a clone failure to the user.
+  static Future<void> _notifyDeckCloned({
+    required String ownerUid,
+    required String clonerUid,
+    required String deckId,
+    required String deckTitle,
+  }) async {
+    try {
+      final clonerSnap = await _db.collection('users').doc(clonerUid).get();
+      final clonerUsername =
+          clonerSnap.data()?['username'] as String? ?? 'Someone';
+
+      await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('notifications')
+          .add({
+        'type': 'deck_cloned',
+        'fromUid': clonerUid,
+        'fromUsername': clonerUsername,
+        'deckId': deckId,
+        'deckTitle': deckTitle,
+        'createdAt': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
   }
 
   // ── FOLLOW ────────────────────────────────────────────────────────────────
@@ -273,9 +327,11 @@ abstract final class ShareService {
   ///   • `users/{followerUid}/following/{followeeUid}` with `createdAt`
   ///   • `users/{followeeUid}/followers/{followerUid}` with `createdAt`
   ///
-  /// Fan-out: if the followee has any public decks, writes one notification
-  /// doc per existing follower of the followee (skipped when no public decks
-  /// exist).
+  /// Notifies [followeeUid] directly with a "new_follower" notification.
+  ///
+  /// Fan-out: if the followee has any public decks, also writes one
+  /// "new_shared_deck" notification doc per existing follower of the
+  /// followee (skipped when no public decks exist).
   static Future<void> follow({
     required String followerUid,
     required String followeeUid,
@@ -308,6 +364,14 @@ abstract final class ShareService {
 
     await batch.commit();
 
+    // ── Notify the followee that they have a new follower ─────────────────
+    // Fire-and-forget; independent of the public-deck fan-out below, so it
+    // still fires even when the followee has no public decks to fan out.
+    _notifyNewFollower(
+      followeeUid: followeeUid,
+      followerUid: followerUid,
+    );
+
     // ── Fan-out: notify existing followers of the followee's latest deck ──
     // Check if the followee has any public decks to notify about.
     final publicDecksSnap = await _db
@@ -324,8 +388,7 @@ abstract final class ShareService {
 
     // Read the followee's username for the notification
     final followeeSnap = await _db.collection('users').doc(followeeUid).get();
-    final followeeUsername =
-        followeeSnap.data()?['username'] as String? ?? '';
+    final followeeUsername = followeeSnap.data()?['username'] as String? ?? '';
 
     // Read all current followers of the followee
     final followersSnap = await _db
@@ -340,11 +403,8 @@ abstract final class ShareService {
 
     for (final followerDoc in followersSnap.docs) {
       final fUid = followerDoc.id;
-      final notifRef = _db
-          .collection('users')
-          .doc(fUid)
-          .collection('notifications')
-          .doc();
+      final notifRef =
+          _db.collection('users').doc(fUid).collection('notifications').doc();
 
       fanOutBatch.set(notifRef, {
         'type': 'new_shared_deck',
@@ -358,6 +418,36 @@ abstract final class ShareService {
     }
 
     await fanOutBatch.commit();
+  }
+
+  /// Writes a "new_follower" notification to [followeeUid] letting them know
+  /// [followerUid] just followed them. Fire-and-forget; errors are silent so
+  /// a notification hiccup never surfaces as a follow failure to the user.
+  static Future<void> _notifyNewFollower({
+    required String followeeUid,
+    required String followerUid,
+  }) async {
+    try {
+      final followerSnap = await _db.collection('users').doc(followerUid).get();
+      final followerUsername =
+          followerSnap.data()?['username'] as String? ?? 'Someone';
+
+      await _db
+          .collection('users')
+          .doc(followeeUid)
+          .collection('notifications')
+          .add({
+        'type': 'new_follower',
+        'fromUid': followerUid,
+        'fromUsername': followerUsername,
+        'deckId': '',
+        'deckTitle': '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
   }
 
   // ── UNFOLLOW ──────────────────────────────────────────────────────────────
@@ -480,7 +570,8 @@ abstract final class ShareService {
           {'cardCount': realCount},
         );
         await batch.commit();
-        debugPrint('[ShareService.repairCardCounts] $deckId: $storedCount → $realCount');
+        debugPrint(
+            '[ShareService.repairCardCounts] $deckId: $storedCount → $realCount');
       }
     }
   }

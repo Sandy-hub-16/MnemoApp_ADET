@@ -144,11 +144,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
   String _fullName = '';
   String _email = '';
   String? _photoUrl;
-  String? _region; // null = not set yet (one-time)
-  String? _birthdate; // null = not set yet (one-time)
   String _yearLevel = '1st Year';
-  bool _isPrivate = false; // account privacy toggle
-  bool _origIsPrivate = false;
 
   // ── Lock timestamps ────────────────────────────────────────────────────────
   Timestamp? _createdAt;
@@ -175,29 +171,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
   bool get _courseIsLocked => _isWithin30Days(_courseLastChangedAt);
   bool get _yearLevelIsLocked => _isWithin30Days(_yearLevelLastChangedAt);
 
-  bool get _regionIsLocked => _region != null && _region!.isNotEmpty;
-  bool get _birthdateIsLocked => _birthdate != null && _birthdate!.isNotEmpty;
-
-  static const _regions = [
-    'NCR (National Capital Region)',
-    'CAR (Cordillera Administrative Region)',
-    'Region I — Ilocos Region',
-    'Region II — Cagayan Valley',
-    'Region III — Central Luzon',
-    'Region IV-A — CALABARZON',
-    'Region IV-B — MIMAROPA',
-    'Region V — Bicol Region',
-    'Region VI — Western Visayas',
-    'Region VII — Central Visayas',
-    'Region VIII — Eastern Visayas',
-    'Region IX — Zamboanga Peninsula',
-    'Region X — Northern Mindanao',
-    'Region XI — Davao Region',
-    'Region XII — SOCCSKSARGEN',
-    'Region XIII — Caraga',
-    'BARMM (Bangsamoro Autonomous Region)',
-  ];
-
   static const _yearOptions = [
     '1st Year',
     '2nd Year',
@@ -213,8 +186,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         _usernameCtrl.text != _origUsername ||
         _schoolCtrl.text != _origSchool ||
         _courseCtrl.text != _origCourse ||
-        _yearLevel != _origYearLevel ||
-        _isPrivate != _origIsPrivate;
+        _yearLevel != _origYearLevel;
     if (dirty != _isDirty) setState(() => _isDirty = dirty);
   }
 
@@ -277,12 +249,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
         final yl = data['yearLevel'] as String? ?? '1st Year';
         _yearLevel = _yearOptions.contains(yl) ? yl : '1st Year';
         _origYearLevel = _yearLevel;
-
-        _region = data['region'] as String?;
-        _birthdate = data['birthdate'] as String?;
-
-        _isPrivate = data['isPrivate'] as bool? ?? false;
-        _origIsPrivate = _isPrivate;
 
         _createdAt = data['createdAt'] as Timestamp?;
         _usernameLastChangedAt = data['usernameLastChangedAt'] as Timestamp?;
@@ -418,9 +384,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
     final origSchool = _origSchool;
     final origCourse = _origCourse;
     final origYearLevel = _origYearLevel;
-    final origIsPrivate = _origIsPrivate;
-    final origRegion = _region;
-    final origBirthdate = _birthdate;
 
     // ── OPTIMISTICALLY UPDATE LOCAL STATE ──────────────────────────────────
     setState(() {
@@ -429,7 +392,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
       _origSchool = _schoolCtrl.text.trim();
       _origCourse = _courseCtrl.text.trim();
       _origYearLevel = _yearLevel;
-      _origIsPrivate = _isPrivate;
       _isDirty = false;
       _saving = true;
     });
@@ -440,7 +402,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
     try {
       final updates = <String, dynamic>{
         'bio': _bioCtrl.text.trim(),
-        'isPrivate': _isPrivate,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
@@ -464,14 +425,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
         updates['yearLevel'] = _yearLevel;
         updates['educationLevel'] = _deriveEducationLevel(_yearLevel);
         updates['yearLevelLastChangedAt'] = FieldValue.serverTimestamp();
-      }
-
-      // Region & birthdate — one-time writes (only if not already set)
-      if (!_regionIsLocked && _region != null && _region!.isNotEmpty) {
-        updates['region'] = _region;
-      }
-      if (!_birthdateIsLocked && _birthdate != null && _birthdate!.isNotEmpty) {
-        updates['birthdate'] = _birthdate;
       }
 
       // ── SAVE TO FIRESTORE IN BACKGROUND ────────────────────────────────
@@ -498,15 +451,11 @@ class _SettingsBodyState extends State<_SettingsBody> {
           _schoolCtrl.text = origSchool;
           _courseCtrl.text = origCourse;
           _yearLevel = origYearLevel;
-          _isPrivate = origIsPrivate;
-          _region = origRegion;
-          _birthdate = origBirthdate;
           _origBio = origBio;
           _origUsername = origUsername;
           _origSchool = origSchool;
           _origCourse = origCourse;
           _origYearLevel = origYearLevel;
-          _origIsPrivate = origIsPrivate;
           _isDirty = false;
           _saving = false;
         });
@@ -514,51 +463,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
       }
     }
   }
-
-  // ── Date picker for birthdate ──────────────────────────────────────────────
-  Future<void> _pickBirthdate() async {
-    if (_birthdateIsLocked) return;
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime(now.year - 18),
-      firstDate: DateTime(1950),
-      lastDate: DateTime(now.year - 10),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: ColorScheme.light(
-            primary: AppColors.primary,
-            onPrimary: Colors.white,
-            surface: AppColors.surfaceContainerLowest,
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked == null) return;
-    final formatted =
-        '${_monthName(picked.month)} ${picked.day}, ${picked.year}';
-    setState(() {
-      _birthdate = formatted;
-      _isDirty = true;
-    });
-  }
-
-  String _monthName(int m) => const [
-        '',
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December'
-      ][m];
 
   /// Maps yearLevel to the educationLevel key the Cloud Function expects.
   String _deriveEducationLevel(String yearLevel) {
@@ -697,105 +601,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
                       _FieldLabel('About Me'),
                       const SizedBox(height: 8),
                       _BioTextArea(controller: _bioCtrl),
-                      const SizedBox(height: 14),
-
-                      // Birthdate — one-time
-                      _OneTimeDateTile(
-                        label: 'Date of Birth',
-                        value: _birthdate,
-                        isLocked: _birthdateIsLocked,
-                        placeholder: 'Add Date of Birth',
-                        icon: Icons.cake_outlined,
-                        onTap: _birthdateIsLocked ? null : _pickBirthdate,
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Region — one-time dropdown
-                      _OneTimeDropdownTile(
-                        label: 'Region',
-                        value: _region,
-                        isLocked: _regionIsLocked,
-                        placeholder: 'Add Region',
-                        icon: Icons.location_on_outlined,
-                        options: _regions,
-                        onChanged: _regionIsLocked
-                            ? null
-                            : (v) => setState(() {
-                                  _region = v;
-                                  _isDirty = true;
-                                }),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── Privacy Settings card ───────────────────────────────
-                  _SectionCard(
-                    label: 'Privacy',
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: _isPrivate
-                                  ? AppColors.errorContainer.withValues(alpha: 0.3)
-                                  : AppColors.primaryContainer.withValues(alpha: 0.3),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              _isPrivate
-                                  ? Icons.lock_outline_rounded
-                                  : Icons.public_rounded,
-                              size: 20,
-                              color: _isPrivate
-                                  ? AppColors.error
-                                  : AppColors.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _isPrivate
-                                      ? 'Private Account'
-                                      : 'Public Account',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _isPrivate
-                                      ? 'Only you can see your profile'
-                                      : 'Anyone can view your profile',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 12,
-                                    color: AppColors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Switch ON = public (isPrivate = false)
-                          // Switch OFF = private (isPrivate = true)
-                          Switch(
-                            value: !_isPrivate,
-                            onChanged: (isPublic) {
-                              setState(() => _isPrivate = !isPublic);
-                              _checkDirty();
-                            },
-                            activeThumbColor: AppColors.primary,
-                            inactiveThumbColor: AppColors.outline,
-                            inactiveTrackColor: AppColors.surfaceContainerLow,
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -1209,7 +1014,6 @@ class _SectionCard extends StatelessWidget {
                     letterSpacing: 1.2,
                   ),
                 ),
-
               ],
             ),
           ),
@@ -1294,7 +1098,8 @@ class _ReadOnlyTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(icon, color: AppColors.outline.withValues(alpha: 0.6), size: 19),
+              Icon(icon,
+                  color: AppColors.outline.withValues(alpha: 0.6), size: 19),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -1310,7 +1115,8 @@ class _ReadOnlyTile extends StatelessWidget {
                 Row(
                   children: [
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35),
+                        size: 14),
                   ],
                 ),
             ],
@@ -1323,7 +1129,8 @@ class _ReadOnlyTile extends StatelessWidget {
             child: Text(
               lockReason,
               style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
+                  fontSize: 11,
+                  color: AppColors.outline.withValues(alpha: 0.55)),
             ),
           ),
         ],
@@ -1374,7 +1181,8 @@ class _EditableOrLockedField extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(icon,
-                        color: AppColors.outline.withValues(alpha: 0.6), size: 19),
+                        color: AppColors.outline.withValues(alpha: 0.6),
+                        size: 19),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -1389,7 +1197,8 @@ class _EditableOrLockedField extends StatelessWidget {
                       ),
                     ),
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35),
+                        size: 14),
                   ],
                 ),
               )
@@ -1411,7 +1220,8 @@ class _EditableOrLockedField extends StatelessWidget {
                 Text(
                   lockSubtitle!,
                   style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
+                      fontSize: 11,
+                      color: AppColors.outline.withValues(alpha: 0.55)),
                 ),
               ],
             ),
@@ -1462,7 +1272,8 @@ class _LockedOrEditableTextField extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(icon,
-                        color: AppColors.outline.withValues(alpha: 0.6), size: 19),
+                        color: AppColors.outline.withValues(alpha: 0.6),
+                        size: 19),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -1475,7 +1286,8 @@ class _LockedOrEditableTextField extends StatelessWidget {
                       ),
                     ),
                     Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
+                        color: AppColors.outline.withValues(alpha: 0.35),
+                        size: 14),
                   ],
                 ),
               )
@@ -1496,7 +1308,8 @@ class _LockedOrEditableTextField extends StatelessWidget {
                 Text(
                   lockSubtitle!,
                   style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
+                      fontSize: 11,
+                      color: AppColors.outline.withValues(alpha: 0.55)),
                 ),
               ],
             ),
@@ -1557,8 +1370,8 @@ class _EditableField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(999),
-          borderSide:
-              BorderSide(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
+          borderSide: BorderSide(
+              color: AppColors.primary.withValues(alpha: 0.4), width: 2),
         ),
       ),
     );
@@ -1600,251 +1413,13 @@ class _BioTextArea extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide:
-              BorderSide(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
+          borderSide: BorderSide(
+              color: AppColors.primary.withValues(alpha: 0.4), width: 2),
         ),
       ),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ONE-TIME DATE TILE  (birthdate — set once, then locked)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _OneTimeDateTile extends StatelessWidget {
-  const _OneTimeDateTile({
-    required this.label,
-    required this.value,
-    required this.isLocked,
-    required this.placeholder,
-    required this.icon,
-    this.onTap,
-  });
-
-  final String label;
-  final String? value;
-  final bool isLocked;
-  final String placeholder;
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasValue = value != null && value!.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _FieldLabel(label),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: isLocked ? null : onTap,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: BoxDecoration(
-              color: isLocked
-                  ? AppColors.surfaceContainerLow.withValues(alpha: 0.7)
-                  : AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(999),
-              border: !isLocked && !hasValue
-                  ? Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.25),
-                      width: 1.5,
-                      strokeAlign: BorderSide.strokeAlignInside,
-                    )
-                  : null,
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  color: hasValue
-                      ? (isLocked
-                          ? AppColors.outline.withValues(alpha: 0.6)
-                          : AppColors.primary)
-                      : AppColors.primary.withValues(alpha: 0.7),
-                  size: 19,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    hasValue ? value! : placeholder,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: hasValue
-                          ? (isLocked ? AppColors.outline : AppColors.onSurface)
-                          : AppColors.primary.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ),
-                if (isLocked)
-                  Icon(Icons.lock_outline_rounded,
-                      color: AppColors.outline.withValues(alpha: 0.35), size: 14)
-                else
-                  Icon(Icons.edit_calendar_outlined,
-                      color: AppColors.primary.withValues(alpha: 0.6), size: 17),
-              ],
-            ),
-          ),
-        ),
-        if (isLocked) ...[
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 18),
-            child: Text(
-              'Cannot be changed after being set',
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ONE-TIME DROPDOWN TILE  (region — set once, then locked)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _OneTimeDropdownTile extends StatelessWidget {
-  const _OneTimeDropdownTile({
-    required this.label,
-    required this.value,
-    required this.isLocked,
-    required this.placeholder,
-    required this.icon,
-    required this.options,
-    this.onChanged,
-  });
-
-  final String label;
-  final String? value;
-  final bool isLocked;
-  final String placeholder;
-  final IconData icon;
-  final List<String> options;
-  final ValueChanged<String?>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasValue = value != null && value!.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _FieldLabel(label),
-        const SizedBox(height: 8),
-        isLocked
-            // Locked — static display
-            ? Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  children: [
-                    Icon(icon,
-                        color: AppColors.outline.withValues(alpha: 0.6), size: 19),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        value!,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.outline,
-                        ),
-                      ),
-                    ),
-                    Icon(Icons.lock_outline_rounded,
-                        color: AppColors.outline.withValues(alpha: 0.35), size: 14),
-                  ],
-                ),
-              )
-            // Editable — dropdown
-            : Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(999),
-                  border: !hasValue
-                      ? Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.25),
-                          width: 1.5,
-                          strokeAlign: BorderSide.strokeAlignInside,
-                        )
-                      : null,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: hasValue ? value : null,
-                    isExpanded: true,
-                    hint: Row(
-                      children: [
-                        Icon(icon,
-                            color: AppColors.primary.withValues(alpha: 0.7),
-                            size: 19),
-                        const SizedBox(width: 12),
-                        Text(
-                          placeholder,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                    icon: Icon(Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.outline, size: 22),
-                    dropdownColor: AppColors.surfaceContainerLowest,
-                    borderRadius: BorderRadius.circular(16),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.onSurface,
-                    ),
-                    selectedItemBuilder: (_) => options
-                        .map(
-                          (o) => Row(
-                            children: [
-                              Icon(icon, color: AppColors.primary, size: 19),
-                              const SizedBox(width: 12),
-                              Expanded(child: Text(o)),
-                            ],
-                          ),
-                        )
-                        .toList(),
-                    items: options
-                        .map((o) => DropdownMenuItem(value: o, child: Text(o)))
-                        .toList(),
-                    onChanged: onChanged,
-                  ),
-                ),
-              ),
-        if (isLocked) ...[
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 18),
-            child: Text(
-              'Cannot be changed after being set',
-              style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11, color: AppColors.outline.withValues(alpha: 0.55)),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // YEAR LEVEL DROPDOWN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1894,8 +1469,6 @@ class _YearDropdown extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCK BADGE  (shown on card header when section is locked)
 // ─────────────────────────────────────────────────────────────────────────────
-
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SAVE CONFIRM DIALOG
@@ -2127,7 +1700,8 @@ class _ImageSourceSheet extends StatelessWidget {
                     icon: Icons.photo_library_rounded,
                     label: 'Gallery',
                     color: AppColors.secondary,
-                    bgColor: AppColors.secondaryContainer.withValues(alpha: 0.25),
+                    bgColor:
+                        AppColors.secondaryContainer.withValues(alpha: 0.25),
                     onTap: () => Navigator.of(context).pop(ImageSource.gallery),
                   ),
                 ),
