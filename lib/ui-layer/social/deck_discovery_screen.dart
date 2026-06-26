@@ -5,8 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../landing_page/app_theme.dart';
 import '../../data-layer/models/social/public_deck_summary.dart';
+import '../../data-layer/models/social/public_profile.dart';
 import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/deck_search_engine.dart';
+import '../../main.dart';
 import 'widgets/public_deck_card.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,6 +18,12 @@ import 'widgets/public_deck_card.dart';
 //   • Client-side keyword search (title contains keyword, case-insensitive)
 //   • Tag filter (re-queries Firestore with where('tag', isEqualTo: tag))
 //   • Infinite scroll pagination (page size 20, startAfterDocument)
+//   • "@username" search — when the search text starts with "@", deck
+//     search is bypassed entirely and an exact-match user lookup runs
+//     instead (users/{uid} where username == <text after "@">, then
+//     filtered client-side to public accounts only). Tapping the result
+//     navigates to their public profile. Private accounts never surface
+//     here.
 //
 // Architecture: public StatelessWidget → private StatefulWidget _Body
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +63,15 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
   DocumentSnapshot? _lastDoc;
   List<PublicDeckSummary> _decks = [];
 
+  // ── "@username" search mode ──────────────────────────────────────────────
+  // Active whenever the search field's raw (untrimmed-of-@) text starts with
+  // "@". While active, the deck list is replaced entirely by a single user
+  // lookup result (or a "no account found" state) — see _isUserSearchMode.
+  bool _isUserSearchMode = false;
+  bool _isSearchingUser = false;
+  PublicProfile? _foundUser;
+  int _userSearchToken = 0; // guards against stale async results
+
   static const int _pageSize = 20;
 
   // Tags available as filter chips — matches the tags used in create_deck_screen
@@ -91,6 +108,39 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
 
   void _onSearchChanged() {
     _debounce?.cancel();
+
+    final rawText = _searchController.text.trim();
+
+    // "@username" mode — exact-match user lookup, bypassing deck search.
+    if (rawText.startsWith('@')) {
+      final candidate = rawText.substring(1);
+      setState(() {
+        _isUserSearchMode = true;
+        _foundUser = null;
+      });
+
+      if (candidate.isEmpty) {
+        // Just "@" typed so far — nothing to look up yet.
+        setState(() => _isSearchingUser = false);
+        return;
+      }
+
+      _debounce = Timer(
+        const Duration(milliseconds: 300),
+        () => _lookupUsername(candidate),
+      );
+      return;
+    }
+
+    // Normal deck-search mode.
+    if (_isUserSearchMode) {
+      setState(() {
+        _isUserSearchMode = false;
+        _isSearchingUser = false;
+        _foundUser = null;
+      });
+    }
+
     _debounce = Timer(const Duration(milliseconds: 150), () async {
       final keyword = _searchController.text.trim().toLowerCase();
       if (_engine.length < 500) {
@@ -123,6 +173,50 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
         }
       }
     });
+  }
+
+  /// Looks up a user by exact, case-sensitive username match.
+  ///
+  /// Only surfaces accounts that are public. `isPrivate` defaults to `false`
+  /// (public) whenever the field is absent — same convention used everywhere
+  /// else in the app (see PublicProfile.fromFirestore) — so the privacy
+  /// check happens client-side after the fetch rather than as a Firestore
+  /// `where('isPrivate', isEqualTo: false)` clause, which would incorrectly
+  /// exclude every account that has never touched the privacy toggle.
+  ///
+  /// Uses [_userSearchToken] to guard against a stale response from an
+  /// earlier keystroke overwriting a more recent one (e.g. typing fast).
+  Future<void> _lookupUsername(String username) async {
+    final token = ++_userSearchToken;
+    if (mounted) setState(() => _isSearchingUser = true);
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('username', isEqualTo: username)
+          .limit(1)
+          .get();
+
+      if (!mounted || token != _userSearchToken) return;
+
+      PublicProfile? result;
+      if (snap.docs.isNotEmpty) {
+        final profile = PublicProfile.fromFirestore(snap.docs.first);
+        // Private accounts never surface here — exact username or not.
+        if (!profile.isPrivate) result = profile;
+      }
+
+      setState(() {
+        _foundUser = result;
+        _isSearchingUser = false;
+      });
+    } catch (e) {
+      if (!mounted || token != _userSearchToken) return;
+      setState(() {
+        _foundUser = null;
+        _isSearchingUser = false;
+      });
+    }
   }
 
   // ── Data loading ──────────────────────────────────────────────────────────
@@ -235,6 +329,13 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     );
   }
 
+  void _openPublicProfile(PublicProfile user) {
+    Navigator.of(context).pushNamed(
+      AppRoutes.publicProfile,
+      arguments: PublicProfileArgs(targetUid: user.uid),
+    );
+  }
+
   // ── Error display ─────────────────────────────────────────────────────────
 
   void _showErrorSnackBar(String message) {
@@ -326,54 +427,62 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                         onChanged: (_) {},
                       ),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.filter_list_rounded,
-                            size: 16,
-                            color: AppColors.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'FILTER BY CATEGORY',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
+                      if (!_isUserSearchMode) ...[
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.filter_list_rounded,
+                              size: 16,
                               color: AppColors.onSurfaceVariant,
-                              letterSpacing: 1.2,
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      _TagFilterRow(
-                        tags: _tags,
-                        activeTag: _activeTag,
-                        onTagSelected: _onTagSelected,
-                      ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'FILTER BY CATEGORY',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.onSurfaceVariant,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        _TagFilterRow(
+                          tags: _tags,
+                          activeTag: _activeTag,
+                          onTagSelected: _onTagSelected,
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // ── Deck list ─────────────────────────────────────────────
+                // ── Deck list / user search result ─────────────────────────
                 Expanded(
-                  child: _isLoading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2.5,
-                          ),
+                  child: _isUserSearchMode
+                      ? _UserSearchResult(
+                          isSearching: _isSearchingUser,
+                          foundUser: _foundUser,
+                          onTapUser: _openPublicProfile,
                         )
-                      : _DeckList(
-                          decks: _filteredDecks,
-                          isLoadingMore: _isLoadingMore,
-                          hasMore: _hasMore,
-                          onLoadMore: _loadNextPage,
-                          onTap: _openDeckDetail,
-                          searchQuery: _searchQuery,
-                          activeTag: _activeTag,
-                        ),
+                      : _isLoading
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : _DeckList(
+                              decks: _filteredDecks,
+                              isLoadingMore: _isLoadingMore,
+                              hasMore: _hasMore,
+                              onLoadMore: _loadNextPage,
+                              onTap: _openDeckDetail,
+                              searchQuery: _searchQuery,
+                              activeTag: _activeTag,
+                            ),
                 ),
               ],
             ),
@@ -430,7 +539,7 @@ class _SearchField extends StatelessWidget {
             color: AppColors.onSurface,
           ),
           decoration: InputDecoration(
-            hintText: 'Search decks, topics, or creators...',
+            hintText: 'Search decks, topics, or @username...',
             hintStyle: GoogleFonts.plusJakartaSans(
               fontSize: 15,
               fontWeight: FontWeight.w500,
@@ -563,6 +672,242 @@ class _TagFilterRow extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER SEARCH RESULT
+//
+// Replaces the deck list entirely while "@username" search mode is active.
+// Three states: searching (spinner), found (a single _UserResultCard), or
+// not found (an empty state matching the deck-search empty state's visual
+// language). Private accounts are filtered out before reaching this widget,
+// so "not found" also covers the private-account case from the searcher's
+// point of view — there's nothing to distinguish, by design.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _UserSearchResult extends StatelessWidget {
+  const _UserSearchResult({
+    required this.isSearching,
+    required this.foundUser,
+    required this.onTapUser,
+  });
+
+  final bool isSearching;
+  final PublicProfile? foundUser;
+  final ValueChanged<PublicProfile> onTapUser;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isSearching) {
+      return const Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 2.5,
+        ),
+      );
+    }
+
+    final user = foundUser;
+    if (user == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLowest,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.outlineVariant.withValues(alpha: 0.3),
+                    width: 2,
+                  ),
+                ),
+                child: Icon(
+                  Icons.person_search_rounded,
+                  size: 56,
+                  color: AppColors.outline.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'No Account Found',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Make sure the username is spelled correctly. Private accounts won\'t show up here either.',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.onSurfaceVariant,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 140),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12, left: 4),
+            child: Text(
+              'ACCOUNT',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.onSurfaceVariant,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ),
+          _UserResultCard(user: user, onTap: () => onTapUser(user)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USER RESULT CARD
+//
+// A single found-account card shown for an exact "@username" match.
+// Mirrors PublicDeckCard's visual language (same surface, radius, shadow)
+// while staying visually distinct enough to read as "this is an account,
+// not a deck" — a larger ringed avatar, the "@handle" styled in primary,
+// and a chevron affordance instead of a card-count chip.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _UserResultCard extends StatelessWidget {
+  const _UserResultCard({required this.user, required this.onTap});
+
+  final PublicProfile user;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.15),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withValues(alpha: 0.05),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // ── Avatar ────────────────────────────────────────────────
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primaryContainer,
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.25),
+                    width: 2,
+                  ),
+                ),
+                child: ClipOval(
+                  child: user.photoUrl != null && user.photoUrl!.isNotEmpty
+                      ? Image.network(
+                          user.photoUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person_rounded,
+                            color: AppColors.primary,
+                            size: 26,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.person_rounded,
+                          color: AppColors.primary,
+                          size: 26,
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // ── Identity ──────────────────────────────────────────────
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '@${user.username}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                        letterSpacing: -0.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (user.fullName.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        user.fullName,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // ── Tap affordance ────────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLow,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: AppColors.outline,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
