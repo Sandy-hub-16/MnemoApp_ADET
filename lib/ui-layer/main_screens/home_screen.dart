@@ -72,38 +72,21 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
     }
   }
 
-  // ── Week helpers ────────────────────────────────────────────────────────────
-
-  /// Returns 00:00:00 of the Monday that started the current ISO week.
-  /// Properly handles month/year boundaries by using subtract().
-  DateTime _getWeekStart() {
-    final now = DateTime.now();
-    final daysToSubtract = now.weekday - 1; // 0 for Monday, 1 for Tue, etc.
-    final weekStartWithTime = now.subtract(Duration(days: daysToSubtract));
-    // Reset to 00:00:00 to get the exact week start
-    return DateTime(
-        weekStartWithTime.year, weekStartWithTime.month, weekStartWithTime.day);
-  }
-
   /// Opens a real-time Firestore stream on users/{uid}/recentSessions.
   ///
-  /// Filters to entries whose lastPlayedAt falls within the current week
-  /// (Monday 00:00 → Sunday 23:59).  Because it uses .snapshots() the
-  /// StreamBuilder below reacts immediately whenever _trackDeckStarted()
-  /// in QuizScreen writes a new document — even if the quiz screen is still
-  /// open on top of this one.  No route observer or manual refresh needed.
+  /// Shows the 5 most recently played decks, regardless of when they were
+  /// last played.  Because it uses .snapshots() the StreamBuilder below
+  /// reacts immediately whenever _trackDeckStarted() in QuizScreen writes a
+  /// new document — even if the quiz screen is still open on top of this
+  /// one.  No route observer or manual refresh needed.
   void _initSessionsStream() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-
-    final weekStart = _getWeekStart();
 
     _sessionsStream = FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('recentSessions')
-        .where('lastPlayedAt',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(weekStart))
         .orderBy('lastPlayedAt', descending: true)
         .limit(5)
         .snapshots()

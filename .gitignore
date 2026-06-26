@@ -51,5 +51,5 @@ app.*.map.json
 env.json
 
 # for running the app 
-flutter_run.txt
+.a_RUN_THIS_PO.txt
 

@@ -9,7 +9,11 @@ import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import 'deck_quiz_results_screen.dart';
 import '../settings/settings_screen.dart'
-    show kQuizTimerEnabledKey, kShuffleCardsKey;
+    show
+        kQuizTimerEnabledKey,
+        kShuffleCardsKey,
+        quizTimerNotifier,
+        shuffleCardsNotifier;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz
@@ -284,21 +288,61 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
     // Load after first frame so ModalRoute.of(context) is available
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // On a cold-start the global notifiers may not have been seeded yet
+      // (user opened a quiz directly without visiting Settings first).
+      // Read SharedPreferences once to initialise them, then subscribe so any
+      // future toggle in Settings is reflected live without restarting the quiz.
       final prefs = await SharedPreferences.getInstance();
-      if (mounted) {
-        _timerEnabled = prefs.getBool(kQuizTimerEnabledKey) ?? false;
+      final timerOn = prefs.getBool(kQuizTimerEnabledKey) ?? false;
+      final shuffleOn = prefs.getBool(kShuffleCardsKey) ?? true;
+      // Only overwrite if the notifier still holds the default value,
+      // so we don't clobber a value that SettingsScreen already loaded.
+      if (quizTimerNotifier.value == false && timerOn) {
+        quizTimerNotifier.value = timerOn;
       }
+      if (shuffleCardsNotifier.value == true && !shuffleOn) {
+        shuffleCardsNotifier.value = shuffleOn;
+      }
+      if (mounted) {
+        setState(() => _timerEnabled = quizTimerNotifier.value);
+      }
+      quizTimerNotifier.addListener(_onTimerSettingChanged);
       _loadCards();
     });
   }
 
   @override
   void dispose() {
+    quizTimerNotifier.removeListener(_onTimerSettingChanged);
     _countdownTimer?.cancel();
     _cardSlideCtrl.dispose();
     _completionCtrl.dispose();
     _answerCtrl.dispose();
     super.dispose();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TIMER SETTING LISTENER
+  // Called immediately whenever the Quiz Timer toggle changes in Settings,
+  // even while a quiz is in progress. No restart needed.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  void _onTimerSettingChanged() {
+    if (!mounted) return;
+    final enabled = quizTimerNotifier.value;
+    setState(() => _timerEnabled = enabled);
+
+    if (enabled) {
+      // Timer just turned ON — if the current card is unanswered and not behind
+      // the think-first gate, kick off the countdown right now.
+      final quizActive = _phase == _QuizPhase.quiz &&
+          !_cardSession.answered &&
+          !_cardSession.showThinkFirstGate;
+      if (quizActive) _startTimer();
+    } else {
+      // Timer just turned OFF — cancel any running countdown.
+      _stopTimer();
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -333,8 +377,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           rawTag == null || rawTag.trim().isEmpty ? 'Other' : rawTag.trim();
       _clonedFromUsername = deckData?['clonedFromUsername'] as String?;
 
-      final prefs = await SharedPreferences.getInstance();
-      final shuffleEnabled = prefs.getBool(kShuffleCardsKey) ?? true;
+      // Prefer the live notifier value (already in sync with Settings toggle);
+      // fall back to SharedPreferences only if the notifier hasn't been seeded
+      // yet (e.g. app cold-started directly into the quiz without visiting Settings).
+      final shuffleEnabled = shuffleCardsNotifier.value;
 
       // Fetch cards: ordered by creation time when shuffle is off,
       // unordered (Firestore default) when shuffle is on.
