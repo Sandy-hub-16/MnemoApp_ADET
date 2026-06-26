@@ -23,10 +23,22 @@ class NotificationTile extends StatelessWidget {
     super.key,
     required this.notification,
     required this.onTap,
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
   });
 
   final AppNotification notification;
   final VoidCallback onTap;
+
+  /// Fired on long-press — used by the parent screen to enter selection mode.
+  final VoidCallback? onLongPress;
+
+  /// When true, tapping the tile toggles [selected] instead of running the
+  /// normal navigation/mark-read behavior, and a checkbox is shown in place
+  /// of the leading icon.
+  final bool selectionMode;
+  final bool selected;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -95,14 +107,21 @@ class NotificationTile extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          // Unread tiles get a faint primary tint; read tiles are plain white
-          color: isUnread
-              ? AppColors.primaryContainer.withValues(alpha: 0.12)
-              : AppColors.surfaceContainerLowest,
+          // Selected tiles (in selection mode) get a stronger primary tint
+          // so it's obvious at a glance which ones are checked.
+          color: selectionMode && selected
+              ? AppColors.primaryContainer.withValues(alpha: 0.35)
+              : isUnread
+                  ? AppColors.primaryContainer.withValues(alpha: 0.12)
+                  : AppColors.surfaceContainerLowest,
           borderRadius: BorderRadius.circular(16),
+          border: selectionMode && selected
+              ? Border.all(color: AppColors.primary, width: 1.5)
+              : null,
           boxShadow: [
             BoxShadow(
               color: AppColors.onSurface.withValues(alpha: 0.04),
@@ -114,22 +133,41 @@ class NotificationTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Bell icon (read/unread indicator) ─────────────────────
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isUnread
-                    ? AppColors.primaryContainer
-                    : AppColors.surfaceContainerLow,
-              ),
-              child: Icon(
-                _iconFor(notification.type, isUnread),
-                size: 20,
-                color: isUnread ? AppColors.primary : AppColors.outline,
-              ),
-            ),
+            // ── Bell icon (read/unread) or selection checkbox ──────────
+            selectionMode
+                ? Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.surfaceContainerLow,
+                      border: selected
+                          ? null
+                          : Border.all(color: AppColors.outline, width: 1.5),
+                    ),
+                    child: selected
+                        ? const Icon(Icons.check_rounded,
+                            size: 20, color: Colors.white)
+                        : null,
+                  )
+                : Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isUnread
+                          ? AppColors.primaryContainer
+                          : AppColors.surfaceContainerLow,
+                    ),
+                    child: Icon(
+                      _iconFor(notification.type, isUnread),
+                      size: 20,
+                      color: isUnread ? AppColors.primary : AppColors.outline,
+                    ),
+                  ),
             const SizedBox(width: 12),
 
             // ── Text content ──────────────────────────────────────────
@@ -183,7 +221,7 @@ class NotificationTile extends StatelessWidget {
             ),
 
             // ── Unread dot ────────────────────────────────────────────
-            if (isUnread) ...[
+            if (isUnread && !selectionMode) ...[
               const SizedBox(width: 8),
               Container(
                 width: 8,

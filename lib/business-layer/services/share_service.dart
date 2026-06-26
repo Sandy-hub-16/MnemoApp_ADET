@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'notification_prefs_service.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARE SERVICE
 //
@@ -290,6 +292,9 @@ abstract final class ShareService {
   /// Writes a "deck_cloned" notification to [ownerUid] letting them know
   /// [clonerUid] cloned their deck. Fire-and-forget; errors are silent so a
   /// notification hiccup never surfaces as a clone failure to the user.
+  ///
+  /// Skipped entirely (no doc written) if [ownerUid] has turned off
+  /// "deck_cloned" notifications in Settings.
   static Future<void> _notifyDeckCloned({
     required String ownerUid,
     required String clonerUid,
@@ -297,6 +302,12 @@ abstract final class ShareService {
     required String deckTitle,
   }) async {
     try {
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: ownerUid,
+        type: NotificationType.deckCloned,
+      );
+      if (!enabled) return;
+
       final clonerSnap = await _db.collection('users').doc(clonerUid).get();
       final clonerFullName =
           clonerSnap.data()?['fullName'] as String? ?? 'Someone';
@@ -405,6 +416,16 @@ abstract final class ShareService {
 
     for (final followerDoc in followersSnap.docs) {
       final fUid = followerDoc.id;
+
+      // Independent per-recipient check: a follower who has turned off
+      // "new_shared_deck" notifications simply gets no doc written for them,
+      // while everyone else in the fan-out is unaffected.
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: fUid,
+        type: NotificationType.newSharedDeck,
+      );
+      if (!enabled) continue;
+
       final notifRef =
           _db.collection('users').doc(fUid).collection('notifications').doc();
 
@@ -425,11 +446,20 @@ abstract final class ShareService {
   /// Writes a "new_follower" notification to [followeeUid] letting them know
   /// [followerUid] just followed them. Fire-and-forget; errors are silent so
   /// a notification hiccup never surfaces as a follow failure to the user.
+  ///
+  /// Skipped entirely (no doc written) if [followeeUid] has turned off
+  /// "new_follower" notifications in Settings.
   static Future<void> _notifyNewFollower({
     required String followeeUid,
     required String followerUid,
   }) async {
     try {
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: followeeUid,
+        type: NotificationType.newFollower,
+      );
+      if (!enabled) return;
+
       final followerSnap = await _db.collection('users').doc(followerUid).get();
       final followerFullName =
           followerSnap.data()?['fullName'] as String? ?? 'Someone';
@@ -514,6 +544,16 @@ abstract final class ShareService {
 
     for (final followerDoc in followersSnap.docs) {
       final followerUid = followerDoc.id;
+
+      // Independent per-recipient check — same as the fan-out inside
+      // follow(); a follower who disabled this type gets no doc, others
+      // are unaffected.
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: followerUid,
+        type: NotificationType.newSharedDeck,
+      );
+      if (!enabled) continue;
+
       final notifRef = _db
           .collection('users')
           .doc(followerUid)

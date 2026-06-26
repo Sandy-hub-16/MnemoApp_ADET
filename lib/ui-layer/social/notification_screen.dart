@@ -65,6 +65,13 @@ class _NotificationBodyState extends State<_NotificationBody> {
   late final String _currentUid;
   bool _isMarkingAll = false;
 
+  // ── Selection-mode state ─────────────────────────────────────────────────
+  // Entered via long-press on any tile. While active, tapping a tile toggles
+  // its membership in _selectedIds instead of navigating/marking read.
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
+  bool _isDeleting = false;
+
   @override
   void initState() {
     super.initState();
@@ -120,7 +127,161 @@ class _NotificationBodyState extends State<_NotificationBody> {
     }
   }
 
-  // ── Tile tap handler ──────────────────────────────────────────────────────
+  // ── Selection mode ─────────────────────────────────────────────────────────
+
+  void _enterSelectionMode(String notificationId) {
+    setState(() {
+      _selectionMode = true;
+      _selectedIds.add(notificationId);
+    });
+  }
+
+  void _toggleSelected(String notificationId) {
+    setState(() {
+      if (_selectedIds.contains(notificationId)) {
+        _selectedIds.remove(notificationId);
+      } else {
+        _selectedIds.add(notificationId);
+      }
+      // Auto-exit selection mode once nothing is left checked, so the
+      // top-bar button reverts back to "Delete All" on its own.
+      if (_selectedIds.isEmpty) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  /// Deletes only the currently checked notifications. Same button placement
+  /// as "Delete All" — this is what runs instead, while selection mode is
+  /// active.
+  Future<void> _deleteSelected() async {
+    if (_currentUid.isEmpty || _selectedIds.isEmpty) return;
+
+    final confirmed = await _confirmDelete(
+      title: 'Delete selected notifications?',
+      message: 'This will permanently delete ${_selectedIds.length} '
+          '${_selectedIds.length == 1 ? 'notification' : 'notifications'}. '
+          'This can\'t be undone.',
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      for (final id in _selectedIds) {
+        batch.delete(
+          FirebaseFirestore.instance
+              .collection('users')
+              .doc(_currentUid)
+              .collection('notifications')
+              .doc(id),
+        );
+      }
+      await batch.commit();
+      if (mounted) _exitSelectionMode();
+    } catch (e) {
+      if (mounted)
+        _showErrorSnackBar('Failed to delete selected notifications.');
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  /// Deletes every notification the user currently has, regardless of read
+  /// state. Firestore batches cap at 500 writes, so large inboxes are
+  /// chunked into multiple batches.
+  Future<void> _deleteAll(List<AppNotification> notifications) async {
+    if (_currentUid.isEmpty || notifications.isEmpty) return;
+
+    final confirmed = await _confirmDelete(
+      title: 'Delete all notifications?',
+      message: 'This will permanently delete all ${notifications.length} '
+          'notifications. This can\'t be undone.',
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      const chunkSize = 450;
+      for (var i = 0; i < notifications.length; i += chunkSize) {
+        final chunk = notifications.skip(i).take(chunkSize);
+        final batch = FirebaseFirestore.instance.batch();
+        for (final n in chunk) {
+          batch.delete(
+            FirebaseFirestore.instance
+                .collection('users')
+                .doc(_currentUid)
+                .collection('notifications')
+                .doc(n.notificationId),
+          );
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('Failed to delete all notifications.');
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  /// Shared confirmation dialog for both delete actions.
+  Future<bool?> _confirmDelete({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surfaceContainerLowest,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          title,
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
+            color: AppColors.onSurface,
+          ),
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            color: AppColors.onSurfaceVariant,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w700,
+                color: AppColors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.plusJakartaSans(
+                fontWeight: FontWeight.w800,
+                color: AppColors.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _onTileTap(AppNotification notification) async {
     // 1. Mark as read (fire-and-forget; UI updates via stream)
@@ -225,6 +386,12 @@ class _NotificationBodyState extends State<_NotificationBody> {
                         isMarkingAll: false,
                         onMarkAllRead: null,
                         onBack: () => Navigator.of(context).pop(),
+                        selectionMode: false,
+                        selectedCount: 0,
+                        isDeleting: false,
+                        onDeleteAll: null,
+                        onDeleteSelected: null,
+                        onCancelSelection: null,
                       ),
                       Expanded(child: _buildEmptyState()),
                     ],
@@ -250,6 +417,12 @@ class _NotificationBodyState extends State<_NotificationBody> {
                               isMarkingAll: false,
                               onMarkAllRead: null,
                               onBack: () => Navigator.of(context).pop(),
+                              selectionMode: false,
+                              selectedCount: 0,
+                              isDeleting: false,
+                              onDeleteAll: null,
+                              onDeleteSelected: null,
+                              onCancelSelection: null,
                             ),
                             Expanded(child: _buildErrorState()),
                           ],
@@ -269,6 +442,15 @@ class _NotificationBodyState extends State<_NotificationBody> {
                             isMarkingAll: _isMarkingAll,
                             onMarkAllRead: () => _markAllRead(notifications),
                             onBack: () => Navigator.of(context).pop(),
+                            selectionMode: _selectionMode,
+                            selectedCount: _selectedIds.length,
+                            isDeleting: _isDeleting,
+                            onDeleteAll: notifications.isEmpty
+                                ? null
+                                : () => _deleteAll(notifications),
+                            onDeleteSelected:
+                                _selectedIds.isEmpty ? null : _deleteSelected,
+                            onCancelSelection: _exitSelectionMode,
                           ),
                           Expanded(
                             child: notifications.isEmpty
@@ -295,9 +477,17 @@ class _NotificationBodyState extends State<_NotificationBody> {
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final notification = notifications[index];
+        final id = notification.notificationId;
         return NotificationTile(
           notification: notification,
-          onTap: () => _onTileTap(notification),
+          selectionMode: _selectionMode,
+          selected: _selectedIds.contains(id),
+          onTap: _selectionMode
+              ? () => _toggleSelected(id)
+              : () => _onTileTap(notification),
+          onLongPress: _selectionMode
+              ? () => _toggleSelected(id)
+              : () => _enterSelectionMode(id),
         );
       },
     );
@@ -404,6 +594,12 @@ class _NotificationTopBar extends StatelessWidget {
     required this.isMarkingAll,
     required this.onMarkAllRead,
     required this.onBack,
+    required this.selectionMode,
+    required this.selectedCount,
+    required this.isDeleting,
+    required this.onDeleteAll,
+    required this.onDeleteSelected,
+    required this.onCancelSelection,
   });
 
   final List<AppNotification> notifications;
@@ -412,6 +608,20 @@ class _NotificationTopBar extends StatelessWidget {
   /// Null when there are no notifications (hides the action button).
   final VoidCallback? onMarkAllRead;
   final VoidCallback onBack;
+
+  /// Whether the list is currently in long-press selection mode.
+  final bool selectionMode;
+  final int selectedCount;
+  final bool isDeleting;
+
+  /// Null when there's nothing to delete (hides the button).
+  final VoidCallback? onDeleteAll;
+
+  /// Null while nothing is checked (selection mode only).
+  final VoidCallback? onDeleteSelected;
+
+  /// Exits selection mode without deleting anything.
+  final VoidCallback? onCancelSelection;
 
   int get _unreadCount => notifications.where((n) => !n.read).length;
 
@@ -427,58 +637,70 @@ class _NotificationTopBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             children: [
-              // ── Back button ───────────────────────────────────────────────
+              // ── Back button (or close, while selecting) ───────────────────
               IconButton(
-                onPressed: onBack,
-                icon: const Icon(
-                  Icons.arrow_back_rounded,
+                onPressed: selectionMode ? onCancelSelection : onBack,
+                icon: Icon(
+                  selectionMode
+                      ? Icons.close_rounded
+                      : Icons.arrow_back_rounded,
                   color: AppColors.onSurface,
                 ),
               ),
 
-              // ── Title + unread badge ──────────────────────────────────────
+              // ── Title + badge ───────────────────────────────────────────────
               Expanded(
-                child: Row(
-                  children: [
-                    Text(
-                      'Notifications',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.onSurface,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    if (hasUnread) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
+                child: selectionMode
+                    ? Text(
+                        '$selectedCount selected',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
                         ),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          '$_unreadCount',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.onPrimary,
+                      )
+                    : Row(
+                        children: [
+                          Text(
+                            'Notifications',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.onSurface,
+                              letterSpacing: -0.4,
+                            ),
                           ),
-                        ),
+                          if (hasUnread) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$_unreadCount',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.onPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
-                  ],
-                ),
               ),
 
-              // ── Mark all as read button ───────────────────────────────────
-              if (onMarkAllRead != null && hasUnread)
+              // ── Mark all as read — only shown outside selection mode ───────
+              if (!selectionMode && onMarkAllRead != null && hasUnread)
                 isMarkingAll
                     ? const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        padding: EdgeInsets.symmetric(horizontal: 12),
                         child: SizedBox(
                           width: 18,
                           height: 18,
@@ -493,7 +715,7 @@ class _NotificationTopBar extends StatelessWidget {
                         style: TextButton.styleFrom(
                           foregroundColor: AppColors.primary,
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
+                            horizontal: 10,
                             vertical: 8,
                           ),
                         ),
@@ -506,8 +728,81 @@ class _NotificationTopBar extends StatelessWidget {
                           ),
                         ),
                       ),
+
+              // ── Dynamic delete button ───────────────────────────────────────
+              // Same slot, same placement, always. What it says and what it
+              // does flips depending on whether selection mode is active:
+              //   • inactive → "Delete All"        → deletes every notification
+              //   • active   → "Delete (n)"         → deletes only the checked ones
+              _DynamicDeleteButton(
+                selectionMode: selectionMode,
+                selectedCount: selectedCount,
+                isDeleting: isDeleting,
+                onDeleteAll: onDeleteAll,
+                onDeleteSelected: onDeleteSelected,
+              ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC DELETE BUTTON
+//
+// Occupies one fixed slot in the top bar. Swaps label and behavior based on
+// whether selection mode is currently active — never moves, never duplicates.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DynamicDeleteButton extends StatelessWidget {
+  const _DynamicDeleteButton({
+    required this.selectionMode,
+    required this.selectedCount,
+    required this.isDeleting,
+    required this.onDeleteAll,
+    required this.onDeleteSelected,
+  });
+
+  final bool selectionMode;
+  final int selectedCount;
+  final bool isDeleting;
+  final VoidCallback? onDeleteAll;
+  final VoidCallback? onDeleteSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isDeleting) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12),
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            color: AppColors.error,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+
+    final label = selectionMode ? 'Delete ($selectedCount)' : 'Delete All';
+    final onPressed = selectionMode ? onDeleteSelected : onDeleteAll;
+
+    return TextButton.icon(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.error,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      ),
+      icon: const Icon(Icons.delete_outline_rounded, size: 17),
+      label: Text(
+        label,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.error,
         ),
       ),
     );

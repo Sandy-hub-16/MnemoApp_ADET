@@ -8,6 +8,7 @@ import '../../data-layer/models/social/public_deck_summary.dart';
 import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/profile_service.dart';
 import '../../business-layer/services/share_service.dart';
+import '../../business-layer/services/notification_prefs_service.dart';
 import 'widgets/public_deck_card.dart';
 import 'widgets/follow_button.dart';
 
@@ -249,6 +250,12 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
     required String ownerUsername,
   }) async {
     try {
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: ownerUid,
+        type: NotificationType.profileViewed,
+      );
+      if (!enabled) return;
+
       final db = FirebaseFirestore.instance;
 
       // Fetch viewer's profile — used for both full name and privacy check.
