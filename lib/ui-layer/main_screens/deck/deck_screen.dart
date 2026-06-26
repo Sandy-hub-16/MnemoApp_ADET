@@ -46,23 +46,12 @@ class _DeckHubScaffold extends StatefulWidget {
 }
 
 class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
-<<<<<<< HEAD
   String? _selectedTag; // null = "All Decks"; set to a tag string to filter
   List<String> _availableTags = []; // derived live from Firestore
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _deckSubscription;
-=======
-  int _selectedFilter = 0;
+
   bool _draftsExpanded = false;
-
-  static const _filters = [
-    'All Decks',
-    'Biology',
-    'Physics',
-    'Organic Chem',
-    'World History',
-  ];
->>>>>>> ff97d7672ed03169de17e1ebedce4e8b5626f234
-
+  
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
   String _searchQuery = '';
