@@ -224,7 +224,7 @@ abstract final class DeckService {
 
   /// Deletes a deck document, all of its cards, and all related progress data.
   /// Works for both drafts and completed decks.
-  /// 
+  ///
   /// Cleanup includes:
   /// - All cards in the deck
   /// - The deck document itself
@@ -236,7 +236,6 @@ abstract final class DeckService {
     final deckDoc = await _decksRef().doc(deckId).get();
     final deckData = deckDoc.data();
     final isClonedDeck = deckData?['clonedFrom'] != null;
-    final isPublic = deckData?['visibility'] == 'public';
 
     final batch = _db.batch();
 
@@ -249,16 +248,18 @@ abstract final class DeckService {
     // Delete the deck doc
     batch.delete(_decksRef().doc(deckId));
 
-     await batch.commit();
+    await batch.commit();
 
-    // Only delete from public_decks if this is an ORIGINAL deck (not cloned)
-    // Cloned decks don't have entries in public_decks, only originals do
-    if (!isClonedDeck && isPublic) {
-      try {
-        await _db.collection('public_decks').doc(deckId).delete();
-      } catch (_) {
-        // Silently ignore — the user's deck is already gone.
-        // A Cloud Function cleanup job can sweep orphaned public mirrors.
+    // Remove the public_decks mirror if one exists.
+    // We check existence first rather than relying on the local isPublic flag —
+    // this catches cases where the visibility field is missing or stale, and
+    // means the Discover catalogue is always consistent after a delete.
+    // Cloned decks never have a mirror so this is a no-op for them.
+    if (!isClonedDeck) {
+      final publicRef = _db.collection('public_decks').doc(deckId);
+      final publicSnap = await publicRef.get();
+      if (publicSnap.exists) {
+        await publicRef.delete();
       }
     }
 
@@ -270,7 +271,7 @@ abstract final class DeckService {
   static Future<void> _cleanupProgressData(String deckId) async {
     final userRef = _db.collection('users').doc(_uid);
 
-    // Delete all quiz attempts for this deck
+    // Delete all quiz attempts for this deck.
     final attempts = await userRef
         .collection('quizAttempts')
         .where('deckId', isEqualTo: deckId)
@@ -284,7 +285,7 @@ abstract final class DeckService {
       await batch.commit();
     }
 
-    // Delete the deck progress document
+    // Delete the deck progress document.
     final progressDocs = await userRef
         .collection('deckProgress')
         .where('deckId', isEqualTo: deckId)
@@ -296,6 +297,27 @@ abstract final class DeckService {
         batch.delete(doc.reference);
       }
       await batch.commit();
+    }
+
+    // Delete all card-level progress documents for this deck.
+    final cardProgressDocs = await userRef
+        .collection('cardProgress')
+        .where('deckId', isEqualTo: deckId)
+        .get();
+
+    if (cardProgressDocs.docs.isNotEmpty) {
+      final batch = _db.batch();
+      for (final doc in cardProgressDocs.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+
+    // Delete the recent session entry for this deck (keyed by deckId).
+    final recentSessionRef = userRef.collection('recentSessions').doc(deckId);
+    final recentSession = await recentSessionRef.get();
+    if (recentSession.exists) {
+      await recentSessionRef.delete();
     }
   }
 }
