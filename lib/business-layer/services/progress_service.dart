@@ -51,6 +51,7 @@ class QuizCardAnswer {
     required this.cardId,
     required this.question,
     required this.correct,
+    this.answer = '',
     this.repetitionsNeeded = 1,
     this.firstAttemptCorrect = true,
     this.skipped = false,
@@ -59,6 +60,8 @@ class QuizCardAnswer {
   final String cardId;
   final String question;
   final bool correct;
+  final String
+      answer; // correct answer text — stored so Needs Review can show it
   final int repetitionsNeeded;
   final bool firstAttemptCorrect;
   final bool skipped;
@@ -68,6 +71,7 @@ class QuizCardAnswer {
       'cardId': cardId,
       'question': question,
       'correct': correct,
+      'answer': answer,
       'repetitionsNeeded': repetitionsNeeded,
       'firstAttemptCorrect': firstAttemptCorrect,
       'skipped': skipped,
@@ -177,12 +181,20 @@ class WeakSpotSummary {
     required this.category,
     required this.deckTitle,
     required this.missCount,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
   final String category;
   final String deckTitle;
   final int missCount;
+
+  /// Firestore deck ID — used to navigate to the full deck from the review sheet.
+  final String deckId;
+
+  /// The correct answer text, captured from the quiz attempt's answers array.
+  final String? answer;
 }
 
 class ForgottenCardSummary {
@@ -192,6 +204,8 @@ class ForgottenCardSummary {
     required this.deckTitle,
     required this.failureCount,
     required this.lastFailedAt,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
@@ -199,6 +213,12 @@ class ForgottenCardSummary {
   final String deckTitle;
   final int failureCount;
   final DateTime? lastFailedAt;
+
+  /// Firestore deck ID — used to navigate to the full deck from the review sheet.
+  final String deckId;
+
+  /// The correct answer text, sourced from the best-session answer.
+  final String? answer;
 }
 
 class ProgressDashboard {
@@ -251,7 +271,7 @@ abstract final class ProgressService {
 
   static Future<void> saveQuizAttempt(QuizAttemptInput input) async {
     final uid = _uid;
-    
+
     print('\n📦 [ProgressService] saveQuizAttempt called');
     print('   uid: $uid');
     print('   input.deckId: ${input.deckId}');
@@ -259,7 +279,7 @@ abstract final class ProgressService {
     print('   input.category: ${input.category}');
     print('   input.totalCount: ${input.totalCount}');
     print('   input.isComplete: ${input.isComplete}');
-    
+
     if (uid == null || input.deckId.trim().isEmpty || input.totalCount <= 0) {
       print('❌ [ProgressService] Validation failed - early return');
       return;
@@ -275,7 +295,7 @@ abstract final class ProgressService {
     final score = correctCount / totalCount;
     final now = DateTime.now();
     final dayKey = _formatDayKey(now);
-    
+
     print('   Processed values:');
     print('     ownerUid: $ownerUid');
     print('     deckId: $deckId');
@@ -298,7 +318,7 @@ abstract final class ProgressService {
         'deckTitle': deckTitle,
       };
     }).toList();
-    
+
     print('   missedCards count: ${missedCards.length}');
     print('   Firestore paths:');
     print('     attemptRef: users/$uid/quizAttempts/${attemptRef.id}');
@@ -310,19 +330,22 @@ abstract final class ProgressService {
       await _db.runTransaction((transaction) async {
         final progressSnap = await transaction.get(progressRef);
         final existing = progressSnap.data();
-        
+
         // Get previous best score
         final previousBestScore = _readDouble(existing?['bestScore']);
         final previousAttempts = _readInt(existing?['attemptCount']);
         final nextAttempts = previousAttempts + 1;
-        
+
         // Determine if this is the new best score
         final isNewBest = score > previousBestScore;
         final bestScore = isNewBest ? score : previousBestScore;
-        final bestCorrectCount = isNewBest ? correctCount : _readInt(existing?['bestCorrectCount']);
-        final bestTotalCount = isNewBest ? totalCount : _readInt(existing?['bestTotalCount']);
-        final mastery = bestTotalCount == 0 ? 0.0 : bestCorrectCount / bestTotalCount;
-        
+        final bestCorrectCount =
+            isNewBest ? correctCount : _readInt(existing?['bestCorrectCount']);
+        final bestTotalCount =
+            isNewBest ? totalCount : _readInt(existing?['bestTotalCount']);
+        final mastery =
+            bestTotalCount == 0 ? 0.0 : bestCorrectCount / bestTotalCount;
+
         print('   Transaction data:');
         print('     previousBestScore: $previousBestScore');
         print('     currentScore: $score');
@@ -350,16 +373,20 @@ abstract final class ProgressService {
           'createdAt': FieldValue.serverTimestamp(),
         });
         print('   ✅ Set quizAttempts document');
-        
+
         // Track pending write if offline
         ConnectivityService().incrementPendingWrites();
 
         // Calculate enhanced statistics from answers
         final answers = input.answers;
-        final firstTryCorrect = answers.where((a) => a.firstAttemptCorrect).length;
-        final firstTryAccuracy = answers.isEmpty ? 0.0 : firstTryCorrect / answers.length;
-        final totalRepetitions = answers.fold<int>(0, (sum, a) => sum + a.repetitionsNeeded);
-        final averageRepetitions = answers.isEmpty ? 0.0 : totalRepetitions / answers.length;
+        final firstTryCorrect =
+            answers.where((a) => a.firstAttemptCorrect).length;
+        final firstTryAccuracy =
+            answers.isEmpty ? 0.0 : firstTryCorrect / answers.length;
+        final totalRepetitions =
+            answers.fold<int>(0, (sum, a) => sum + a.repetitionsNeeded);
+        final averageRepetitions =
+            answers.isEmpty ? 0.0 : totalRepetitions / answers.length;
         final totalSkipped = answers.where((a) => a.skipped).length;
 
         // Only update progress if session is complete
@@ -371,17 +398,21 @@ abstract final class ProgressService {
             recentScores.addAll(existingScores.map((e) => _readDouble(e)));
           }
           recentScores.insert(0, score);
-          if (recentScores.length > 5) recentScores.removeRange(5, recentScores.length);
+          if (recentScores.length > 5)
+            recentScores.removeRange(5, recentScores.length);
 
           // Calculate cumulative totals (for overall accuracy)
-          final cumulativeCorrect = _readInt(existing?['cumulativeCorrect']) + correctCount;
-          final cumulativeTotal = _readInt(existing?['cumulativeTotal']) + totalCount;
+          final cumulativeCorrect =
+              _readInt(existing?['cumulativeCorrect']) + correctCount;
+          final cumulativeTotal =
+              _readInt(existing?['cumulativeTotal']) + totalCount;
 
           // Update deck progress with both best scores and cumulative totals
           transaction.set(
             progressRef,
             {
-              if (!progressSnap.exists) 'createdAt': FieldValue.serverTimestamp(),
+              if (!progressSnap.exists)
+                'createdAt': FieldValue.serverTimestamp(),
               'deckId': deckId,
               'ownerUid': ownerUid,
               'deckTitle': deckTitle,
@@ -450,10 +481,11 @@ abstract final class ProgressService {
 
     final startOfWeek = _getStartOfWeek();
     final userRef = _db.collection('users').doc(uid);
-    
+
     final attemptsSnap = await userRef
         .collection('quizAttempts')
-        .where('clientCreatedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfWeek))
+        .where('clientCreatedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfWeek))
         .orderBy('clientCreatedAt', descending: true)
         .get();
 
@@ -466,10 +498,14 @@ abstract final class ProgressService {
       return bDate.compareTo(aDate);
     });
 
-    final correctAnswers = deckSummaries.fold<int>(0, (total, item) => total + item.correctTotal);
-    final reviewedAnswers = deckSummaries.fold<int>(0, (total, item) => total + item.answeredTotal);
-    final totalAttempts = deckSummaries.fold<int>(0, (total, item) => total + item.attemptCount);
-    final overallMastery = reviewedAnswers == 0 ? 0.0 : correctAnswers / reviewedAnswers;
+    final correctAnswers =
+        deckSummaries.fold<int>(0, (total, item) => total + item.correctTotal);
+    final reviewedAnswers =
+        deckSummaries.fold<int>(0, (total, item) => total + item.answeredTotal);
+    final totalAttempts =
+        deckSummaries.fold<int>(0, (total, item) => total + item.attemptCount);
+    final overallMastery =
+        reviewedAnswers == 0 ? 0.0 : correctAnswers / reviewedAnswers;
 
     final dayKeys = attemptsSnap.docs
         .map((doc) => _dayKeyFromAttempt(doc.data()))
@@ -503,13 +539,15 @@ abstract final class ProgressService {
           .orderBy('createdAt', descending: true)
           .limit(attemptLimit)
           .get(),
-      userRef.collection('decks').get(), // Load deck documents for mastery scores
+      userRef
+          .collection('decks')
+          .get(), // Load deck documents for mastery scores
     ]);
 
     final deckProgressSnap = results[0];
     final attemptsSnap = results[1];
     final decksSnap = results[2];
-    
+
     // Create map of deck mastery scores
     final deckMasteryScores = <String, Map<String, dynamic>>{};
     for (final doc in decksSnap.docs) {
@@ -527,7 +565,8 @@ abstract final class ProgressService {
         .toList();
 
     if (deckSummaries.isEmpty && attemptsSnap.docs.isNotEmpty) {
-      deckSummaries = _deckSummariesFromAttempts(attemptsSnap.docs, deckMasteryScores);
+      deckSummaries =
+          _deckSummariesFromAttempts(attemptsSnap.docs, deckMasteryScores);
     }
 
     deckSummaries.sort((a, b) {
@@ -575,7 +614,7 @@ abstract final class ProgressService {
     final mastery = bestTotalCount == 0
         ? _readDouble(data['mastery'])
         : bestCorrectCount / bestTotalCount;
-    
+
     final deckId = data['deckId'] as String? ?? '';
     final masteryData = deckMasteryScores[deckId];
 
@@ -601,9 +640,14 @@ abstract final class ProgressService {
       firstTryAccuracy: _readDouble(data['firstTryAccuracy']),
       averageRepetitions: _readDouble(data['averageRepetitions']),
       totalSkipped: _readInt(data['totalSkipped']),
-      masteryScore: masteryData != null ? _readInt(masteryData['masteryScore']) : null,
-      highestMasteryScore: masteryData != null ? _readInt(masteryData['highestMasteryScore']) : null,
-      lastMasteryTest: masteryData != null ? masteryData['lastMasteryTest'] as DateTime? : null,
+      masteryScore:
+          masteryData != null ? _readInt(masteryData['masteryScore']) : null,
+      highestMasteryScore: masteryData != null
+          ? _readInt(masteryData['highestMasteryScore'])
+          : null,
+      lastMasteryTest: masteryData != null
+          ? masteryData['lastMasteryTest'] as DateTime?
+          : null,
       recentScores: recentScores,
     );
   }
@@ -644,7 +688,9 @@ abstract final class ProgressService {
       }
     }
 
-    return buckets.values.map((bucket) => bucket.toSummary(deckMasteryScores)).toList();
+    return buckets.values
+        .map((bucket) => bucket.toSummary(deckMasteryScores))
+        .toList();
   }
 
   static List<CategoryProgressSummary> _categorySummaries(
@@ -680,6 +726,18 @@ abstract final class ProgressService {
       final missedCards = data['missedCards'];
       if (missedCards is! List) continue;
 
+      // Build a cardId → answer text lookup from this attempt's full answers list
+      final answerLookup = <String, String>{};
+      final answers = data['answers'];
+      if (answers is List) {
+        for (final a in answers) {
+          if (a is! Map) continue;
+          final id = a['cardId']?.toString() ?? '';
+          final ans = a['answer']?.toString() ?? '';
+          if (id.isNotEmpty && ans.isNotEmpty) answerLookup[id] = ans;
+        }
+      }
+
       for (final item in missedCards) {
         if (item is! Map) continue;
         final question = _cleanLabel(item['question']?.toString(), 'Untitled');
@@ -692,6 +750,8 @@ abstract final class ProgressService {
             category: _cleanLabel(item['category']?.toString(), 'Other'),
             deckTitle:
                 _cleanLabel(item['deckTitle']?.toString(), 'Untitled Deck'),
+            deckId: deckId,
+            answer: answerLookup[cardId],
           ),
         );
         bucket.missCount += 1;
@@ -708,30 +768,30 @@ abstract final class ProgressService {
   ) {
     // Group attempts by deck
     final deckAttempts = <String, List<Map<String, dynamic>>>{};
-    
+
     for (final doc in docs) {
       final data = doc.data();
       final deckId = data['deckId'] as String? ?? '';
       final ownerUid = data['ownerUid'] as String? ?? '';
       if (deckId.isEmpty) continue;
-      
+
       final key = '${ownerUid}__$deckId';
       deckAttempts.putIfAbsent(key, () => []).add(data);
     }
-    
+
     final forgottenBuckets = <String, _ForgottenCardBucket>{};
-    
+
     // Process each deck's attempts
     for (final attempts in deckAttempts.values) {
       if (attempts.isEmpty) continue;
-      
+
       // Sort by session number (newest first)
       attempts.sort((a, b) {
         final aSession = _readInt(a['sessionNumber']);
         final bSession = _readInt(b['sessionNumber']);
         return bSession.compareTo(aSession);
       });
-      
+
       // Find the best session
       Map<String, dynamic>? bestSession;
       for (final attempt in attempts) {
@@ -740,13 +800,13 @@ abstract final class ProgressService {
           break;
         }
       }
-      
+
       if (bestSession == null) continue;
-      
+
       // Get cards that were correct in best session
       final bestAnswers = bestSession['answers'];
       if (bestAnswers is! List) continue;
-      
+
       final correctInBest = <String, Map<String, dynamic>>{};
       for (final answer in bestAnswers) {
         if (answer is! Map) continue;
@@ -757,29 +817,29 @@ abstract final class ProgressService {
           }
         }
       }
-      
+
       // Track failures in subsequent sessions
       final cardFailures = <String, int>{};
       DateTime? lastFailedAt;
-      
+
       for (final attempt in attempts) {
         // Skip the best session itself
         if (attempt == bestSession) continue;
-        
+
         final answers = attempt['answers'];
         if (answers is! List) continue;
-        
+
         for (final answer in answers) {
           if (answer is! Map) continue;
           final cardId = answer['cardId']?.toString() ?? '';
-          
+
           // Check if this card was correct in best session but wrong now
           if (correctInBest.containsKey(cardId) && answer['correct'] == false) {
             cardFailures[cardId] = (cardFailures[cardId] ?? 0) + 1;
-            
+
             // Track most recent failure
-            final attemptDate = _readDate(attempt['createdAt']) ?? 
-                               _readDate(attempt['clientCreatedAt']);
+            final attemptDate = _readDate(attempt['createdAt']) ??
+                _readDate(attempt['clientCreatedAt']);
             if (attemptDate != null) {
               if (lastFailedAt == null || attemptDate.isAfter(lastFailedAt)) {
                 lastFailedAt = attemptDate;
@@ -788,29 +848,34 @@ abstract final class ProgressService {
           }
         }
       }
-      
+
       // Add cards with 2+ failures to forgotten list
       for (final entry in cardFailures.entries) {
         if (entry.value >= 2) {
           final cardId = entry.key;
           final originalAnswer = correctInBest[cardId];
           if (originalAnswer == null) continue;
-          
+
           final deckId = bestSession['deckId'] as String? ?? '';
           final key = '${deckId}__$cardId';
-          
+
           forgottenBuckets[key] = _ForgottenCardBucket(
-            question: _cleanLabel(originalAnswer['question']?.toString(), 'Untitled'),
+            question:
+                _cleanLabel(originalAnswer['question']?.toString(), 'Untitled'),
             category: _cleanLabel(bestSession['category']?.toString(), 'Other'),
-            deckTitle: _cleanLabel(bestSession['deckTitle']?.toString(), 'Untitled Deck'),
+            deckTitle: _cleanLabel(
+                bestSession['deckTitle']?.toString(), 'Untitled Deck'),
             failureCount: entry.value,
             lastFailedAt: lastFailedAt,
+            deckId: deckId,
+            answer: originalAnswer['answer']?.toString(),
           );
         }
       }
     }
-    
-    final forgotten = forgottenBuckets.values.map((b) => b.toSummary()).toList();
+
+    final forgotten =
+        forgottenBuckets.values.map((b) => b.toSummary()).toList();
     forgotten.sort((a, b) => b.failureCount.compareTo(a.failureCount));
     return forgotten.take(5).toList();
   }
@@ -896,56 +961,68 @@ abstract final class ProgressService {
   }
 
   /// Resets all progress data for the current user.
-  /// Deletes all quiz attempts, deck progress, and card progress documents.
+  /// Deletes all quiz attempts, deck progress, and card progress documents,
+  /// then zeroes out the progress fields on each deck.
   /// This action is irreversible.
   static Future<void> resetAllProgress() async {
     final uid = _uid;
     if (uid == null) throw StateError('User is not signed in.');
 
+    print('\n[ProgressService] resetAllProgress started for uid=\$uid');
+
     final userRef = _db.collection('users').doc(uid);
 
-    // Delete all quiz attempts
+    // Delete all quiz attempts (chunked — Firestore batch max is 500)
     final attempts = await userRef.collection('quizAttempts').get();
-    if (attempts.docs.isNotEmpty) {
-      final batch = _db.batch();
-      for (final doc in attempts.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
-    }
+    print('   quizAttempts to delete: \${attempts.docs.length}');
+    await _deleteDocs(attempts.docs);
 
     // Delete all deck progress
     final progress = await userRef.collection('deckProgress').get();
-    if (progress.docs.isNotEmpty) {
-      final batch = _db.batch();
-      for (final doc in progress.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
-    }
+    print('   deckProgress to delete: \${progress.docs.length}');
+    await _deleteDocs(progress.docs);
 
-    // Delete all card progress (NEW)
+    // Delete all card progress
     final cardProgress = await userRef.collection('cardProgress').get();
-    if (cardProgress.docs.isNotEmpty) {
+    print('   cardProgress to delete: \${cardProgress.docs.length}');
+    await _deleteDocs(cardProgress.docs);
+
+    // Reset progress fields on every deck.
+    // Use set+merge so this works even if those fields were never written
+    // (batch.update throws if a field doesn't already exist on the document).
+    final decks = await userRef.collection('decks').get();
+    print('   decks to reset: \${decks.docs.length}');
+    for (var i = 0; i < decks.docs.length; i += 500) {
+      final end = (i + 500 < decks.docs.length) ? i + 500 : decks.docs.length;
+      final chunk = decks.docs.sublist(i, end);
       final batch = _db.batch();
-      for (final doc in cardProgress.docs) {
-        batch.delete(doc.reference);
+      for (final doc in chunk) {
+        batch.set(
+          doc.reference,
+          {
+            'progress': 0.0,
+            'quizAttemptCount': 0,
+            'bestScore': 0.0,
+            'lastQuizScore': 0.0,
+            'lastStudiedAt': FieldValue.delete(),
+          },
+          SetOptions(merge: true),
+        );
       }
       await batch.commit();
     }
 
-    // Reset progress field in all user's decks
-    final decks = await userRef.collection('decks').get();
-    if (decks.docs.isNotEmpty) {
+    print('[ProgressService] resetAllProgress complete\n');
+  }
+
+  /// Deletes a list of Firestore documents in safe chunks of 500.
+  static Future<void> _deleteDocs(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) async {
+    for (var i = 0; i < docs.length; i += 500) {
+      final end = (i + 500 < docs.length) ? i + 500 : docs.length;
       final batch = _db.batch();
-      for (final doc in decks.docs) {
-        batch.update(doc.reference, {
-          'progress': 0.0,
-          'quizAttemptCount': 0,
-          'bestScore': 0.0,
-          'lastQuizScore': 0.0,
-          'lastStudiedAt': FieldValue.delete(),
-        });
+      for (final doc in docs.sublist(i, end)) {
+        batch.delete(doc.reference);
       }
       await batch.commit();
     }
@@ -959,73 +1036,75 @@ abstract final class ProgressService {
     if (uid == null) throw StateError('User is not signed in.');
 
     print('\n🔄 [ProgressService] Starting cumulative totals migration...');
-    
+
     final userRef = _db.collection('users').doc(uid);
-    
+
     // Get all quiz attempts
     final attemptsSnap = await userRef
         .collection('quizAttempts')
         .orderBy('createdAt', descending: false)
         .get();
-    
+
     print('   Found ${attemptsSnap.docs.length} quiz attempts to process');
-    
+
     if (attemptsSnap.docs.isEmpty) {
       print('   No attempts found - migration complete');
       return;
     }
-    
+
     // Group attempts by deck
     final deckTotals = <String, _CumulativeBucket>{};
-    
+
     for (final doc in attemptsSnap.docs) {
       final data = doc.data();
       final ownerUid = data['ownerUid'] as String? ?? '';
       final deckId = data['deckId'] as String? ?? '';
-      
+
       if (deckId.isEmpty) continue;
-      
+
       final key = '${ownerUid}__$deckId';
       final bucket = deckTotals.putIfAbsent(
         key,
         () => _CumulativeBucket(ownerUid: ownerUid, deckId: deckId),
       );
-      
+
       bucket.cumulativeCorrect += _readInt(data['correctCount']);
       bucket.cumulativeTotal += _readInt(data['totalCount']);
     }
-    
+
     print('   Calculated totals for ${deckTotals.length} unique decks');
-    
+
     // Update deckProgress documents in batches
     final entries = deckTotals.entries.toList();
     for (var i = 0; i < entries.length; i += 500) {
       final batch = _db.batch();
       final end = (i + 500 < entries.length) ? i + 500 : entries.length;
-      
+
       for (var j = i; j < end; j++) {
         final entry = entries[j];
         final progressRef = userRef.collection('deckProgress').doc(entry.key);
-        
+
         batch.update(progressRef, {
           'cumulativeCorrect': entry.value.cumulativeCorrect,
           'cumulativeTotal': entry.value.cumulativeTotal,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        
-        print('   ✅ Queued update for ${entry.key}: ${entry.value.cumulativeCorrect}/${entry.value.cumulativeTotal}');
+
+        print(
+            '   ✅ Queued update for ${entry.key}: ${entry.value.cumulativeCorrect}/${entry.value.cumulativeTotal}');
       }
-      
+
       await batch.commit();
       print('   📦 Committed batch ${(i ~/ 500) + 1}');
     }
-    
+
     print('✅ [ProgressService] Migration complete!\n');
   }
 
   /// Calculates hybrid metrics (current mastery, peak mastery, trend) for all decks.
   /// Returns a map keyed by '{ownerUid}__{deckId}'.
-  static Future<Map<String, DeckHybridMetrics>> calculateAllDeckMetrics() async {
+  static Future<Map<String, DeckHybridMetrics>>
+      calculateAllDeckMetrics() async {
     final uid = _uid;
     if (uid == null) return {};
 
@@ -1130,9 +1209,10 @@ class _DeckProgressBucket {
   double lastScore = 0.0;
   DateTime? lastStudiedAt;
 
-  DeckProgressSummary toSummary(Map<String, Map<String, dynamic>> deckMasteryScores) {
+  DeckProgressSummary toSummary(
+      Map<String, Map<String, dynamic>> deckMasteryScores) {
     final masteryData = deckMasteryScores[deckId];
-    
+
     return DeckProgressSummary(
       deckId: deckId,
       ownerUid: ownerUid,
@@ -1146,9 +1226,15 @@ class _DeckProgressBucket {
       mastery: answeredTotal == 0 ? 0.0 : correctTotal / answeredTotal,
       lastScore: lastScore,
       lastStudiedAt: lastStudiedAt,
-      masteryScore: masteryData != null ? ProgressService._readInt(masteryData['masteryScore']) : null,
-      highestMasteryScore: masteryData != null ? ProgressService._readInt(masteryData['highestMasteryScore']) : null,
-      lastMasteryTest: masteryData != null ? masteryData['lastMasteryTest'] as DateTime? : null,
+      masteryScore: masteryData != null
+          ? ProgressService._readInt(masteryData['masteryScore'])
+          : null,
+      highestMasteryScore: masteryData != null
+          ? ProgressService._readInt(masteryData['highestMasteryScore'])
+          : null,
+      lastMasteryTest: masteryData != null
+          ? masteryData['lastMasteryTest'] as DateTime?
+          : null,
       recentScores: const [],
     );
   }
@@ -1179,11 +1265,15 @@ class _WeakSpotBucket {
     required this.question,
     required this.category,
     required this.deckTitle,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
   final String category;
   final String deckTitle;
+  final String deckId;
+  final String? answer;
   int missCount = 0;
 
   WeakSpotSummary toSummary() {
@@ -1192,6 +1282,8 @@ class _WeakSpotBucket {
       category: category,
       deckTitle: deckTitle,
       missCount: missCount,
+      deckId: deckId,
+      answer: answer,
     );
   }
 }
@@ -1203,6 +1295,8 @@ class _ForgottenCardBucket {
     required this.deckTitle,
     required this.failureCount,
     required this.lastFailedAt,
+    required this.deckId,
+    this.answer,
   });
 
   final String question;
@@ -1210,6 +1304,8 @@ class _ForgottenCardBucket {
   final String deckTitle;
   final int failureCount;
   final DateTime? lastFailedAt;
+  final String deckId;
+  final String? answer;
 
   ForgottenCardSummary toSummary() {
     return ForgottenCardSummary(
@@ -1218,6 +1314,8 @@ class _ForgottenCardBucket {
       deckTitle: deckTitle,
       failureCount: failureCount,
       lastFailedAt: lastFailedAt,
+      deckId: deckId,
+      answer: answer,
     );
   }
 }

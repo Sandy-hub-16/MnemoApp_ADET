@@ -425,8 +425,6 @@ class _DeckDetailContent extends StatelessWidget {
               ],
 
               // ── Action buttons ───────────────────────────────────────────
-              // "Take Quiz" is always shown; "Clone Deck" is hidden for own decks
-              _QuizButton(onQuiz: onQuiz),
               const SizedBox(height: 12),
               if (!isOwner)
                 _CloneButton(
@@ -700,48 +698,6 @@ class _CardPreviewTile extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QUIZ BUTTON
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _QuizButton extends StatelessWidget {
-  const _QuizButton({required this.onQuiz});
-
-  final VoidCallback onQuiz;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: OutlinedButton(
-        onPressed: onQuiz,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          side: const BorderSide(color: AppColors.primary, width: 1.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.play_circle_outline_rounded, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Take Quiz',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

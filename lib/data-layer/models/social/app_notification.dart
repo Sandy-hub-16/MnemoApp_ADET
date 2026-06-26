@@ -5,9 +5,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 //
 // In-app notification document stored at
 // users/{uid}/notifications/{notificationId}.
-// Currently only the "new_shared_deck" type is used, but the `type` field
-// is kept as a plain String to allow future notification types without a
-// breaking model change.
+//
+// Current `type` values:
+//   • "new_shared_deck" — someone you follow published a new public deck
+//   • "profile_viewed"  — someone viewed your public profile
+//   • "deck_cloned"     — someone cloned one of your public decks
+//   • "new_follower"    — someone followed you
+//
+// `deckId` / `deckTitle` are empty strings for types with no associated
+// deck (profile_viewed, new_follower). `type` is kept as a plain String to
+// allow future notification types without a breaking model change.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppNotification {

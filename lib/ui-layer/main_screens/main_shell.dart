@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
@@ -7,11 +8,13 @@ import 'progress_screen.dart';
 import 'profile_screen.dart';
 import '../social/deck_discovery_screen.dart';
 
-/// MainShell wraps the 5 main screens with a persistent bottom navbar.
-/// This prevents the navbar from reloading/animating when switching tabs.
+/// MainShell wraps the 5 main screens with a persistent top bar and bottom
+/// navbar. Both bars live here — outside the PageView — so neither reloads
+/// or re-animates when switching tabs; only the section badge text/icon and
+/// color swap to match the active screen.
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.initialIndex = 0});
-  
+
   final int initialIndex;
 
   @override
@@ -44,15 +47,25 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        children: const [
-          HomeScreen(),
-          DeckHubScreen(),
-          DeckDiscoveryScreen(),
-          ProgressScreen(),
-          ProfileScreen(),
+      body: Column(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: _PersistentTopBar(sectionIndex: _currentIndex),
+          ),
+          Expanded(
+            child: PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              children: const [
+                HomeScreen(),
+                DeckHubScreen(),
+                DeckDiscoveryScreen(),
+                ProgressScreen(),
+                ProfileScreen(),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: _PersistentBottomNavBar(
@@ -61,6 +74,121 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERSISTENT TOP BAR
+// One frosted-glass bar shared by all 5 main screens. Only the section
+// badge (icon + label + color) changes per tab — no bell, no connectivity
+// indicator, no filter button, no avatar. This bar is purely a header now.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PersistentTopBar extends StatelessWidget {
+  const _PersistentTopBar({required this.sectionIndex});
+
+  final int sectionIndex;
+
+  static const _sections = [
+    _TopBarSection(
+        label: 'HOME', icon: Icons.home_rounded, color: AppColors.primary),
+    _TopBarSection(
+        label: 'LIBRARY',
+        icon: Icons.layers_rounded,
+        color: AppColors.tertiary),
+    _TopBarSection(
+        label: 'DISCOVER',
+        icon: Icons.explore_rounded,
+        color: AppColors.primary),
+    _TopBarSection(
+        label: 'PROGRESS',
+        icon: Icons.analytics_rounded,
+        color: AppColors.secondary),
+    _TopBarSection(
+        label: 'PROFILE',
+        icon: Icons.person_rounded,
+        color: AppColors.secondary),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final section = _sections[sectionIndex];
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Container(
+          color: AppColors.background.withOpacity(0.75),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Brand
+              Row(
+                children: [
+                  const Icon(
+                    Icons.bubble_chart_rounded,
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 8),
+                  ShaderMask(
+                    shaderCallback: (b) => const LinearGradient(
+                      colors: [AppColors.primary, AppColors.secondary],
+                    ).createShader(b),
+                    child: Text(
+                      'Mnemo',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // Unified section label — plain text + icon, deliberately
+              // NOT styled like a button/chip (no fill, no border, no pill
+              // shape) so it can't be mistaken for a tappable element.
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Row(
+                  key: ValueKey(section.label),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(section.icon, color: section.color, size: 15),
+                    const SizedBox(width: 6),
+                    Text(
+                      section.label,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: section.color,
+                        letterSpacing: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TopBarSection {
+  const _TopBarSection({
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color color;
 }
 
 class _PersistentBottomNavBar extends StatelessWidget {
@@ -128,7 +256,8 @@ class _PersistentBottomNavBar extends StatelessWidget {
                 onTap: () => onTap(index),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   decoration: BoxDecoration(
                     color: active
                         ? AppColors.primaryContainer.withOpacity(0.45)
@@ -174,7 +303,7 @@ class _NavItem {
     required this.filled,
     required this.label,
   });
-  
+
   final IconData icon;
   final IconData filled;
   final String label;

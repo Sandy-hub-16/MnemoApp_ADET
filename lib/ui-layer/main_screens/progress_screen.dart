@@ -1,6 +1,4 @@
 import 'dart:math' as math;
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
@@ -100,7 +98,6 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _ProgressTopBar(),
                 Expanded(
                   child: _loading
                       ? const Center(
@@ -118,23 +115,29 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                 sliver: SliverList(
                                   delegate: SliverChildListDelegate([
                                     // ── Section heading ──────────────────────────────
-                                    Text(
-                                      'Track Your Journey',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 28,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.onSurface,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Monitor your learning progress and achievements',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Track Your Journey',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 28,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.onSurface,
+                                            letterSpacing: -0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Monitor your learning progress and achievements',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                     const SizedBox(height: 16),
                                     if (_errorMessage != null) ...[
@@ -163,17 +166,14 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
                                       ),
                                     ],
 
-                                    // ── WEAK SPOTS (Only if has data) ────────────────────
-                                    if (weakSpots.isNotEmpty) ...[
+                                    // ── NEEDS REVIEW (merged weak spots + forgotten cards) ──
+                                    if (weakSpots.isNotEmpty ||
+                                        forgottenCards.isNotEmpty) ...[
                                       const SizedBox(height: 20),
-                                      _WeakSpotsCard(spots: weakSpots),
-                                    ],
-
-                                    // ── FORGOTTEN CARDS (Only if has data) ───────────────
-                                    if (forgottenCards.isNotEmpty) ...[
-                                      const SizedBox(height: 20),
-                                      _ForgottenCardsCard(
-                                          cards: forgottenCards),
+                                      _NeedsReviewCard(
+                                        weakSpots: weakSpots,
+                                        forgottenCards: forgottenCards,
+                                      ),
                                     ],
 
                                     // ── EMPTY STATE (Only if no data at all) ─────────────
@@ -218,6 +218,8 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
         subject: spot.category,
         deckTitle: spot.deckTitle,
         termCount: spot.missCount,
+        deckId: spot.deckId,
+        answer: spot.answer,
       );
     }).toList();
   }
@@ -229,6 +231,8 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
         subject: card.category,
         deckTitle: card.deckTitle,
         failureCount: card.failureCount,
+        deckId: card.deckId,
+        answer: card.answer,
       );
     }).toList();
   }
@@ -243,754 +247,6 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
       Color(0xFFE85D75),
     ];
     return colors[index % colors.length];
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TOP BAR
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ProgressTopBar extends StatelessWidget {
-  const _ProgressTopBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.background.withOpacity(0.75),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.bubble_chart_rounded,
-                color: AppColors.primary,
-                size: 22,
-              ),
-              const SizedBox(width: 8),
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [AppColors.primary, AppColors.secondary],
-                ).createShader(bounds),
-                child: Text(
-                  'Mnemo',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.secondary],
-                  ),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'PROGRESS',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: _NavIconButton(
-              icon: Icons.tune_rounded,
-              onTap: () => _showProgressOptions(context),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showProgressOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _ProgressOptionsSheet(),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PROGRESS OPTIONS SHEET
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ProgressOptionsSheet extends StatelessWidget {
-  const _ProgressOptionsSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 12),
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.outlineVariant,
-              borderRadius: BorderRadius.circular(999),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryContainer.withOpacity(0.5),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.settings_rounded,
-                      color: AppColors.primary, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Progress Options',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.onSurface,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          _ProgressOption(
-            icon: Icons.refresh_rounded,
-            label: 'Refresh Progress',
-            subtitle: 'Reload your latest statistics',
-            color: AppColors.primary,
-            onTap: () {
-              Navigator.pop(context);
-              final scaffoldState =
-                  context.findAncestorStateOfType<_ProgressScaffoldState>();
-              if (scaffoldState != null) {
-                scaffoldState._loadProgress();
-              }
-            },
-          ),
-          _ProgressOption(
-            icon: Icons.sync_rounded,
-            label: 'Fix Overall Accuracy',
-            subtitle: 'Recalculate from all quiz history',
-            color: AppColors.tertiary,
-            onTap: () async {
-              Navigator.pop(context);
-              final messenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-
-              try {
-                await ProgressService.migrateCumulativeTotals();
-
-                // Trigger refresh by navigating away and back
-                navigator.pushReplacementNamed('/progress');
-
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.20),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 16),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Overall accuracy recalculated successfully!',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    backgroundColor: const Color(0xFF16A34A),
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              } catch (e) {
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Failed to recalculate: $e',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    backgroundColor: AppColors.error,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                  ),
-                );
-              }
-            },
-          ),
-          _ProgressOption(
-            icon: Icons.file_download_outlined,
-            label: 'Export Progress Report',
-            subtitle: 'Download your study statistics',
-            color: AppColors.secondary,
-            onTap: () {
-              Navigator.pop(context);
-              final scaffoldState =
-                  context.findAncestorStateOfType<_ProgressScaffoldState>();
-              if (scaffoldState != null) {
-                _showExportDialog(context, scaffoldState._dashboard);
-              }
-            },
-          ),
-          _ProgressOption(
-            icon: Icons.notifications_outlined,
-            label: 'Study Reminders',
-            subtitle: 'Set daily study notifications',
-            color: AppColors.tertiary,
-            onTap: () {
-              Navigator.pop(context);
-              _showStudyRemindersDialog(context);
-            },
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  void _showExportDialog(BuildContext context, ProgressDashboard dashboard) {
-    final report = _generateProgressReport(dashboard);
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        backgroundColor: AppColors.surfaceContainerLowest,
-        title: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.secondaryContainer.withOpacity(0.5),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.file_download_outlined,
-                  color: AppColors.secondary, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Progress Report',
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w800,
-                color: AppColors.onSurface,
-              ),
-            ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: SelectableText(
-            report,
-            style: GoogleFonts.jetBrainsMono(
-              fontSize: 12,
-              color: AppColors.onSurface,
-              height: 1.5,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Close',
-              style: GoogleFonts.plusJakartaSans(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _generateProgressReport(ProgressDashboard dashboard) {
-    final buffer = StringBuffer();
-    final now = DateTime.now();
-
-    buffer.writeln('═══════════════════════════════════════');
-    buffer.writeln('       KINDRED STUDY PROGRESS REPORT');
-    buffer.writeln('═══════════════════════════════════════');
-    buffer.writeln(
-        'Generated: ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}');
-    buffer.writeln();
-
-    buffer.writeln('OVERALL STATISTICS');
-    buffer.writeln('───────────────────────────────────────');
-    buffer.writeln(
-        'Mastery Score: ${(dashboard.overallMastery * 100).toStringAsFixed(1)}%');
-    buffer.writeln(
-        'Correct Answers: ${dashboard.correctAnswers}/${dashboard.reviewedAnswers}');
-    buffer.writeln('Total Quiz Attempts: ${dashboard.totalAttempts}');
-    buffer.writeln('Current Streak: ${dashboard.currentStreakDays} days');
-    buffer.writeln('Best Streak: ${dashboard.personalBestStreakDays} days');
-    buffer.writeln();
-
-    if (dashboard.categories.isNotEmpty) {
-      buffer.writeln('CATEGORY BREAKDOWN');
-      buffer.writeln('───────────────────────────────────────');
-      for (final cat in dashboard.categories) {
-        buffer.writeln('${cat.label}:');
-        buffer.writeln('  Mastery: ${(cat.mastery * 100).toStringAsFixed(1)}%');
-        buffer.writeln('  Cards Reviewed: ${cat.answeredTotal}');
-        buffer.writeln('  Quiz Attempts: ${cat.attemptCount}');
-        buffer.writeln();
-      }
-    }
-
-    if (dashboard.weakSpots.isNotEmpty) {
-      buffer.writeln('WEAK SPOTS (Top ${dashboard.weakSpots.length})');
-      buffer.writeln('───────────────────────────────────────');
-      for (var i = 0; i < dashboard.weakSpots.length; i++) {
-        final spot = dashboard.weakSpots[i];
-        buffer.writeln('${i + 1}. ${spot.question}');
-        buffer.writeln('   ${spot.category} · ${spot.missCount} misses');
-      }
-      buffer.writeln();
-    }
-
-    if (dashboard.forgottenCards.isNotEmpty) {
-      buffer
-          .writeln('FORGOTTEN CARDS (Top ${dashboard.forgottenCards.length})');
-      buffer.writeln('───────────────────────────────────────');
-      for (var i = 0; i < dashboard.forgottenCards.length; i++) {
-        final card = dashboard.forgottenCards[i];
-        buffer.writeln('${i + 1}. ${card.question}');
-        buffer.writeln('   ${card.category} · ${card.failureCount} failures');
-      }
-      buffer.writeln();
-    }
-
-    buffer.writeln('═══════════════════════════════════════');
-    buffer.writeln('End of Report');
-
-    return buffer.toString();
-  }
-
-  void _showStudyRemindersDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => const _StudyRemindersDialog(),
-    );
-  }
-}
-
-class _ProgressOption extends StatelessWidget {
-  const _ProgressOption({
-    required this.icon,
-    required this.label,
-    required this.subtitle,
-    required this.color,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: ListTile(
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 20),
-        ),
-        title: Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: AppColors.onSurface,
-          ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 12,
-            color: AppColors.onSurfaceVariant,
-          ),
-        ),
-        onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// STUDY REMINDERS DIALOG
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _StudyRemindersDialog extends StatefulWidget {
-  const _StudyRemindersDialog();
-
-  @override
-  State<_StudyRemindersDialog> createState() => _StudyRemindersDialogState();
-}
-
-class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
-  bool _enabled = false;
-  TimeOfDay _reminderTime = const TimeOfDay(hour: 9, minute: 0);
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFromFirestore();
-  }
-
-  // ── ADD THIS ENTIRE METHOD ──────────────────────────────────────────────
-  Future<void> _loadFromFirestore() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      setState(() => _loading = false);
-      return;
-    }
-    try {
-      final doc =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final data = doc.data();
-      if (data != null && mounted) {
-        final hourUTC = (data['reminderHourUTC'] as num?)?.toInt();
-        final minuteUTC = (data['reminderMinuteUTC'] as num?)?.toInt() ?? 0;
-        setState(() {
-          _enabled = data['reminderEnabled'] == true;
-          if (hourUTC != null) {
-            final localOffset = DateTime.now().timeZoneOffset;
-            final utcMinutes = hourUTC * 60 + minuteUTC;
-            final localMinutes = utcMinutes + localOffset.inMinutes;
-            final localHour = (localMinutes ~/ 60) % 24;
-            final localMinute = (localMinutes % 60).toInt();
-            _reminderTime = TimeOfDay(hour: localHour, minute: localMinute);
-          }
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  // ── ADD THIS ENTIRE METHOD ──────────────────────────────────────────────
-  Future<void> _saveToFirestore() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final now = DateTime.now();
-    final localDateTime = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      _reminderTime.hour,
-      _reminderTime.minute,
-    );
-    final utcDateTime = localDateTime.toUtc();
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'reminderEnabled': _enabled,
-      'reminderHourUTC': utcDateTime.hour,
-      'reminderMinuteUTC': utcDateTime.minute,
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Dialog(
-        child: Padding(
-          padding: EdgeInsets.all(40),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      backgroundColor: AppColors.surfaceContainerLowest,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: AppColors.tertiaryContainer.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(Icons.notifications_outlined,
-                      color: AppColors.tertiary, size: 26),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Study Reminders',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.onSurface,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      Text(
-                        'Daily study notifications',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: AppColors.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Enable Reminders',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Get notified to study daily',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              color: AppColors.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Switch(
-                        value: _enabled,
-                        onChanged: (value) => setState(() => _enabled = value),
-                        activeColor: AppColors.primary,
-                      ),
-                    ],
-                  ),
-                  if (_enabled) ...[
-                    const SizedBox(height: 16),
-                    Divider(color: AppColors.outlineVariant.withOpacity(0.3)),
-                    const SizedBox(height: 16),
-                    InkWell(
-                      onTap: () async {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: _reminderTime,
-                        );
-                        if (time != null) {
-                          setState(() => _reminderTime = time);
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.outlineVariant),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.access_time_rounded,
-                                    color: AppColors.primary, size: 20),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Reminder Time',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.onSurface,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Text(
-                              _reminderTime.format(context),
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: Text(
-                      'Cancel',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppColors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      await _saveToFirestore();
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.20),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.check_rounded,
-                                    color: Colors.white, size: 16),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  _enabled
-                                      ? 'Reminder set for ${_reminderTime.format(context)}'
-                                      : 'Reminders disabled',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          backgroundColor: const Color(0xFF16A34A),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
-                          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                          duration: const Duration(seconds: 3),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: Text(
-                      'Save Settings',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -1017,16 +273,6 @@ class _HeroStatsSection extends StatelessWidget {
     final overallFirstTryAccuracy = dashboard.reviewedAnswers == 0
         ? 0.0
         : totalFirstTryCards / dashboard.reviewedAnswers;
-
-    // Calculate overall average repetitions
-    final totalRepetitions = dashboard.deckSummaries.fold<double>(
-      0.0,
-      (sum, deck) =>
-          sum + ((deck.averageRepetitions ?? 0.0) * deck.answeredTotal),
-    );
-    final overallAvgRepetitions = dashboard.reviewedAnswers == 0
-        ? 0.0
-        : totalRepetitions / dashboard.reviewedAnswers;
 
     // Calculate total skipped cards
     final totalSkipped = dashboard.deckSummaries.fold<int>(
@@ -1183,57 +429,20 @@ class _HeroStatsSection extends StatelessWidget {
           ),
         ),
 
-        // ── LEARNING INSIGHTS ────────────────────────────────────────────
+        // ── PERFORMANCE (merged insights + mastery) ──────────────────────
         if (dashboard.hasAttempts) ...[
           const SizedBox(height: 16),
           _SectionHeader(
             icon: Icons.insights_rounded,
-            title: 'Learning Insights',
-            subtitle: 'Your strengths and areas to improve',
+            title: 'Performance',
+            subtitle: 'Strengths, gaps, and test results at a glance',
           ),
           const SizedBox(height: 10),
-          _InsightsCard(
-            stats: [
-              _InsightStat(
-                icon: Icons.bolt_rounded,
-                label: 'First Try Success',
-                value: '${(overallFirstTryAccuracy * 100).round()}%',
-                color: AppColors.tertiary,
-                insight:
-                    overallFirstTryAccuracy >= 0.7 ? 'Strong!' : 'Room to grow',
-              ),
-              _InsightStat(
-                icon: Icons.repeat_rounded,
-                label: 'Avg. Repetitions',
-                value: overallAvgRepetitions.toStringAsFixed(1),
-                color: AppColors.secondary,
-                insight: overallAvgRepetitions <= 2.0
-                    ? 'Efficient'
-                    : 'Keep practicing',
-              ),
-              _InsightStat(
-                icon: Icons.skip_next_rounded,
-                label: 'Cards Skipped',
-                value: '$totalSkipped',
-                color: AppColors.error,
-                insight: totalSkipped == 0 ? 'Perfect!' : 'Try not to skip',
-              ),
-            ],
-          ),
-        ],
-
-        // ── MASTERY TEST PERFORMANCE ─────────────────────────────────────
-        if (decksWithMastery.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _SectionHeader(
-            icon: Icons.emoji_events_rounded,
-            title: 'Mastery Tests',
-            subtitle: 'Your achievement showcase',
-          ),
-          const SizedBox(height: 10),
-          _MasteryTestCard(
-            avgScore: avgMasteryScore,
-            decksTested: decksWithMastery.length,
+          _PerformanceCard(
+            firstTryAccuracy: overallFirstTryAccuracy,
+            totalSkipped: totalSkipped,
+            hasMasteryTests: decksWithMastery.isNotEmpty,
+            avgMasteryScore: avgMasteryScore,
             perfectScores:
                 decksWithMastery.where((d) => d.masteryScore == 100).length,
           ),
@@ -1377,165 +586,128 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// INSIGHTS CARD - Learning insights with actionable feedback
+// PERFORMANCE CARD - merged learning insights + mastery test results
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _InsightsCard extends StatelessWidget {
-  const _InsightsCard({required this.stats});
-  final List<_InsightStat> stats;
+class _PerformanceCard extends StatelessWidget {
+  const _PerformanceCard({
+    required this.firstTryAccuracy,
+    required this.totalSkipped,
+    required this.hasMasteryTests,
+    required this.avgMasteryScore,
+    required this.perfectScores,
+  });
+
+  final double firstTryAccuracy;
+  final int totalSkipped;
+  final bool hasMasteryTests;
+  final double avgMasteryScore;
+  final int perfectScores;
 
   @override
   Widget build(BuildContext context) {
+    // Always-relevant tiles: how you do on the first try, and how often
+    // you skip. Mastery-test tiles only appear once the user has actually
+    // taken one — no point showing "0% avg" before they've tried.
+    final tiles = <_PerfTile>[
+      _PerfTile(
+        icon: Icons.bolt_rounded,
+        label: 'First Try',
+        value: '${(firstTryAccuracy * 100).round()}%',
+        color: AppColors.tertiary,
+      ),
+      _PerfTile(
+        icon: Icons.skip_next_rounded,
+        label: 'Skipped',
+        value: '$totalSkipped',
+        color: totalSkipped == 0 ? AppColors.primary : AppColors.error,
+      ),
+      if (hasMasteryTests) ...[
+        _PerfTile(
+          icon: Icons.emoji_events_rounded,
+          label: 'Mastery Avg',
+          value: '${avgMasteryScore.round()}%',
+          color: AppColors.secondary,
+        ),
+        _PerfTile(
+          icon: Icons.star_rounded,
+          label: 'Perfect Scores',
+          value: '$perfectScores',
+          color: AppColors.tertiary,
+        ),
+      ],
+    ];
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: _cardDecoration(),
-      child: Column(
-        children: stats.asMap().entries.map((entry) {
-          final index = entry.key;
-          final stat = entry.value;
-          return Column(
-            children: [
-              if (index > 0) ...[
-                const SizedBox(height: 12),
-                Divider(
-                    color: AppColors.outlineVariant.withOpacity(0.3),
-                    height: 1),
-                const SizedBox(height: 12),
-              ],
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: stat.color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(stat.icon, color: stat.color, size: 20),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          stat.label,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          stat.insight,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    stat.value,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                      color: stat.color,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          );
-        }).toList(),
+      child: GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        childAspectRatio: 2.3,
+        children: [for (final t in tiles) _PerfTileView(tile: t)],
       ),
     );
   }
 }
 
-class _InsightStat {
-  const _InsightStat({
+class _PerfTile {
+  const _PerfTile({
     required this.icon,
     required this.label,
     required this.value,
     required this.color,
-    required this.insight,
   });
 
   final IconData icon;
   final String label;
   final String value;
   final Color color;
-  final String insight;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MASTERY TEST CARD - Achievement showcase
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _MasteryTestCard extends StatelessWidget {
-  const _MasteryTestCard({
-    required this.avgScore,
-    required this.decksTested,
-    required this.perfectScores,
-  });
-
-  final double avgScore;
-  final int decksTested;
-  final int perfectScores;
+class _PerfTileView extends StatelessWidget {
+  const _PerfTileView({required this.tile});
+  final _PerfTile tile;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: _cardDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.tertiaryContainer.withOpacity(0.3),
-            AppColors.background,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: tile.color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.tertiary.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.emoji_events_rounded,
-              color: AppColors.tertiary,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 16),
+          Icon(tile.icon, color: tile.color, size: 18),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${avgScore.round()}% Average',
+                  tile.value,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 20,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
-                    color: AppColors.onSurface,
+                    color: tile.color,
                     height: 1,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 1),
                 Text(
-                  '$decksTested deck${decksTested == 1 ? '' : 's'} tested · $perfectScores perfect score${perfectScores == 1 ? '' : 's'}',
+                  tile.label,
                   style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
                     color: AppColors.onSurfaceVariant,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -1642,6 +814,7 @@ class _DetailedBreakdownSection extends StatefulWidget {
 }
 
 class _DetailedBreakdownSectionState extends State<_DetailedBreakdownSection> {
+  bool _expanded = false;
   int _selectedTab = 0;
   String _sortBy = 'lowest'; // Default: lowest score first
   String _viewMode = 'current'; // 'current', 'best', 'average'
@@ -1702,187 +875,239 @@ class _DetailedBreakdownSectionState extends State<_DetailedBreakdownSection> {
 
   @override
   Widget build(BuildContext context) {
+    final decks = widget.dashboard.deckSummaries;
+    final weakestDeck = decks.isEmpty
+        ? null
+        : decks.reduce((a, b) =>
+            a.getMetricByViewMode('current') < b.getMetricByViewMode('current')
+                ? a
+                : b);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryContainer.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.bar_chart_rounded,
-                    color: AppColors.primary, size: 18),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Detailed Breakdown',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.onSurface,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    Text(
-                      'Performance by deck and category',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Row(
+          // ── Header — always visible, tap to expand/collapse ────────────
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () => setState(() => _expanded = !_expanded),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
                 children: [
-                  // View mode dropdown
-                  PopupMenuButton<String>(
-                    initialValue: _viewMode,
-                    onSelected: (value) => setState(() => _viewMode = value),
-                    offset: const Offset(0, 40),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    color: AppColors.surfaceContainerLowest,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.secondaryContainer.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.secondary.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.visibility_rounded,
-                              color: AppColors.secondary, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            _getViewModeLabel(),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.secondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    itemBuilder: (context) => [
-                      _buildViewModeMenuItem('current', 'Current Mastery',
-                          Icons.trending_up_rounded),
-                      _buildViewModeMenuItem('best', 'Best Performance',
-                          Icons.emoji_events_rounded),
-                      _buildViewModeMenuItem('average', 'Average (Last 5)',
-                          Icons.analytics_rounded),
-                    ],
+                    child: Icon(Icons.bar_chart_rounded,
+                        color: AppColors.primary, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Detailed Breakdown',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.onSurface,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        Text(
+                          !_expanded && weakestDeck != null
+                              ? 'Lowest: ${weakestDeck.deckTitle} · ${(weakestDeck.getMetricByViewMode('current') * 100).round()}%'
+                              : 'Performance by deck and category',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  // Sort dropdown
-                  PopupMenuButton<String>(
-                    initialValue: _sortBy,
-                    onSelected: (value) => setState(() => _sortBy = value),
-                    offset: const Offset(0, 40),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    color: AppColors.surfaceContainerLowest,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryContainer.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: AppColors.primary.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.sort_rounded,
-                              color: AppColors.primary, size: 16),
-                          const SizedBox(width: 4),
-                          Text(
-                            _getSortLabel(),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ],
-                      ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: AppColors.onSurfaceVariant,
+                      size: 24,
                     ),
-                    itemBuilder: (context) => [
-                      _buildSortMenuItem('lowest', 'Lowest Score First',
-                          Icons.arrow_downward_rounded),
-                      _buildSortMenuItem('highest', 'Highest Score First',
-                          Icons.arrow_upward_rounded),
-                      _buildSortMenuItem(
-                          'recent', 'Recently Studied', Icons.schedule_rounded),
-                      _buildSortMenuItem(
-                          'quizzes', 'Most Quizzes', Icons.quiz_rounded),
-                      _buildSortMenuItem('alphabetical', 'Alphabetical',
-                          Icons.sort_by_alpha_rounded),
-                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _TabButton(
-                    label: 'By Deck',
-                    isSelected: _selectedTab == 0,
-                    onTap: () => setState(() => _selectedTab = 0),
-                  ),
-                ),
-                Expanded(
-                  child: _TabButton(
-                    label: 'By Category',
-                    isSelected: _selectedTab == 1,
-                    onTap: () => setState(() => _selectedTab = 1),
-                  ),
-                ),
-              ],
             ),
           ),
-          const SizedBox(height: 18),
-          if (_selectedTab == 0)
-            _DeckBreakdownContent(
-              decks: _sortDecks(widget.dashboard.deckSummaries),
-              viewMode: _viewMode,
-            )
-          else
-            _CategoryBreakdownContent(
-              subjects: _sortSubjects(widget.subjectStats),
-              totalDecks: widget.dashboard.deckSummaries.length,
-              decks: widget.dashboard.deckSummaries,
-              viewMode: _viewMode,
-            ),
+
+          // ── Body — sort/view controls, tabs, and content ────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: !_expanded
+                ? const SizedBox(width: double.infinity)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Spacer(),
+                          // View mode dropdown
+                          PopupMenuButton<String>(
+                            initialValue: _viewMode,
+                            onSelected: (value) =>
+                                setState(() => _viewMode = value),
+                            offset: const Offset(0, 40),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            color: AppColors.surfaceContainerLowest,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.secondaryContainer
+                                    .withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.secondary.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.visibility_rounded,
+                                      color: AppColors.secondary, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _getViewModeLabel(),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.secondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            itemBuilder: (context) => [
+                              _buildViewModeMenuItem('current',
+                                  'Current Mastery', Icons.trending_up_rounded),
+                              _buildViewModeMenuItem('best', 'Best Performance',
+                                  Icons.emoji_events_rounded),
+                              _buildViewModeMenuItem('average',
+                                  'Average (Last 5)', Icons.analytics_rounded),
+                            ],
+                          ),
+                          const SizedBox(width: 8),
+                          // Sort dropdown
+                          PopupMenuButton<String>(
+                            initialValue: _sortBy,
+                            onSelected: (value) =>
+                                setState(() => _sortBy = value),
+                            offset: const Offset(0, 40),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16)),
+                            color: AppColors.surfaceContainerLowest,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.primaryContainer.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: AppColors.primary.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.sort_rounded,
+                                      color: AppColors.primary, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _getSortLabel(),
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            itemBuilder: (context) => [
+                              _buildSortMenuItem('lowest', 'Lowest Score First',
+                                  Icons.arrow_downward_rounded),
+                              _buildSortMenuItem(
+                                  'highest',
+                                  'Highest Score First',
+                                  Icons.arrow_upward_rounded),
+                              _buildSortMenuItem('recent', 'Recently Studied',
+                                  Icons.schedule_rounded),
+                              _buildSortMenuItem('quizzes', 'Most Quizzes',
+                                  Icons.quiz_rounded),
+                              _buildSortMenuItem('alphabetical', 'Alphabetical',
+                                  Icons.sort_by_alpha_rounded),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _TabButton(
+                                label: 'By Deck',
+                                isSelected: _selectedTab == 0,
+                                onTap: () => setState(() => _selectedTab = 0),
+                              ),
+                            ),
+                            Expanded(
+                              child: _TabButton(
+                                label: 'By Category',
+                                isSelected: _selectedTab == 1,
+                                onTap: () => setState(() => _selectedTab = 1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (_selectedTab == 0)
+                        _DeckBreakdownContent(
+                          decks: _sortDecks(widget.dashboard.deckSummaries),
+                          viewMode: _viewMode,
+                        )
+                      else
+                        _CategoryBreakdownContent(
+                          subjects: _sortSubjects(widget.subjectStats),
+                          totalDecks: widget.dashboard.deckSummaries.length,
+                          decks: widget.dashboard.deckSummaries,
+                          viewMode: _viewMode,
+                        ),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
@@ -2279,12 +1504,55 @@ class _SubjectRow extends StatelessWidget {
 // WEAK SPOTS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _WeakSpotsCard extends StatelessWidget {
-  const _WeakSpotsCard({required this.spots});
-  final List<_WeakSpot> spots;
+class _NeedsReviewCard extends StatefulWidget {
+  const _NeedsReviewCard({
+    required this.weakSpots,
+    required this.forgottenCards,
+  });
+
+  final List<_WeakSpot> weakSpots;
+  final List<_ForgottenCard> forgottenCards;
+
+  @override
+  State<_NeedsReviewCard> createState() => _NeedsReviewCardState();
+}
+
+class _NeedsReviewCardState extends State<_NeedsReviewCard> {
+  bool _showAll = false;
 
   @override
   Widget build(BuildContext context) {
+    // Combine both kinds of "struggling" content into one ranked list —
+    // weak spots and forgotten cards are conceptually the same thing to a
+    // user (material that needs another look), just with different causes.
+    final items = <_ReviewItem>[
+      ...widget.weakSpots.map((s) => _ReviewItem(
+            topic: s.topic,
+            subject: s.subject,
+            reason: '${s.termCount} terms struggling',
+            severity: s.termCount,
+            icon: Icons.error_outline_rounded,
+            color: AppColors.error,
+            deckId: s.deckId,
+            deckTitle: s.deckTitle,
+            answer: s.answer,
+          )),
+      ...widget.forgottenCards.map((c) => _ReviewItem(
+            topic: c.topic,
+            subject: c.subject,
+            reason: 'Forgot after mastering · ${c.failureCount}x',
+            severity: c.failureCount,
+            icon: Icons.history_rounded,
+            color: AppColors.tertiary,
+            deckId: c.deckId,
+            deckTitle: c.deckTitle,
+            answer: c.answer,
+          )),
+    ]..sort((a, b) => b.severity.compareTo(a.severity));
+
+    final visibleItems = _showAll ? items : items.take(3).toList();
+    final hiddenCount = items.length - visibleItems.length;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: _cardDecoration(color: AppColors.surfaceContainerLow),
@@ -2296,131 +1564,39 @@ class _WeakSpotsCard extends StatelessWidget {
               Icon(Icons.error_outline_rounded,
                   color: AppColors.error, size: 20),
               const SizedBox(width: 8),
-              Text(
-                'Weak Spots',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (spots.isEmpty)
-            const _EmptyProgressMessage(
-              icon: Icons.check_circle_outline_rounded,
-              title: 'No weak spots yet',
-              message: 'Missed cards from future quizzes will collect here.',
-            )
-          else
-            ...spots.map((s) => _WeakSpotTile(spot: s)),
-        ],
-      ),
-    );
-  }
-}
-
-class _WeakSpotTile extends StatelessWidget {
-  const _WeakSpotTile({required this.spot});
-  final _WeakSpot spot;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: () {},
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: AppColors.outlineVariant.withOpacity(0.2),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.onSurface.withOpacity(0.03),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        spot.topic,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${spot.subject} · ${spot.termCount} terms struggling',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+              Expanded(
+                child: Text(
+                  'Needs Review',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onSurface,
+                    letterSpacing: -0.2,
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    color: AppColors.outline, size: 20),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FORGOTTEN CARDS CARD
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ForgottenCardsCard extends StatelessWidget {
-  const _ForgottenCardsCard({required this.cards});
-  final List<_ForgottenCard> cards;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: _cardDecoration(color: AppColors.surfaceContainerLow),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.history_rounded, color: AppColors.tertiary, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Forgotten Cards',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.onSurface,
-                  letterSpacing: -0.2,
-                ),
               ),
+              if (items.isNotEmpty)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.error,
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
-            'Cards you knew in your best session but forgot later',
+            'Topics you\'re struggling with or forgot after mastering',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 11,
               color: AppColors.onSurfaceVariant,
@@ -2428,23 +1604,85 @@ class _ForgottenCardsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          if (cards.isEmpty)
+          if (items.isEmpty)
             const _EmptyProgressMessage(
-              icon: Icons.celebration_outlined,
-              title: 'No forgotten cards',
-              message: 'You haven\'t forgotten anything you once knew!',
+              icon: Icons.check_circle_outline_rounded,
+              title: 'Nothing to review',
+              message: 'Struggling or forgotten cards will collect here.',
             )
-          else
-            ...cards.map((c) => _ForgottenCardTile(card: c)),
+          else ...[
+            ...visibleItems.map((item) => _ReviewTile(item: item)),
+            if (hiddenCount > 0 || _showAll && items.length > 3)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _showAll = !_showAll),
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            _showAll
+                                ? 'Show less'
+                                : 'View all $hiddenCount more',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            _showAll
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            color: AppColors.primary,
+                            size: 16,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _ForgottenCardTile extends StatelessWidget {
-  const _ForgottenCardTile({required this.card});
-  final _ForgottenCard card;
+class _ReviewItem {
+  const _ReviewItem({
+    required this.topic,
+    required this.subject,
+    required this.reason,
+    required this.severity,
+    required this.icon,
+    required this.color,
+    required this.deckId,
+    required this.deckTitle,
+    this.answer,
+  });
+
+  final String topic;
+  final String subject;
+  final String reason;
+  final int severity;
+  final IconData icon;
+  final Color color;
+  final String deckId;
+  final String deckTitle;
+  final String? answer;
+}
+
+class _ReviewTile extends StatelessWidget {
+  const _ReviewTile({required this.item});
+  final _ReviewItem item;
 
   @override
   Widget build(BuildContext context) {
@@ -2454,14 +1692,14 @@ class _ForgottenCardTile extends StatelessWidget {
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
-          onTap: () {},
+          onTap: () => _showCardReviewSheet(context, item),
           borderRadius: BorderRadius.circular(14),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: AppColors.tertiary.withOpacity(0.3),
+                color: item.color.withOpacity(0.25),
               ),
               boxShadow: [
                 BoxShadow(
@@ -2476,14 +1714,10 @@ class _ForgottenCardTile extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: AppColors.tertiaryContainer.withOpacity(0.5),
+                    color: item.color.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(
-                    Icons.refresh_rounded,
-                    color: AppColors.tertiary,
-                    size: 18,
-                  ),
+                  child: Icon(item.icon, color: item.color, size: 16),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2491,20 +1725,24 @@ class _ForgottenCardTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        card.topic,
+                        item.topic,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: AppColors.onSurface,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${card.subject} · Failed ${card.failureCount}x after mastering',
+                        '${item.subject} · ${item.reason}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: AppColors.onSurfaceVariant,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -2518,10 +1756,393 @@ class _ForgottenCardTile extends StatelessWidget {
       ),
     );
   }
+
+  void _showCardReviewSheet(BuildContext context, _ReviewItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _CardReviewSheet(item: item),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MASTERY RING  —  CustomPainter arc
+// CARD REVIEW SHEET
+// Shows the focused Q&A for a single struggling/forgotten card inline.
+// The user can reveal the answer and optionally jump to the full deck.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CardReviewSheet extends StatefulWidget {
+  const _CardReviewSheet({required this.item});
+  final _ReviewItem item;
+
+  @override
+  State<_CardReviewSheet> createState() => _CardReviewSheetState();
+}
+
+class _CardReviewSheetState extends State<_CardReviewSheet> {
+  bool _answerVisible = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final hasAnswer = item.answer != null && item.answer!.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Handle ───────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.outlineVariant,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ),
+
+          // ── Header: icon + reason badge + deck title ──────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: item.color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(item.icon, color: item.color, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Needs Review',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Icon(Icons.layers_rounded,
+                              size: 12, color: AppColors.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              item.deckTitle,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: item.color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    item.reason,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: item.color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Question block ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppColors.primary.withOpacity(0.18), width: 1),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.help_outline_rounded,
+                            color: AppColors.primary, size: 16),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'QUESTION',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    item.topic,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onSurface,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Answer block (tap to reveal) ──────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: hasAnswer
+                  ? () => setState(() => _answerVisible = !_answerVisible)
+                  : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: _answerVisible
+                      ? AppColors.tertiaryContainer.withOpacity(0.25)
+                      : AppColors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _answerVisible
+                        ? AppColors.tertiary.withOpacity(0.22)
+                        : AppColors.outlineVariant.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: hasAnswer
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: _answerVisible
+                                      ? AppColors.tertiaryContainer
+                                      : AppColors.outlineVariant
+                                          .withOpacity(0.3),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  _answerVisible
+                                      ? Icons.check_circle_outline_rounded
+                                      : Icons.lock_outline_rounded,
+                                  color: _answerVisible
+                                      ? AppColors.tertiary
+                                      : AppColors.outline,
+                                  size: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _answerVisible ? 'ANSWER' : 'TAP TO REVEAL',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: _answerVisible
+                                      ? AppColors.tertiary
+                                      : AppColors.outline,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            child: _answerVisible
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Text(
+                                      item.answer!,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.onSurface,
+                                        height: 1.45,
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded,
+                              size: 16, color: AppColors.outline),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Answer not recorded — take a quiz to populate this',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                color: AppColors.outline,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Action buttons ────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            child: Column(
+              children: [
+                // Primary: reveal / hide answer
+                if (hasAnswer)
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () =>
+                            setState(() => _answerVisible = !_answerVisible),
+                        icon: Icon(
+                          _answerVisible
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 18,
+                        ),
+                        label: Text(
+                          _answerVisible ? 'Hide Answer' : 'Reveal Answer',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                if (hasAnswer) const SizedBox(height: 10),
+
+                // Secondary: open full deck in study mode
+                if (item.deckId.isNotEmpty)
+                  MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.of(context).pushNamed(
+                            '/study',
+                            arguments: StudyScreenArgs(
+                              deckId: item.deckId,
+                              deckTitle: item.deckTitle,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.auto_stories_rounded, size: 18),
+                        label: Text(
+                          'View Full Deck',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: BorderSide(
+                              color: AppColors.primary.withOpacity(0.4)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Safe-area bottom padding
+          SizedBox(
+              height: MediaQuery.of(context).padding.bottom > 0
+                  ? MediaQuery.of(context).padding.bottom + 8
+                  : 20),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMPTY STATE MESSAGE  —  shared by Needs Review when nothing to show
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyProgressMessage extends StatelessWidget {
@@ -2691,11 +2312,15 @@ class _WeakSpot {
     required this.subject,
     required this.deckTitle,
     required this.termCount,
+    required this.deckId,
+    this.answer,
   });
   final String topic;
   final String subject;
   final String deckTitle;
   final int termCount;
+  final String deckId;
+  final String? answer;
 }
 
 class _ForgottenCard {
@@ -2704,11 +2329,15 @@ class _ForgottenCard {
     required this.subject,
     required this.deckTitle,
     required this.failureCount,
+    required this.deckId,
+    this.answer,
   });
   final String topic;
   final String subject;
   final String deckTitle;
   final int failureCount;
+  final String deckId;
+  final String? answer;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2748,28 +2377,6 @@ class _Blob extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-  }
-}
-
-class _NavIconButton extends StatelessWidget {
-  const _NavIconButton({required this.icon, required this.onTap});
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: AppColors.primaryContainer.withOpacity(0.3),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Icon(icon, color: AppColors.primary, size: 22),
-      ),
     );
   }
 }

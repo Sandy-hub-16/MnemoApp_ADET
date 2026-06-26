@@ -10,32 +10,64 @@ exports.generateDeck = generateDeck;
 
 admin.initializeApp();
 
+// Single source of truth for the verification window length on the
+// backend. MUST stay equal to _kWindowSecs (480) in
+// lib/ui-layer/auth/register/verify_email_screen.dart — that constant
+// drives the UI countdown, this one drives the actual deletion. If they
+// ever drift apart, the UI will show one number while the backend
+// enforces another, which is exactly the bug this comment is here to
+// prevent happening again.
+//
+// History: this was hardcoded to 30 seconds for local testing back when
+// the feature was first built, and that 30s value accidentally shipped
+// and stayed live for months before being corrected to 8 minutes. If you
+// ever need a short window again for testing, change VERIFICATION_WINDOW_MINUTES
+// below — do NOT hand-edit the cutoff math, and do not forget to revert it.
+const VERIFICATION_WINDOW_MINUTES = 8;
+const VERIFICATION_WINDOW_MS = VERIFICATION_WINDOW_MINUTES * 60 * 1000;
+
 exports.deleteUnverifiedUsers = onSchedule("every 1 minutes", async () => {
 
   const now = Date.now();
+  const cutoff = now - VERIFICATION_WINDOW_MS;
 
-  // 30 seconds for testing
-  const cutoff = now - (30 * 1000);
+  // Loud, unambiguous log line — check this in the Cloud Functions logs
+  // any time the live behavior is in doubt. If this doesn't say 8, the
+  // deployed function is NOT running the code in this repo.
+  console.log(
+    `[deleteUnverifiedUsers] window=${VERIFICATION_WINDOW_MINUTES}min ` +
+    `cutoffISO=${new Date(cutoff).toISOString()} nowISO=${new Date(now).toISOString()}`
+  );
 
   const snapshot = await admin.firestore()
     .collection("users")
     .get();
 
   const tasks = [];
+  let checked = 0;
+  let deleted = 0;
 
   snapshot.forEach((doc) => {
 
     const data = doc.data();
 
     if (!data.createdAt) return;
+    if (data.emailVerified !== false) return;
+
+    checked++;
 
     const createdAt = data.createdAt.toDate().getTime();
+    const ageSeconds = Math.round((now - createdAt) / 1000);
 
-    if (createdAt < cutoff && data.emailVerified === false) {
+    if (createdAt < cutoff) {
 
       const uid = data.uid;
 
-      console.log("Deleting unverified user:", uid);
+      console.log(
+        `[deleteUnverifiedUsers] Deleting unverified user: ${uid} ` +
+        `(age=${ageSeconds}s, window=${VERIFICATION_WINDOW_MINUTES * 60}s)`
+      );
+      deleted++;
 
       tasks.push(admin.auth().deleteUser(uid));
       tasks.push(doc.ref.delete());
@@ -44,7 +76,10 @@ exports.deleteUnverifiedUsers = onSchedule("every 1 minutes", async () => {
 
   await Promise.all(tasks);
 
-  console.log("Cleanup complete");
+  console.log(
+    `[deleteUnverifiedUsers] Cleanup complete. ` +
+    `unverifiedChecked=${checked} deleted=${deleted}`
+  );
 });
 
 // ─── Study Reminder Email ────────────────────────────────────────────────────

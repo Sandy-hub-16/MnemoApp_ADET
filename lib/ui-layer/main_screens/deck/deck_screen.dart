@@ -46,9 +46,22 @@ class _DeckHubScaffold extends StatefulWidget {
 }
 
 class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
+<<<<<<< HEAD
   String? _selectedTag; // null = "All Decks"; set to a tag string to filter
   List<String> _availableTags = []; // derived live from Firestore
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _deckSubscription;
+=======
+  int _selectedFilter = 0;
+  bool _draftsExpanded = false;
+
+  static const _filters = [
+    'All Decks',
+    'Biology',
+    'Physics',
+    'Organic Chem',
+    'World History',
+  ];
+>>>>>>> ff97d7672ed03169de17e1ebedce4e8b5626f234
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
@@ -205,7 +218,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
             bottom: false,
             child: Column(
               children: [
-                const _DeckTopBar(),
                 Expanded(
                   child: CustomScrollView(
                     physics: const BouncingScrollPhysics(),
@@ -304,78 +316,16 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                             items.add(
                               Padding(
                                 padding:
-                                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFF3CD),
-                                        borderRadius:
-                                            BorderRadius.circular(999),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.edit_note_rounded,
-                                            size: 14,
-                                            color: Color(0xFF856404),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            'DRAFTS',
-                                            style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w800,
-                                              color: const Color(0xFF856404),
-                                              letterSpacing: 1.0,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Unfinished Decks',
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.onSurface,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-
-                            for (final doc in draftDocs) {
-                              final data = doc.data();
-                              items.add(
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                                  child: _DraftDeckCard(
-                                    deckId: doc.id,
-                                    data: data,
-                                    onContinue: () =>
-                                        _continueDraft(context, doc.id, data),
-                                    onDelete: () => _confirmDeleteDraft(context,
-                                        doc.id, data['title'] ?? 'Untitled'),
-                                  ),
-                                ),
-                              );
-                            }
-
-                            items.add(
-                              Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                                child: Divider(
-                                  color:
-                                      AppColors.outlineVariant.withOpacity(0.4),
-                                  thickness: 1,
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                                child: _DraftsAccordionSection(
+                                  draftDocs: draftDocs,
+                                  expanded: _draftsExpanded,
+                                  onToggle: () => setState(
+                                      () => _draftsExpanded = !_draftsExpanded),
+                                  onContinue: (id, data) =>
+                                      _continueDraft(context, id, data),
+                                  onDelete: (id, title) =>
+                                      _confirmDeleteDraft(context, id, title),
                                 ),
                               ),
                             );
@@ -558,71 +508,6 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TOP BAR
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DeckTopBar extends StatelessWidget {
-  const _DeckTopBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        children: [
-          Text(
-            'Mnemo',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              fontStyle: FontStyle.italic,
-              color: AppColors.primary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.tertiary.withOpacity(0.15),
-                  AppColors.primary.withOpacity(0.10),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: AppColors.tertiary.withOpacity(0.2),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.layers_rounded,
-                  color: AppColors.tertiary,
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'LIBRARY',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.tertiary,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // HERO GREETING
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -790,6 +675,169 @@ class _FilterChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DRAFTS ACCORDION SECTION
+// Collapsed by default — header always visible, draft cards only render
+// once expanded. Keeps the same warm amber palette as the draft cards
+// themselves so the whole section reads as one cohesive unit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DraftsAccordionSection extends StatelessWidget {
+  const _DraftsAccordionSection({
+    required this.draftDocs,
+    required this.expanded,
+    required this.onToggle,
+    required this.onContinue,
+    required this.onDelete,
+  });
+
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> draftDocs;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final void Function(String deckId, Map<String, dynamic> data) onContinue;
+  final void Function(String deckId, String title) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBF0),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFFFD95C).withOpacity(0.7),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFFD95C).withOpacity(0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header — always visible, tap anywhere to toggle ─────────────
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: onToggle,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF3CD),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.edit_note_rounded,
+                            size: 14,
+                            color: Color(0xFF856404),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'DRAFTS',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF856404),
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Unfinished Decks',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Count chip — visible whether expanded or not, so the
+                    // collapsed state still communicates how many drafts exist.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF856404).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${draftDocs.length}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF856404),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Color(0xFF856404),
+                        size: 22,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Body — draft cards, only built once expanded ────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 240),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: !expanded
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final doc in draftDocs)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 8),
+                            child: _DraftDeckCard(
+                              deckId: doc.id,
+                              data: doc.data(),
+                              onContinue: () => onContinue(doc.id, doc.data()),
+                              onDelete: () => onDelete(doc.id,
+                                  doc.data()['title'] as String? ?? 'Untitled'),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -1657,7 +1705,7 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
           const SizedBox(height: 8),
           _SheetOption(
             icon: Icons.auto_stories_rounded,
-            label: 'Study This Deck',
+            label: 'Browse Cards',
             onTap: () {
               Navigator.pop(context);
               Navigator.of(context).pushNamed(

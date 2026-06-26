@@ -1,11 +1,19 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import 'deck_quiz_results_screen.dart';
+import '../settings/settings_screen.dart'
+    show
+        kQuizTimerEnabledKey,
+        kShuffleCardsKey,
+        quizTimerNotifier,
+        shuffleCardsNotifier;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUIZ SCREEN  —  route: /quiz
@@ -54,7 +62,6 @@ class _QuizCard {
     required this.answer,
     this.choices = const [],
     this.correctIndex = 0,
-    this.showRevealFirst = false,
   });
 
   factory _QuizCard.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -70,7 +77,6 @@ class _QuizCard {
       answer: d['answer'] as String? ?? '',
       choices: choices,
       correctIndex: (d['correctIndex'] as int?) ?? 0,
-      showRevealFirst: Random().nextDouble() < 0.25, // 25% chance
     );
   }
 
@@ -80,7 +86,6 @@ class _QuizCard {
   final String answer;
   final List<String> choices; // only populated for multiple_choice
   final int correctIndex; // index into choices[] of the correct answer
-  final bool showRevealFirst; // true = reveal-first mode, false = straight MC
 
   bool get isMultipleChoice => type == 'multiple_choice';
 }
@@ -92,6 +97,7 @@ class _CardResult {
     required this.cardId,
     required this.question,
     required this.correct,
+    this.answer = '',
     int? repetitionsNeeded,
     bool? firstAttemptCorrect,
     bool? skipped,
@@ -107,6 +113,8 @@ class _CardResult {
 
   final String cardId;
   final String question;
+  final String
+      answer; // correct answer text — forwarded to QuizCardAnswer for Needs Review
   bool correct;
   int repetitionsNeeded;
   bool firstAttemptCorrect;
@@ -114,6 +122,35 @@ class _CardResult {
   int correctStreak;
   bool mastered;
   int wrongAttempts;
+}
+
+// ── Per-card transient UI state ──────────────────────────────────────────────
+// Everything here is scoped to "however the current card looks right now" —
+// answered/not, which choice was tapped, etc. It's bundled into one object and
+// replaced wholesale by _setupCard() instead of being reset field-by-field, so
+// a new per-card field can't be left out of a reset by accident.
+class _CardSessionState {
+  _CardSessionState({
+    required this.canSkip,
+    this.shuffledChoices = const [],
+    this.shuffleMap = const [],
+    this.showThinkFirstGate = false,
+  });
+
+  bool answered = false;
+  bool isCorrect = false;
+  final bool canSkip; // Shows skip button after 2 failed attempts
+
+  // MC-specific
+  bool choicesRevealed = false;
+  int? selectedShuffledIndex; // which shuffled slot the user tapped
+  final List<String> shuffledChoices;
+  final List<int> shuffleMap; // shuffleMap[shuffledPos] = originalIndex
+  final bool
+      showThinkFirstGate; // true only if in this session's ~25% subset AND first showing
+
+  // Identification-specific
+  String correctAnswerReveal = ''; // shown only on wrong identification
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +186,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   String? _clonedFromUsername;
   bool _attemptSaved = false;
 
+  // ~25% of this deck's cards, re-shuffled every session, eligible to show
+  // the "think first" gate on their first encounter (see _loadCards).
+  Set<String> _thinkFirstCardIds = {};
+
   // ── Progress tracking (new system) ────────────────────────────────────────────
   int _cardsSeenCount = 0; // How many unique cards have been seen (1-10)
   final Set<String> _seenCardIds = {}; // Track which cards have been seen
@@ -159,19 +200,25 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   bool _sessionTracked = false;
 
   // ── Per-card transient state ──────────────────────────────────────────────────
-  bool _answered = false;
-  bool _isCorrect = false;
-  bool _canSkip = false; // Shows skip button after 2 failed attempts
+  // Bundled into _CardSessionState (defined above) and replaced wholesale by
+  // _setupCard() each time we move to a new card.
+  late _CardSessionState _cardSession;
 
-  // MC-specific
-  bool _choicesRevealed = false;
-  int? _selectedShuffledIndex; // which shuffled slot the user tapped
-  List<String> _shuffledChoices = [];
-  List<int> _shuffleMap = []; // shuffleMap[shuffledPos] = originalIndex
-
-  // Identification-specific
+  // Identification-specific — kept separate since it's a controller, not a
+  // value we reset; we just clear its text in _setupCard().
   final TextEditingController _answerCtrl = TextEditingController();
-  String _correctAnswerReveal = ''; // shown only on wrong identification
+
+  // Motivational bubble message — rotates every few cards rather than on
+  // every rebuild, so it doesn't change mid-interaction or feel like noise.
+  String _motivationalMessage = _motivationalMessages.first;
+  int _cardsSinceMotivationalChange = 0;
+  static const int _motivationalMessageInterval = 3; // cards between changes
+
+  // ── Quiz timer (optional, controlled by Settings > Quiz Timer toggle) ─────────
+  static const int _timerDuration = 15; // seconds per card
+  bool _timerEnabled = false; // loaded from SharedPreferences on init
+  int _timerSecondsLeft = _timerDuration;
+  Timer? _countdownTimer;
 
   // ── Animation controllers ─────────────────────────────────────────────────────
   late AnimationController _cardSlideCtrl;
@@ -240,17 +287,62 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         CurvedAnimation(parent: _completionCtrl, curve: Curves.easeOutBack));
 
     // Load after first frame so ModalRoute.of(context) is available
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // On a cold-start the global notifiers may not have been seeded yet
+      // (user opened a quiz directly without visiting Settings first).
+      // Read SharedPreferences once to initialise them, then subscribe so any
+      // future toggle in Settings is reflected live without restarting the quiz.
+      final prefs = await SharedPreferences.getInstance();
+      final timerOn = prefs.getBool(kQuizTimerEnabledKey) ?? false;
+      final shuffleOn = prefs.getBool(kShuffleCardsKey) ?? true;
+      // Only overwrite if the notifier still holds the default value,
+      // so we don't clobber a value that SettingsScreen already loaded.
+      if (quizTimerNotifier.value == false && timerOn) {
+        quizTimerNotifier.value = timerOn;
+      }
+      if (shuffleCardsNotifier.value == true && !shuffleOn) {
+        shuffleCardsNotifier.value = shuffleOn;
+      }
+      if (mounted) {
+        setState(() => _timerEnabled = quizTimerNotifier.value);
+      }
+      quizTimerNotifier.addListener(_onTimerSettingChanged);
       _loadCards();
     });
   }
 
   @override
   void dispose() {
+    quizTimerNotifier.removeListener(_onTimerSettingChanged);
+    _countdownTimer?.cancel();
     _cardSlideCtrl.dispose();
     _completionCtrl.dispose();
     _answerCtrl.dispose();
     super.dispose();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TIMER SETTING LISTENER
+  // Called immediately whenever the Quiz Timer toggle changes in Settings,
+  // even while a quiz is in progress. No restart needed.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  void _onTimerSettingChanged() {
+    if (!mounted) return;
+    final enabled = quizTimerNotifier.value;
+    setState(() => _timerEnabled = enabled);
+
+    if (enabled) {
+      // Timer just turned ON — if the current card is unanswered and not behind
+      // the think-first gate, kick off the countdown right now.
+      final quizActive = _phase == _QuizPhase.quiz &&
+          !_cardSession.answered &&
+          !_cardSession.showThinkFirstGate;
+      if (quizActive) _startTimer();
+    } else {
+      // Timer just turned OFF — cancel any running countdown.
+      _stopTimer();
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -285,12 +377,34 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           rawTag == null || rawTag.trim().isEmpty ? 'Other' : rawTag.trim();
       _clonedFromUsername = deckData?['clonedFromUsername'] as String?;
 
-      final snap = await deckRef.collection('cards').get();
+      // Prefer the live notifier value (already in sync with Settings toggle);
+      // fall back to SharedPreferences only if the notifier hasn't been seeded
+      // yet (e.g. app cold-started directly into the quiz without visiting Settings).
+      final shuffleEnabled = shuffleCardsNotifier.value;
+
+      // Fetch cards: ordered by creation time when shuffle is off,
+      // unordered (Firestore default) when shuffle is on.
+      final cardsQuery = shuffleEnabled
+          ? deckRef.collection('cards').get()
+          : deckRef.collection('cards').orderBy('createdAt').get();
+
+      final snap = await cardsQuery;
 
       final loaded = snap.docs.map(_QuizCard.fromDoc).toList();
 
-      // 🔀 Shuffle card order — different every session
-      loaded.shuffle(Random());
+      // 🔀 Shuffle card order only when the setting is enabled
+      if (shuffleEnabled) {
+        loaded.shuffle(Random());
+      }
+
+      // 🔀 Independently shuffle + pick ~25% of the deck to get the
+      // "think first" gate this session — re-rolled every time, so it's
+      // not always the same cards, and it's a fixed share of the deck
+      // rather than an independent coin-flip per card.
+      final shuffledIdsForGate = loaded.map((c) => c.id).toList()
+        ..shuffle(Random());
+      final gateCount = (loaded.length * 0.25).round();
+      final thinkFirstIds = shuffledIdsForGate.take(gateCount).toSet();
 
       if (!mounted) return;
       setState(() {
@@ -300,9 +414,18 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         _deckCategory = category;
         _phase = _QuizPhase.quiz;
         _currentQueueIndex = 0;
+        _thinkFirstCardIds = thinkFirstIds;
       });
       _setupCard();
       _cardSlideCtrl.forward();
+
+      // Track the moment the deck is actually opened for studying — not just
+      // answered. Edit Deck and Browse Cards live on separate screens/routes
+      // and never reach this code, so they're naturally excluded.
+      if (!_sessionTracked) {
+        _sessionTracked = true;
+        _trackDeckStarted();
+      }
     } catch (e) {
       debugPrint('❌ QuizScreen._loadCards error: $e');
       if (!mounted) return;
@@ -321,34 +444,137 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     final card = _cardQueue[_currentQueueIndex];
     final attempts = _cardAttempts[card.id] ?? 0;
 
-    _answered = false;
-    _isCorrect = false;
-    _canSkip = attempts >= 2; // Show skip after 2 failed attempts
-    _choicesRevealed = false;
-    _selectedShuffledIndex = null;
-    _correctAnswerReveal = '';
     _answerCtrl.clear();
 
+    // 🔀 Shuffle the order choices appear in — different every card visit
+    List<int> shuffleMap = const [];
+    List<String> shuffledChoices = const [];
     if (card.isMultipleChoice) {
-      // 🔀 Shuffle the order choices appear in — different every card visit
       final positions = List<int>.generate(card.choices.length, (i) => i);
       positions.shuffle(Random());
-      _shuffleMap = positions;
-      _shuffledChoices = positions.map((i) => card.choices[i]).toList();
+      shuffleMap = positions;
+      shuffledChoices = positions.map((i) => card.choices[i]).toList();
+    }
+
+    // Replace the whole per-card state at once. Any future per-card field
+    // lives on _CardSessionState, so there's nothing extra to remember here.
+    // Think-first gate: only for cards in this session's ~25% subset
+    // (_thinkFirstCardIds), and only on their true first showing —
+    // _seenCardIds only gains an id once we've advanced past that card, so a
+    // card being requeued after a wrong answer won't re-trigger the gate.
+    _cardSession = _CardSessionState(
+      canSkip: attempts >= 2, // Show skip after 2 failed attempts
+      shuffleMap: shuffleMap,
+      shuffledChoices: shuffledChoices,
+      showThinkFirstGate: card.isMultipleChoice &&
+          _thinkFirstCardIds.contains(card.id) &&
+          !_seenCardIds.contains(card.id),
+    );
+
+    // Rotate the motivational message every few cards instead of on every
+    // single card, so it reads as occasional variety rather than flicker.
+    _cardsSinceMotivationalChange++;
+    if (_cardsSinceMotivationalChange >= _motivationalMessageInterval) {
+      _motivationalMessage =
+          _motivationalMessages[Random().nextInt(_motivationalMessages.length)];
+      _cardsSinceMotivationalChange = 0;
+    }
+
+    // Start countdown — but hold off if the think-first gate is showing;
+    // _startTimer() will be called instead when the user taps "Reveal Choices".
+    if (!_cardSession.showThinkFirstGate) {
+      _startTimer();
+    } else {
+      _stopTimer(); // ensure no leftover timer from previous card
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // ANSWER LOGIC
+  // QUIZ TIMER  — 15 s countdown; fires _onTimerExpired when it reaches 0.
+  // Only active when _timerEnabled is true and the current card is unanswered.
   // ─────────────────────────────────────────────────────────────────────────────
+
+  void _startTimer() {
+    _countdownTimer?.cancel();
+    if (!_timerEnabled) return;
+    setState(() => _timerSecondsLeft = _timerDuration);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      if (_cardSession.answered) {
+        t.cancel();
+        return;
+      }
+      setState(() => _timerSecondsLeft--);
+      if (_timerSecondsLeft <= 0) {
+        t.cancel();
+        _onTimerExpired();
+      }
+    });
+  }
+
+  void _stopTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+  }
+
+  /// Called when the 15-second timer runs out.
+  /// Marks the current card as wrong (empty answer) and auto-advances.
+  void _onTimerExpired() {
+    if (_cardSession.answered) return;
+
+    final card = _cardQueue[_currentQueueIndex];
+
+    // Track attempts
+    _cardAttempts[card.id] = (_cardAttempts[card.id] ?? 0) + 1;
+
+    // Record a wrong result (time out = wrong)
+    final result = _cardResults.putIfAbsent(
+      card.id,
+      () => _CardResult(
+        cardId: card.id,
+        question: card.question,
+        answer: card.answer,
+        correct: false,
+        firstAttemptCorrect: false,
+      ),
+    );
+    result.repetitionsNeeded = _cardAttempts[card.id]!;
+    result.wrongAttempts++;
+    result.correct = false;
+    result.mastered = false;
+
+    // For identification cards, fill in the reveal so the user can see the answer
+    if (!card.isMultipleChoice) {
+      setState(() {
+        _cardSession.answered = true;
+        _cardSession.isCorrect = false;
+        _cardSession.correctAnswerReveal = card.answer;
+      });
+    } else {
+      // For MC, mark answered but don't select any choice (none highlighted as "user choice")
+      setState(() {
+        _cardSession.answered = true;
+        _cardSession.isCorrect = false;
+      });
+    }
+
+    // Auto-advance after a brief pause so the user sees the result
+    Future.delayed(const Duration(milliseconds: 1800), () {
+      if (mounted && _cardSession.answered) _advance();
+    });
+  }
 
   /// Called when user taps a multiple-choice option.
   /// Immediate evaluation — no "Next" required to confirm.
   void _onChoiceTapped(int shuffledPos) {
-    if (_answered) return;
+    if (_cardSession.answered) return;
+    _stopTimer(); // user answered — cancel any running countdown
 
     final card = _cardQueue[_currentQueueIndex];
-    final originalIdx = _shuffleMap[shuffledPos];
+    final originalIdx = _cardSession.shuffleMap[shuffledPos];
     final correct = originalIdx == card.correctIndex;
 
     // Track attempts
@@ -360,6 +586,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       () => _CardResult(
         cardId: card.id,
         question: card.question,
+        answer: card.answer,
         correct: false,
         firstAttemptCorrect: correct,
       ),
@@ -373,18 +600,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     setState(() {
-      _answered = true;
-      _isCorrect = correct;
-      _selectedShuffledIndex = shuffledPos;
+      _cardSession.answered = true;
+      _cardSession.isCorrect = correct;
+      _cardSession.selectedShuffledIndex = shuffledPos;
     });
-
-    // Track session on first submitted answer (fire-and-forget).
-    // Fires the instant a choice is tapped — before Next is ever pressed —
-    // so the deck appears in Recent Activity even if the user exits early.
-    if (!_sessionTracked) {
-      _sessionTracked = true;
-      _trackDeckStarted();
-    }
 
     if (correct) {
       result.correct = true;
@@ -397,7 +616,8 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
   /// Called when user taps "Check Answer" for identification cards.
   void _onCheckIdentification() {
-    if (_answered) return;
+    if (_cardSession.answered) return;
+    _stopTimer(); // user answered — cancel any running countdown
     final typed = _answerCtrl.text.trim();
     if (typed.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -427,6 +647,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       () => _CardResult(
         cardId: card.id,
         question: card.question,
+        answer: card.answer,
         correct: false,
         firstAttemptCorrect: correct,
       ),
@@ -440,18 +661,10 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     setState(() {
-      _answered = true;
-      _isCorrect = correct;
-      if (!correct) _correctAnswerReveal = card.answer;
+      _cardSession.answered = true;
+      _cardSession.isCorrect = correct;
+      if (!correct) _cardSession.correctAnswerReveal = card.answer;
     });
-
-    // Track session on first submitted answer (fire-and-forget).
-    // Fires the instant "Check Answer" is tapped — before Next is ever pressed —
-    // so the deck appears in Recent Activity even if the user exits early.
-    if (!_sessionTracked) {
-      _sessionTracked = true;
-      _trackDeckStarted();
-    }
 
     if (correct) {
       result.correct = true;
@@ -589,11 +802,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
     }
 
     // Calculate mastery test eligibility
-    final hasSkippedCards = _cardResults.values.any((r) => r.skipped);
-    final hasCardsWithThreePlusWrongAttempts =
-        _cardResults.values.any((r) => r.wrongAttempts >= 3);
-    final isMasteryTestEligible =
-        !hasSkippedCards && !hasCardsWithThreePlusWrongAttempts;
+    final isMasteryTestEligible = _isMasteryTestEligible;
 
     // Check if this was a low-score early exit (≤20%)
     final correctCount = _cardResults.values.where((r) => r.correct).length;
@@ -777,30 +986,15 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   Future<void> _saveQuizAttempt() async {
     final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-    debugPrint('🔍 [DEBUG] _saveQuizAttempt called');
-    debugPrint('🔍 [DEBUG] currentUid: $currentUid');
-    debugPrint('🔍 [DEBUG] _deckId: $_deckId');
-    debugPrint('🔍 [DEBUG] _deckTitle: $_deckTitle');
-    debugPrint('🔍 [DEBUG] _quizOwnerUid: $_quizOwnerUid');
-    debugPrint('🔍 [DEBUG] _deckCategory: $_deckCategory');
-    debugPrint('🔍 [DEBUG] _cardResults.length: ${_cardResults.length}');
-
     if (currentUid == null || _deckId.isEmpty || _cardResults.isEmpty) {
-      debugPrint('❌ [DEBUG] Early return - validation failed');
-      debugPrint('   currentUid == null: ${currentUid == null}');
-      debugPrint('   _deckId.isEmpty: ${_deckId.isEmpty}');
-      debugPrint('   _cardResults.isEmpty: ${_cardResults.isEmpty}');
       return;
     }
 
     final correct =
         _cardResults.values.where((result) => result.correct).length;
     final allCardsRevealed = _cardsSeenCount >= _totalCardsInDeck;
-    debugPrint('🔍 [DEBUG] correct: $correct / ${_totalCardsInDeck}');
-    debugPrint('🔍 [DEBUG] allCardsRevealed: $allCardsRevealed');
 
     try {
-      debugPrint('📤 [DEBUG] Calling ProgressService.saveQuizAttempt...');
       await ProgressService.saveQuizAttempt(
         QuizAttemptInput(
           deckId: _deckId,
@@ -814,6 +1008,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               .map((result) => QuizCardAnswer(
                     cardId: result.cardId,
                     question: result.question,
+                    answer: result.answer,
                     correct: result.correct,
                     repetitionsNeeded: result.repetitionsNeeded,
                     firstAttemptCorrect: result.firstAttemptCorrect,
@@ -822,8 +1017,6 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
               .toList(),
         ),
       );
-      debugPrint(
-          '✅ [DEBUG] ProgressService.saveQuizAttempt completed successfully!');
     } catch (e, st) {
       debugPrint('❌ [QuizScreen] failed to save progress: $e\n$st');
     }
@@ -991,6 +1184,16 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                         totalCards: _totalCardsInDeck,
                         cardsNeedingReview: _cardsNeedingReview,
                       ),
+
+                      // ── Quiz Timer badge (only shown when timer is on) ─────
+                      if (_timerEnabled &&
+                          !_cardSession.answered &&
+                          !(_cardSession.showThinkFirstGate &&
+                              !_cardSession.choicesRevealed))
+                        Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: _TimerBadge(secondsLeft: _timerSecondsLeft),
+                        ),
                       const SizedBox(height: 24),
 
                       // ── Question card ────────────────────────────────────
@@ -1009,21 +1212,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                       AnimatedSize(
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeOutCubic,
-                        child: _answered
+                        child: _cardSession.answered
                             ? Column(
                                 children: [
                                   _NextDoneButton(
                                     isLast: _cardQueue.length == 1,
-                                    isCorrect: _isCorrect,
+                                    isCorrect: _cardSession.isCorrect,
                                     isMasteryTest: _isMasteryTest,
                                     showEligibilitySparkle: !_isMasteryTest &&
                                         _cardQueue.length == 1 &&
-                                        _isCorrect &&
+                                        _cardSession.isCorrect &&
                                         _isMasteryTestEligible,
                                     onTap: _advance,
                                   ),
-                                  if (_canSkip &&
-                                      !_isCorrect &&
+                                  if (_cardSession.canSkip &&
+                                      !_cardSession.isCorrect &&
                                       !_isMasteryTest) ...[
                                     const SizedBox(height: 12),
                                     _SkipButton(onTap: _onSkipCard),
@@ -1034,7 +1237,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                       ),
 
                       const SizedBox(height: 40),
-                      _MotivationalBubble(),
+                      _MotivationalBubble(message: _motivationalMessage),
                     ],
                   ),
                 ),
@@ -1051,15 +1254,18 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildMCSection(_QuizCard card) {
-    // Only show reveal-first gate if card.showRevealFirst is true
-    if (card.showRevealFirst && !_choicesRevealed) {
+    // Only show the think-first gate on this card's true first showing
+    if (_cardSession.showThinkFirstGate && !_cardSession.choicesRevealed) {
       // ── Phase 1: Think-first gate ──────────────────────────────────────────
       return Column(
         children: [
           _ThinkFirstBanner(),
           const SizedBox(height: 20),
           _RevealChoicesButton(
-            onTap: () => setState(() => _choicesRevealed = true),
+            onTap: () => setState(() {
+              _cardSession.choicesRevealed = true;
+              _startTimer(); // timer begins only now, after the gate is passed
+            }),
           ),
         ],
       );
@@ -1067,14 +1273,14 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
 
     // ── Phase 2: Choices visible ─────────────────────────────────────────────
     return Column(
-      children: List.generate(_shuffledChoices.length, (i) {
-        final originalIdx = _shuffleMap[i];
+      children: List.generate(_cardSession.shuffledChoices.length, (i) {
+        final originalIdx = _cardSession.shuffleMap[i];
         final isCorrectOption = originalIdx == card.correctIndex;
-        final isUserChoice = _selectedShuffledIndex == i;
+        final isUserChoice = _cardSession.selectedShuffledIndex == i;
 
         // Determine visual state
         _ChoiceState state = _ChoiceState.idle;
-        if (_answered) {
+        if (_cardSession.answered) {
           if (isCorrectOption) {
             state = _ChoiceState.correct;
           } else if (isUserChoice) {
@@ -1087,9 +1293,9 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: _ChoiceTile(
-            label: _shuffledChoices[i],
+            label: _cardSession.shuffledChoices[i],
             state: state,
-            onTap: _answered ? null : () => _onChoiceTapped(i),
+            onTap: _cardSession.answered ? null : () => _onChoiceTapped(i),
           ),
         );
       }),
@@ -1101,21 +1307,21 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildIdentificationSection() {
-    final fieldColor = _answered
-        ? (_isCorrect
+    final fieldColor = _cardSession.answered
+        ? (_cardSession.isCorrect
             ? AppColors.primaryContainer.withOpacity(0.30)
             : AppColors.errorContainer.withOpacity(0.40))
         : AppColors.surfaceContainerLow;
 
-    final borderSide = _answered
+    final borderSide = _cardSession.answered
         ? BorderSide(
-            color: _isCorrect ? AppColors.primary : AppColors.error,
+            color: _cardSession.isCorrect ? AppColors.primary : AppColors.error,
             width: 2,
           )
         : BorderSide.none;
 
-    final textColor = _answered
-        ? (_isCorrect ? AppColors.primary : AppColors.error)
+    final textColor = _cardSession.answered
+        ? (_cardSession.isCorrect ? AppColors.primary : AppColors.error)
         : AppColors.onSurface;
 
     return Column(
@@ -1136,7 +1342,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         // ── Text field ──────────────────────────────────────────────────────
         TextField(
           controller: _answerCtrl,
-          enabled: !_answered,
+          enabled: !_cardSession.answered,
           style: GoogleFonts.plusJakartaSans(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -1173,7 +1379,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
           ),
           textInputAction: TextInputAction.done,
           onSubmitted: (_) {
-            if (!_answered) _onCheckIdentification();
+            if (!_cardSession.answered) _onCheckIdentification();
           },
         ),
 
@@ -1181,12 +1387,12 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         AnimatedSize(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
-          child: _answered
+          child: _cardSession.answered
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 14),
-                    if (_isCorrect)
+                    if (_cardSession.isCorrect)
                       _IdentificationFeedback(
                         correct: true,
                         correctAnswer: '',
@@ -1194,7 +1400,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                     else
                       _IdentificationFeedback(
                         correct: false,
-                        correctAnswer: _correctAnswerReveal,
+                        correctAnswer: _cardSession.correctAnswerReveal,
                       ),
                   ],
                 )
@@ -1205,7 +1411,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
         AnimatedSize(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
-          child: !_answered
+          child: !_cardSession.answered
               ? Padding(
                   padding: const EdgeInsets.only(top: 20),
                   child: _CheckAnswerButton(onTap: _onCheckIdentification),
@@ -2324,18 +2530,22 @@ class _NextDoneButton extends StatelessWidget {
 // MOTIVATIONAL BUBBLE
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Module-level so the rotation interval logic in _QuizScreenState can pick
+// from it directly without instantiating the widget.
+const List<String> _motivationalMessages = [
+  '"Active recall is the single most effective study technique. You\'ve got this!"',
+  '"Each card you review today saves you hours of cramming tomorrow."',
+  '"Struggle a little — that\'s your brain building new pathways!"',
+  '"Consistency beats intensity. Keep going, one card at a time."',
+];
+
 class _MotivationalBubble extends StatelessWidget {
-  static const _messages = [
-    '"Active recall is the single most effective study technique. You\'ve got this!"',
-    '"Each card you review today saves you hours of cramming tomorrow."',
-    '"Struggle a little — that\'s your brain building new pathways!"',
-    '"Consistency beats intensity. Keep going, one card at a time."',
-  ];
+  const _MotivationalBubble({required this.message});
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
-    final msg = _messages[DateTime.now().millisecond % _messages.length];
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2367,7 +2577,7 @@ class _MotivationalBubble extends StatelessWidget {
               ),
             ),
             child: Text(
-              msg,
+              message,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -2376,6 +2586,76 @@ class _MotivationalBubble extends StatelessWidget {
                 fontStyle: FontStyle.italic,
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QUIZ TIMER BADGE  — shown above the question when the timer is enabled.
+// Turns orange at ≤8 s and red at ≤4 s so urgency is visually clear.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _TimerBadge extends StatelessWidget {
+  const _TimerBadge({required this.secondsLeft});
+  final int secondsLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUrgent = secondsLeft <= 4;
+    final isWarning = secondsLeft <= 8 && secondsLeft > 4;
+
+    final Color color = isUrgent
+        ? AppColors.error
+        : isWarning
+            ? const Color(0xFFE67E22) // orange
+            : AppColors.primary;
+
+    final double progress = secondsLeft / 15.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Icon + label + countdown — no background, just text and icon
+        Row(
+          children: [
+            Icon(Icons.timer_rounded, color: color, size: 15),
+            const SizedBox(width: 6),
+            Text(
+              isUrgent
+                  ? 'Time\'s almost up!'
+                  : isWarning
+                      ? 'Hurry up!'
+                      : 'Time remaining',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+                letterSpacing: 0.3,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${secondsLeft}s',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // Bare progress bar — no container wrapping it
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 4,
+            backgroundColor: color.withOpacity(0.12),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
           ),
         ),
       ],

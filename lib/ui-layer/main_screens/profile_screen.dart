@@ -4,19 +4,41 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../../business-layer/services/auth_google_service.dart';
+import 'settings/settings_screen.dart' show accountPrivacyNotifier;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE SCREEN
+//
+// Layout — top to bottom:
+//   1. Hero header  — gradient band · avatar (gradient ring + privacy badge) ·
+//                     full name · @username · member-since · "Edit Account" btn
+//   2. Bio card     — shown only when bio is non-empty
+//   3. About card   — school · course · year · region as labeled rows
+//   4. Library card — Decks | Cards | Drafts | Shared  (4-cell stat band)
+//   5. Settings card — Settings · Notifications
+//   6. Log Out
+//
+// Preserved from baseline zip:
+//   • _bodyKey (GlobalKey<_ProfileBodyState>) in _ProfileScaffoldState
+//   • _loadProfile() + all original state fields (_loading, _fullName, _bio,
+//     _course, _photoUrl, _deckCount, _cardCount, _draftCount)
+//   • accountPrivacyNotifier listener wired in initState/dispose
+//   • _publicDeckCount field
+//   • All three Navigator routes (/account-settings, /settings, /notifications)
+//   • AuthService().signOut() + pushNamedAndRemoveUntil('/') logout flow
+//   • extendBody:true · SafeArea(bottom:false) · scroll padding bottom:120
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return const _ProfileScaffold();
-  }
+  Widget build(BuildContext context) => const _ProfileScaffold();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCAFFOLD
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileScaffold extends StatefulWidget {
   const _ProfileScaffold();
@@ -35,34 +57,25 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
       extendBody: true,
       body: Stack(
         children: [
-          // ── Decorative blobs ──────────────────────────────────────────────
           Positioned(
             top: -80,
             left: -60,
             child: _Blob(
               size: 340,
-              color: AppColors.secondaryContainer.withOpacity(0.20),
+              color: AppColors.secondaryContainer.withValues(alpha: 0.18),
             ),
           ),
           Positioned(
-            top: MediaQuery.of(context).size.height * 0.4,
+            top: MediaQuery.of(context).size.height * 0.45,
             right: -100,
             child: _Blob(
-              size: 300,
-              color: AppColors.tertiaryContainer.withOpacity(0.15),
+              size: 280,
+              color: AppColors.tertiaryContainer.withValues(alpha: 0.14),
             ),
           ),
-
           SafeArea(
             bottom: false,
-            child: Column(
-              children: [
-                const _ProfileTopBar(),
-                Expanded(
-                  child: _ProfileBody(key: _bodyKey),
-                ),
-              ],
-            ),
+            child: _ProfileBody(key: _bodyKey),
           ),
         ],
       ),
@@ -71,74 +84,7 @@ class _ProfileScaffoldState extends State<_ProfileScaffold> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TOP APP BAR  — glassmorphic pill, "Mnemo" centred italic, avatar on right
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ProfileTopBar extends StatelessWidget {
-  const _ProfileTopBar();
-
-
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
-        children: [
-          Text(
-            'Mnemo',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              fontStyle: FontStyle.italic,
-              color: AppColors.primary,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.secondary.withOpacity(0.15),
-                  AppColors.tertiary.withOpacity(0.10),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: AppColors.secondary.withOpacity(0.2),
-                width: 1.5,
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.person_rounded,
-                  color: AppColors.secondary,
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'PROFILE',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.secondary,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PROFILE BODY  — stateful, owns all data + photo upload logic
+// PROFILE BODY
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ProfileBody extends StatefulWidget {
@@ -149,24 +95,43 @@ class _ProfileBody extends StatefulWidget {
 }
 
 class _ProfileBodyState extends State<_ProfileBody> {
+  // ── Original preserved fields ─────────────────────────────────────────────
   bool _loading = true;
-  bool _uploadingPhoto = false;
-
-  // ── Profile fields ────────────────────────────────────────────────────────
   String _fullName = '';
   String _bio = '';
   String _course = '';
   String? _photoUrl;
-
-  // ── Stats ─────────────────────────────────────────────────────────────────
   int _deckCount = 0;
   int _cardCount = 0;
   int _draftCount = 0;
+
+  // ── Extended identity fields ──────────────────────────────────────────────
+  String _username = '';
+  String _school = '';
+  String _yearLevel = '';
+  String _region = '';
+  bool _isPrivate = false;
+  Timestamp? _createdAt;
+
+  // ── Shared decks ──────────────────────────────────────────────────────────
+  int _publicDeckCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    accountPrivacyNotifier.addListener(_onPrivacyChanged);
+  }
+
+  @override
+  void dispose() {
+    accountPrivacyNotifier.removeListener(_onPrivacyChanged);
+    super.dispose();
+  }
+
+  void _onPrivacyChanged() {
+    if (!mounted) return;
+    setState(() => _isPrivate = !accountPrivacyNotifier.value);
   }
 
   Future<void> _loadProfile() async {
@@ -175,15 +140,12 @@ class _ProfileBodyState extends State<_ProfileBody> {
       setState(() => _loading = false);
       return;
     }
-
     final authUser = FirebaseAuth.instance.currentUser!;
 
-    // ── Firestore user doc ────────────────────────────────────────────────
     final userDoc =
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final data = userDoc.data() ?? {};
 
-    // ── Decks subcollection ───────────────────────────────────────────────
     final decksSnap = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
@@ -192,18 +154,20 @@ class _ProfileBodyState extends State<_ProfileBody> {
 
     int totalCards = 0;
     int drafts = 0;
-
     for (final doc in decksSnap.docs) {
       final d = doc.data();
-      // Count total cards (field name may vary; try cardCount or cards list)
       if (d['cardCount'] is int) {
         totalCards += (d['cardCount'] as int);
       } else if (d['cards'] is List) {
         totalCards += (d['cards'] as List).length;
       }
-      // Count drafts
       if (d['isDraft'] == true) drafts++;
     }
+
+    final publicSnap = await FirebaseFirestore.instance
+        .collection('public_decks')
+        .where('ownerUid', isEqualTo: uid)
+        .get();
 
     if (mounted) {
       setState(() {
@@ -214,12 +178,38 @@ class _ProfileBodyState extends State<_ProfileBody> {
         _deckCount = decksSnap.size;
         _cardCount = totalCards;
         _draftCount = drafts;
+        _username = data['username'] as String? ?? '';
+        _school = data['school'] as String? ?? '';
+        _yearLevel = data['yearLevel'] as String? ?? '';
+        _region = data['region'] as String? ?? '';
+        _isPrivate = data['isPrivate'] as bool? ?? false;
+        _createdAt = data['createdAt'] as Timestamp?;
+        accountPrivacyNotifier.value = !_isPrivate;
+        _publicDeckCount = publicSnap.size;
         _loading = false;
       });
     }
   }
 
-  // ── Photo picker & uploader moved to profile-personal-info_screen.dart ──
+  String get _memberSince {
+    if (_createdAt == null) return '';
+    final dt = _createdAt!.toDate();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return 'Member since ${months[dt.month - 1]} ${dt.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -232,162 +222,73 @@ class _ProfileBodyState extends State<_ProfileBody> {
       );
     }
 
-    // Build the bio/subtitle line (course + bio combined if both present)
-    final String subtitleLine = [
-      if (_course.isNotEmpty) _course,
-      if (_bio.isNotEmpty) _bio,
-    ].join(' • ');
+    final hasAbout = _school.isNotEmpty ||
+        _course.isNotEmpty ||
+        _yearLevel.isNotEmpty ||
+        _region.isNotEmpty;
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 120),
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 120),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Profile Header (centered) ──────────────────────────────────
-          _ProfileHeader(
+          // ── 1. Hero header ─────────────────────────────────────────────
+          _HeroHeader(
             fullName: _fullName,
-            subtitle: subtitleLine,
+            username: _username,
             photoUrl: _photoUrl,
-            uploadingPhoto: _uploadingPhoto,
+            isPrivate: _isPrivate,
+            memberSince: _memberSince,
+            onEditTap: () async {
+              await Navigator.of(context).pushNamed('/account-settings');
+              _loadProfile();
+            },
           ),
-          const SizedBox(height: 32),
 
-          // ── Stats Card ─────────────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primaryContainer.withOpacity(0.3),
-                  AppColors.secondaryContainer.withOpacity(0.2),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: AppColors.outlineVariant.withOpacity(0.3),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.onSurface.withOpacity(0.06),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.bar_chart_rounded,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'YOUR LIBRARY',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                _StatsRow(
-                  deckCount: _deckCount,
-                  cardCount: _cardCount,
-                  draftCount: _draftCount,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // ── Settings Section Header ───────────────────────────────────
+          // ── 2. Bio card ────────────────────────────────────────────────
+          if (_bio.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: _BioCard(bio: _bio),
+            ),
+
+          // ── 3. About card ──────────────────────────────────────────────
+          if (hasAbout)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: _AboutCard(
+                school: _school,
+                course: _course,
+                yearLevel: _yearLevel,
+                region: _region,
+              ),
+            ),
+
+          // ── 4. Library stats ───────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.tune_rounded,
-                  size: 16,
-                  color: AppColors.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'SETTINGS & PREFERENCES',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.onSurfaceVariant,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: _LibraryCard(
+              deckCount: _deckCount,
+              cardCount: _cardCount,
+              draftCount: _draftCount,
+              publicDeckCount: _publicDeckCount,
             ),
           ),
 
-          // ── Settings Card ──────────────────────────────────────────────
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: AppColors.outlineVariant.withOpacity(0.3),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.onSurface.withOpacity(0.04),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                _SettingsTile(
-                  icon: Icons.manage_accounts_outlined,
-                  iconBg: AppColors.secondaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.onSecondaryContainer,
-                  label: 'Personal Information',
-                  isFirst: true,
-                  onTap: () async {
-                    await Navigator.of(context).pushNamed('/account-settings');
-                    _loadProfile();
-                  },
-                ),
-                _SettingsDivider(),
-                _SettingsTile(
-                  icon: Icons.settings_outlined,
-                  iconBg: AppColors.primaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.primary,
-                  label: 'Settings',
-                  onTap: () => Navigator.of(context).pushNamed('/settings'),
-                ),
-                _SettingsDivider(),
-                _SettingsTile(
-                  icon: Icons.notifications_outlined,
-                  iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
-                  iconColor: AppColors.onTertiaryContainer,
-                  label: 'Notifications',
-                  isLast: true,
-                  onTap: () =>
-                      Navigator.of(context).pushNamed('/notifications'),
-                ),
-              ],
-            ),
+          // ── 5. Settings card ───────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: _SettingsCard(onProfileEdited: _loadProfile),
           ),
-          const SizedBox(height: 16),
 
-          // ── Log Out ────────────────────────────────────────────────────
-          _LogOutButton(),
+          // ── 6. Log out ─────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: const _LogOutButton(),
+          ),
         ],
       ),
     );
@@ -395,309 +296,601 @@ class _ProfileBodyState extends State<_ProfileBody> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE HEADER  — avatar with edit pen, name, subtitle/bio
+// 1. HERO HEADER
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({
+class _HeroHeader extends StatelessWidget {
+  const _HeroHeader({
     required this.fullName,
-    required this.subtitle,
+    required this.username,
+    required this.isPrivate,
+    required this.memberSince,
+    required this.onEditTap,
     this.photoUrl,
-    this.uploadingPhoto = false,
   });
 
   final String fullName;
-  final String subtitle;
+  final String username;
   final String? photoUrl;
-  final bool uploadingPhoto;
+  final bool isPrivate;
+  final String memberSince;
+  final VoidCallback onEditTap;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // ── Avatar (centered) ─────────────────────────────────────────────
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.2),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Container(
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withValues(alpha: 0.09),
+            AppColors.secondaryContainer.withValues(alpha: 0.14),
+            AppColors.background,
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0.0, 0.55, 1.0],
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      child: Column(
+        children: [
+          // Edit Account button — top right
+          Align(
+            alignment: Alignment.centerRight,
+            child: _EditAccountButton(onTap: onEditTap),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Avatar
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
                     colors: [
-                      AppColors.primary.withOpacity(0.3),
-                      AppColors.secondary.withOpacity(0.2),
+                      AppColors.primary.withValues(alpha: 0.30),
+                      AppColors.secondary.withValues(alpha: 0.20),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      blurRadius: 24,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 padding: const EdgeInsets.all(4),
                 child: _AvatarContent(
                   photoUrl: photoUrl,
                   fullName: fullName,
-                  uploading: uploadingPhoto,
                 ),
               ),
-            ),
-            if (uploadingPhoto)
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black.withOpacity(0.5),
-                  ),
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 3,
-                    ),
-                  ),
-                ),
+              Positioned(
+                bottom: 2,
+                right: 2,
+                child: _PrivacyBadge(isPrivate: isPrivate),
               ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // ── Name + subtitle (centered) ────────────────────────────────────
-        Text(
-          fullName,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-            color: AppColors.onSurface,
-            height: 1.1,
+            ],
           ),
-          textAlign: TextAlign.center,
-        ),
-        if (subtitle.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: AppColors.outlineVariant.withOpacity(0.3),
-                width: 1,
-              ),
+
+          const SizedBox(height: 16),
+
+          // Full name
+          Text(
+            fullName.isNotEmpty ? fullName : 'Your Name',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.6,
+              color: AppColors.onSurface,
+              height: 1.1,
             ),
-            child: Text(
-              subtitle,
+            textAlign: TextAlign.center,
+          ),
+
+          // @username
+          if (username.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '@$username',
               style: GoogleFonts.plusJakartaSans(
-                fontSize: 13,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
-                height: 1.4,
-                color: AppColors.onSurfaceVariant,
+                color: AppColors.primary,
+                letterSpacing: 0.1,
               ),
               textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+
+          // Member since
+          if (memberSince.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 11,
+                  color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  memberSince,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EDIT ACCOUNT BUTTON
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EditAccountButton extends StatelessWidget {
+  const _EditAccountButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primaryContainer.withValues(alpha: 0.40),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.20),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.edit_outlined, size: 13, color: AppColors.primary),
+            const SizedBox(width: 5),
+            Text(
+              'Edit Account',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRIVACY BADGE
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PrivacyBadge extends StatelessWidget {
+  const _PrivacyBadge({required this.isPrivate});
+  final bool isPrivate;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isPrivate ? AppColors.onSurface : AppColors.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: AppColors.background, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPrivate ? Icons.lock_rounded : Icons.public_rounded,
+            size: 9,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            isPrivate ? 'Private' : 'Public',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.2,
             ),
           ),
         ],
-      ],
+      ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AVATAR CONTENT  — photo → initial letter → default icon
+// 2. BIO CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AvatarContent extends StatelessWidget {
-  const _AvatarContent({
-    required this.photoUrl,
-    required this.fullName,
-    this.uploading = false,
-  });
-
-  final String? photoUrl;
-  final String fullName;
-  final bool uploading;
+class _BioCard extends StatelessWidget {
+  const _BioCard({required this.bio});
+  final String bio;
 
   @override
   Widget build(BuildContext context) {
-    if (photoUrl != null && photoUrl!.isNotEmpty) {
-      return ClipOval(
-        child: Image.network(
-          photoUrl!,
-          width: 112,
-          height: 112,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Container(
-              width: 112,
-              height: 112,
-              color: AppColors.primaryContainer.withOpacity(0.2),
-              child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded /
-                          loadingProgress.expectedTotalBytes!
-                      : null,
-                ),
-              ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) =>
-              _FallbackAvatar(fullName: fullName),
-        ),
-      );
-    }
-    return _FallbackAvatar(fullName: fullName);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FALLBACK AVATAR  — initial letter  OR  person icon
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _FallbackAvatar extends StatelessWidget {
-  const _FallbackAvatar({required this.fullName});
-  final String fullName;
-
-  @override
-  Widget build(BuildContext context) {
-    if (fullName.isNotEmpty) {
-      return Container(
-        width: 112,
-        height: 112,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [
-              AppColors.primaryContainer,
-              AppColors.secondaryContainer,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: Center(
-          child: Text(
-            fullName[0].toUpperCase(),
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardLabel(icon: Icons.format_quote_rounded, label: 'BIO'),
+          const SizedBox(height: 10),
+          Text(
+            bio,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 40,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.onSurface,
+              height: 1.6,
             ),
           ),
-        ),
-      );
-    }
-
-    return Container(
-      width: 112,
-      height: 112,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: AppColors.primaryContainer.withOpacity(0.3),
-      ),
-      child: Icon(
-        Icons.person_rounded,
-        size: 60,
-        color: AppColors.primary.withOpacity(0.5),
+        ],
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STATS ROW  — horizontal stats display
+// 3. ABOUT CARD — school / course / year / region as clean labeled rows
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({
+class _AboutCard extends StatelessWidget {
+  const _AboutCard({
+    required this.school,
+    required this.course,
+    required this.yearLevel,
+    required this.region,
+  });
+
+  final String school;
+  final String course;
+  final String yearLevel;
+  final String region;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <_AboutRow>[
+      if (school.isNotEmpty)
+        _AboutRow(
+          icon: Icons.school_outlined,
+          label: 'School',
+          value: school,
+          color: AppColors.secondary,
+        ),
+      if (course.isNotEmpty)
+        _AboutRow(
+          icon: Icons.menu_book_outlined,
+          label: 'Course',
+          value: course,
+          color: AppColors.tertiary,
+        ),
+      if (yearLevel.isNotEmpty)
+        _AboutRow(
+          icon: Icons.grade_outlined,
+          label: 'Year Level',
+          value: yearLevel,
+          color: AppColors.primary,
+        ),
+      if (region.isNotEmpty)
+        _AboutRow(
+          icon: Icons.location_on_outlined,
+          label: 'Region',
+          value: region,
+          color: AppColors.onSurfaceVariant,
+        ),
+    ];
+
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardLabel(icon: Icons.person_outline_rounded, label: 'ABOUT'),
+          const SizedBox(height: 12),
+          ...rows.map((r) => _AboutRowWidget(row: r)),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutRow {
+  const _AboutRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+}
+
+class _AboutRowWidget extends StatelessWidget {
+  const _AboutRowWidget({required this.row});
+  final _AboutRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: row.color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(row.icon, size: 16, color: row.color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  row.label.toUpperCase(),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  row.value,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. LIBRARY CARD — 4-cell stat grid
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LibraryCard extends StatelessWidget {
+  const _LibraryCard({
     required this.deckCount,
     required this.cardCount,
     required this.draftCount,
+    required this.publicDeckCount,
   });
 
   final int deckCount;
   final int cardCount;
   final int draftCount;
+  final int publicDeckCount;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primaryContainer.withValues(alpha: 0.22),
+            AppColors.secondaryContainer.withValues(alpha: 0.18),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.12),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardLabel(icon: Icons.bar_chart_rounded, label: 'YOUR LIBRARY'),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatCell(
+                  value: '$deckCount',
+                  label: 'Decks',
+                  icon: Icons.layers_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+              _StatDivider(),
+              Expanded(
+                child: _StatCell(
+                  value: '$cardCount',
+                  label: 'Cards',
+                  icon: Icons.style_outlined,
+                  color: AppColors.secondary,
+                ),
+              ),
+              _StatDivider(),
+              Expanded(
+                child: _StatCell(
+                  value: '$draftCount',
+                  label: 'Drafts',
+                  icon: Icons.drafts_outlined,
+                  color: AppColors.onSurfaceVariant,
+                ),
+              ),
+              _StatDivider(),
+              Expanded(
+                child: _StatCell(
+                  value: '$publicDeckCount',
+                  label: 'Shared',
+                  icon: Icons.public_outlined,
+                  color: AppColors.tertiary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCell extends StatelessWidget {
+  const _StatCell({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String value;
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
       children: [
-        Expanded(
-          child: _StatItem(
-            value: '$deckCount',
-            label: 'Decks',
-          ),
-        ),
         Container(
-          width: 1,
-          height: 40,
-          color: AppColors.outlineVariant.withOpacity(0.3),
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 17, color: color),
         ),
-        Expanded(
-          child: _StatItem(
-            value: '$cardCount',
-            label: 'Cards',
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: AppColors.onSurface,
+            height: 1,
           ),
         ),
-        Container(
-          width: 1,
-          height: 40,
-          color: AppColors.outlineVariant.withOpacity(0.3),
-        ),
-        Expanded(
-          child: _StatItem(
-            value: '$draftCount',
-            label: 'Drafts',
+        const SizedBox(height: 3),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.onSurfaceVariant,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
   }
 }
 
-class _StatItem extends StatelessWidget {
-  const _StatItem({
-    required this.value,
-    required this.label,
-  });
+class _StatDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 52,
+      color: AppColors.outlineVariant.withValues(alpha: 0.35),
+    );
+  }
+}
 
-  final String value;
-  final String label;
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. SETTINGS CARD — Settings · Notifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SettingsCard extends StatelessWidget {
+  const _SettingsCard({required this.onProfileEdited});
+  final VoidCallback onProfileEdited;
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          value,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: AppColors.onSurface,
-            height: 1,
-          ),
+        _CardLabel(
+          icon: Icons.tune_rounded,
+          label: 'SETTINGS & PREFERENCES',
+          padding: const EdgeInsets.fromLTRB(4, 0, 0, 12),
         ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: GoogleFonts.plusJakartaSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.onSurfaceVariant,
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.28),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withValues(alpha: 0.035),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              _SettingsTile(
+                icon: Icons.settings_outlined,
+                iconBg: AppColors.primaryContainer.withValues(alpha: 0.45),
+                iconColor: AppColors.primary,
+                label: 'Settings',
+                isFirst: true,
+                onTap: () => Navigator.of(context).pushNamed('/settings'),
+              ),
+              _TileDivider(),
+              _SettingsTile(
+                icon: Icons.notifications_outlined,
+                iconBg: AppColors.tertiaryContainer.withValues(alpha: 0.5),
+                iconColor: AppColors.onTertiaryContainer,
+                label: 'Notifications',
+                isLast: true,
+                onTap: () => Navigator.of(context).pushNamed('/notifications'),
+              ),
+            ],
           ),
         ),
       ],
@@ -706,7 +899,7 @@ class _StatItem extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SETTINGS TILE  — rounded card row with icon, label, chevron
+// SETTINGS TILE
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SettingsTile extends StatelessWidget {
@@ -741,17 +934,17 @@ class _SettingsTile extends StatelessWidget {
             bottom: isLast ? const Radius.circular(20) : Radius.zero,
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: iconBg,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(11),
                   ),
-                  child: Icon(icon, color: iconColor, size: 22),
+                  child: Icon(icon, color: iconColor, size: 21),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -766,8 +959,8 @@ class _SettingsTile extends StatelessWidget {
                 ),
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: AppColors.onSurfaceVariant,
-                  size: 22,
+                  color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                  size: 20,
                 ),
               ],
             ),
@@ -778,21 +971,21 @@ class _SettingsTile extends StatelessWidget {
   }
 }
 
-class _SettingsDivider extends StatelessWidget {
+class _TileDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 76),
+      padding: const EdgeInsets.only(left: 72),
       child: Container(
         height: 1,
-        color: AppColors.outlineVariant.withOpacity(0.2),
+        color: AppColors.outlineVariant.withValues(alpha: 0.22),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LOG OUT BUTTON
+// 6. LOG OUT BUTTON
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _LogOutButton extends StatelessWidget {
@@ -805,14 +998,14 @@ class _LogOutButton extends StatelessWidget {
         color: AppColors.surfaceContainerLowest,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppColors.error.withOpacity(0.2),
+          color: AppColors.error.withValues(alpha: 0.18),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.error.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
+            color: AppColors.error.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -824,18 +1017,21 @@ class _LogOutButton extends StatelessWidget {
             onTap: () => _showLogoutConfirmation(context),
             borderRadius: BorderRadius.circular(20),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
-                      color: AppColors.error.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
+                      color: AppColors.error.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(Icons.logout_rounded,
-                        color: AppColors.error, size: 22),
+                    child: Icon(
+                      Icons.logout_rounded,
+                      color: AppColors.error,
+                      size: 21,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -850,8 +1046,8 @@ class _LogOutButton extends StatelessWidget {
                   ),
                   Icon(
                     Icons.chevron_right_rounded,
-                    color: AppColors.error.withOpacity(0.6),
-                    size: 22,
+                    color: AppColors.error.withValues(alpha: 0.45),
+                    size: 20,
                   ),
                 ],
               ),
@@ -874,7 +1070,7 @@ class _LogOutButton extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.15),
+                color: AppColors.error.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child:
@@ -915,14 +1111,11 @@ class _LogOutButton extends StatelessWidget {
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+                  borderRadius: BorderRadius.circular(12)),
             ),
             child: Text(
               'Log Out',
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w800,
-              ),
+              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -939,8 +1132,168 @@ class _LogOutButton extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED HELPERS
+// AVATAR CONTENT
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _AvatarContent extends StatelessWidget {
+  const _AvatarContent({
+    required this.photoUrl,
+    required this.fullName,
+  });
+
+  final String? photoUrl;
+  final String fullName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photoUrl != null && photoUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          photoUrl!,
+          width: 108,
+          height: 108,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Container(
+              width: 108,
+              height: 108,
+              color: AppColors.primaryContainer.withValues(alpha: 0.2),
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
+                  value: progress.expectedTotalBytes != null
+                      ? progress.cumulativeBytesLoaded /
+                          progress.expectedTotalBytes!
+                      : null,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (_, __, ___) => _FallbackAvatar(fullName: fullName),
+        ),
+      );
+    }
+    return _FallbackAvatar(fullName: fullName);
+  }
+}
+
+class _FallbackAvatar extends StatelessWidget {
+  const _FallbackAvatar({required this.fullName});
+  final String fullName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (fullName.isNotEmpty) {
+      return Container(
+        width: 108,
+        height: 108,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [AppColors.primaryContainer, AppColors.secondaryContainer],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            fullName[0].toUpperCase(),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 38,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 108,
+      height: 108,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.primaryContainer.withValues(alpha: 0.3),
+      ),
+      child: Icon(
+        Icons.person_rounded,
+        size: 56,
+        color: AppColors.primary.withValues(alpha: 0.5),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED DESIGN PRIMITIVES
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A uniform card container used by BioCard, AboutCard, etc.
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.25),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withValues(alpha: 0.035),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+/// Small all-caps label with a leading icon — used consistently above each
+/// section to build visual hierarchy without heavy headers.
+class _CardLabel extends StatelessWidget {
+  const _CardLabel({
+    required this.icon,
+    required this.label,
+    this.padding,
+  });
+
+  final IconData icon;
+  final String label;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding ?? EdgeInsets.zero,
+      child: Row(
+        children: [
+          Icon(icon, size: 13, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _Blob extends StatelessWidget {
   const _Blob({required this.size, required this.color});

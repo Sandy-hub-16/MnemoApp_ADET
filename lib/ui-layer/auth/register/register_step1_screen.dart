@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../main.dart';
 import '../widgets/auth_scaffold.dart';
@@ -36,12 +37,95 @@ class _Step1Body extends StatefulWidget {
 class _Step1BodyState extends State<_Step1Body> {
   final _nameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
+  final _nameFocus = FocusNode();
+  final _usernameFocus = FocusNode();
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _usernameCtrl.dispose();
+    _nameFocus.dispose();
+    _usernameFocus.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleNext() async {
+    // Validate form fields
+    final name = _nameCtrl.text.trim();
+    final username = _usernameCtrl.text.trim();
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Full name is required'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (username.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Username is required'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (username.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Username must be at least 6 characters'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('username', isEqualTo: username)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This username is already taken. Please choose another one.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking username: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    Navigator.of(context).pushNamed(
+      AppRoutes.signUp2,
+      arguments: {
+        'fullName': name,
+        'username': username,
+      },
+    );
   }
 
   @override
@@ -79,19 +163,25 @@ class _Step1BodyState extends State<_Step1Body> {
         // ── Form fields ───────────────────────────────────────────────────
         AuthTextField(
           controller: _nameCtrl,
+          focusNode: _nameFocus,
           hint: 'Alex Kindred',
           label: 'Full Name',
           prefixIcon: Icons.person_outline_rounded,
           shape: AuthFieldShape.rounded,
+          textInputAction: TextInputAction.next,
+          onSubmitted: (_) => _usernameFocus.requestFocus(),
         ),
         const SizedBox(height: 20),
         AuthTextField(
           controller: _usernameCtrl,
+          focusNode: _usernameFocus,
           hint: 'alex_studies',
           label: 'Unique Username',
           prefixIcon: Icons.alternate_email_rounded,
           shape: AuthFieldShape.rounded,
           helperText: "This is how you'll appear in study groups.",
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _handleNext(),
         ),
         const SizedBox(height: 36),
 
@@ -107,54 +197,14 @@ class _Step1BodyState extends State<_Step1Body> {
         const SizedBox(height: 36),
 
         // ── Next CTA ──────────────────────────────────────────────────────
-        AuthPrimaryButton(
-          label: 'Next Step',
-          onTap: () {
-            // Validate form fields
-            final name = _nameCtrl.text.trim();
-            final username = _usernameCtrl.text.trim();
-
-            if (name.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Full name is required'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-
-            if (username.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Username is required'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-            if (username.length < 6) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Username must be at least 6 characters'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-              return;
-            }
-
-            Navigator.of(context).pushNamed(
-              AppRoutes.signUp2,
-              arguments: {
-                'fullName': name,
-                'username': username,
-              },
-            );
-          },
-        ),
+        _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : AuthPrimaryButton(
+                label: 'Next Step',
+                onTap: _handleNext,
+              ),
         const SizedBox(height: 32),
       ],
     );
   }
 }
-

@@ -1733,7 +1733,8 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
     });
 
     final batch = FirebaseFirestore.instance.batch();
-    for (final card in cards) {
+    for (int i = 0; i < cards.length; i++) {
+      final card = cards[i];
       final cardRef = deckRef.collection('cards').doc();
 
       final hasOptions = card.containsKey('options') &&
@@ -1754,6 +1755,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
         'question': card['question'] ?? '',
         'answer': card['answer'] ?? '',
         'type': hasOptions ? 'multiple_choice' : 'identification',
+        'order': i, // preserves AI-generated card order when shuffle is off
         'createdAt': FieldValue.serverTimestamp(),
         if (hasOptions) 'choices': card['options'],
         if (hasOptions && correctIndex != null) 'correctIndex': correctIndex,
@@ -2009,7 +2011,8 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
     });
 
     final batch = FirebaseFirestore.instance.batch();
-    for (final card in cards) {
+    for (int i = 0; i < cards.length; i++) {
+      final card = cards[i];
       final cardRef = deckRef.collection('cards').doc();
 
       final hasOptions = card.containsKey('options') &&
@@ -2030,6 +2033,7 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
         'question': card['question'] ?? '',
         'answer': card['answer'] ?? '',
         'type': hasOptions ? 'multiple_choice' : 'identification',
+        'order': i, // preserves AI-generated card order when shuffle is off
         'createdAt': FieldValue.serverTimestamp(),
         if (hasOptions) 'choices': card['options'],
         if (hasOptions && correctIndex != null) 'correctIndex': correctIndex,

@@ -28,15 +28,15 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
-  options: const FirebaseOptions(
-    apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
-    authDomain: String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
-    projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
-    storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
-    messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
-    appId: String.fromEnvironment('FIREBASE_APP_ID'),
-  ),
-);
+    options: const FirebaseOptions(
+      apiKey: String.fromEnvironment('FIREBASE_API_KEY'),
+      authDomain: String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
+      projectId: String.fromEnvironment('FIREBASE_PROJECT_ID'),
+      storageBucket: String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+      messagingSenderId: String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
+      appId: String.fromEnvironment('FIREBASE_APP_ID'),
+    ),
+  );
 
   // Enable offline persistence for all Firestore data
   FirebaseFirestore.instance.settings = const Settings(
@@ -70,17 +70,25 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    // userChanges() fires on ANY User property change, including emailVerified.
+    // This is more reliable than idTokenChanges() especially on web.
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.userChanges(),
+      builder: (context, snapshot) {
+        // Still waiting for Firebase to emit the first auth state
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    if (user != null) {
-      if (!user.emailVerified) {
-        return const VerifyEmailScreen();
-      } else {
+        final user = snapshot.data;
+
+        if (user == null) return const LandingScreen();
+        if (!user.emailVerified) return const VerifyEmailScreen();
         return const MainShell();
-      }
-    }
-
-    return const LandingScreen();
+      },
+    );
   }
 }
 
