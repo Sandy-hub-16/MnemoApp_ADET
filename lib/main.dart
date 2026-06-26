@@ -19,6 +19,7 @@ import 'ui-layer/main_screens/deck/deck_quiz_results_screen.dart';
 import 'ui-layer/social/notification_screen.dart';
 import 'ui-layer/social/shared_deck_detail_screen.dart';
 import 'ui-layer/social/public_profile_screen.dart';
+import 'ui-layer/social/followers_list_screen.dart';
 import 'ui-layer/social/social_feed_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -119,6 +120,7 @@ abstract final class AppRoutes {
   static const String discover = '/discover';
   static const String sharedDeckDetail = '/shared-deck-detail';
   static const String publicProfile = '/public-profile';
+  static const String followList = '/follow-list';
   static const String feed = '/feed';
   static const String notifications = '/notifications';
 }
@@ -155,6 +157,7 @@ abstract final class AppRouter {
       AppRoutes.discover => const MainShell(initialIndex: 2),
       AppRoutes.sharedDeckDetail => const SharedDeckDetailScreen(),
       AppRoutes.publicProfile => const PublicProfileScreen(),
+      AppRoutes.followList => const FollowListScreen(),
       AppRoutes.feed => const SocialFeedScreen(),
       _ => const MainShell(),
     };

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../../business-layer/services/auth_google_service.dart';
+import '../../data-layer/route_args/social_route_args.dart';
+import '../../main.dart';
 import 'settings/settings_screen.dart' show accountPrivacyNotifier;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +118,13 @@ class _ProfileBodyState extends State<_ProfileBody> {
   // ── Shared decks ──────────────────────────────────────────────────────────
   int _publicDeckCount = 0;
 
+  // ── Follow graph counts ───────────────────────────────────────────────────
+  int _followerCount = 0;
+  int _followingCount = 0;
+
+  // ── Current uid (kept for tapping into the followers/following list) ─────
+  String _uid = '';
+
   @override
   void initState() {
     super.initState();
@@ -169,8 +178,23 @@ class _ProfileBodyState extends State<_ProfileBody> {
         .where('ownerUid', isEqualTo: uid)
         .get();
 
+    final followerAggSnap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('followers')
+        .count()
+        .get();
+
+    final followingAggSnap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('following')
+        .count()
+        .get();
+
     if (mounted) {
       setState(() {
+        _uid = uid;
         _fullName = data['fullName'] as String? ?? '';
         _bio = data['bio'] as String? ?? '';
         _course = data['course'] as String? ?? '';
@@ -186,6 +210,8 @@ class _ProfileBodyState extends State<_ProfileBody> {
         _createdAt = data['createdAt'] as Timestamp?;
         accountPrivacyNotifier.value = !_isPrivate;
         _publicDeckCount = publicSnap.size;
+        _followerCount = followerAggSnap.count ?? 0;
+        _followingCount = followingAggSnap.count ?? 0;
         _loading = false;
       });
     }
@@ -240,6 +266,22 @@ class _ProfileBodyState extends State<_ProfileBody> {
             photoUrl: _photoUrl,
             isPrivate: _isPrivate,
             memberSince: _memberSince,
+            followerCount: _followerCount,
+            followingCount: _followingCount,
+            onFollowersTap: () => Navigator.of(context).pushNamed(
+              AppRoutes.followList,
+              arguments: FollowListArgs(
+                targetUid: _uid,
+                initialTab: FollowListTab.followers,
+              ),
+            ),
+            onFollowingTap: () => Navigator.of(context).pushNamed(
+              AppRoutes.followList,
+              arguments: FollowListArgs(
+                targetUid: _uid,
+                initialTab: FollowListTab.following,
+              ),
+            ),
             onEditTap: () async {
               await Navigator.of(context).pushNamed('/account-settings');
               _loadProfile();
@@ -305,6 +347,10 @@ class _HeroHeader extends StatelessWidget {
     required this.username,
     required this.isPrivate,
     required this.memberSince,
+    required this.followerCount,
+    required this.followingCount,
+    required this.onFollowersTap,
+    required this.onFollowingTap,
     required this.onEditTap,
     this.photoUrl,
   });
@@ -314,6 +360,10 @@ class _HeroHeader extends StatelessWidget {
   final String? photoUrl;
   final bool isPrivate;
   final String memberSince;
+  final int followerCount;
+  final int followingCount;
+  final VoidCallback onFollowersTap;
+  final VoidCallback onFollowingTap;
   final VoidCallback onEditTap;
 
   @override
@@ -433,6 +483,31 @@ class _HeroHeader extends StatelessWidget {
               ],
             ),
           ],
+
+          // Followers / Following — tappable, no box, matches the stat-pill
+          // styling already used on PublicProfileScreen.
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _FollowStat(
+                count: followerCount,
+                label: 'Followers',
+                onTap: onFollowersTap,
+              ),
+              Container(
+                width: 1,
+                height: 28,
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                color: AppColors.outlineVariant.withValues(alpha: 0.5),
+              ),
+              _FollowStat(
+                count: followingCount,
+                label: 'Following',
+                onTap: onFollowingTap,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -440,8 +515,68 @@ class _HeroHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EDIT ACCOUNT BUTTON
+// FOLLOW STAT
+//
+// Tappable count + label, deliberately undecorated — no box, no border, no
+// fill — so it reads as plain text that happens to be tappable, matching the
+// look of _StatPill on PublicProfileScreen but adding navigation.
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _FollowStat extends StatelessWidget {
+  const _FollowStat({
+    required this.count,
+    required this.label,
+    required this.onTap,
+  });
+
+  final int count;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        splashColor: AppColors.primary.withValues(alpha: 0.08),
+        highlightColor: AppColors.primary.withValues(alpha: 0.05),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Column(
+            children: [
+              Text(
+                _formatCount(count),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
 
 class _EditAccountButton extends StatelessWidget {
   const _EditAccountButton({required this.onTap});
