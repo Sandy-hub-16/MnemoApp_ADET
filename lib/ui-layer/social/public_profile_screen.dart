@@ -12,21 +12,28 @@ import '../../business-layer/services/notification_prefs_service.dart';
 import 'widgets/public_deck_card.dart';
 import 'widgets/follow_button.dart';
 import '../widgets/app_spinner.dart';
+import '../../main.dart' show AppRoutes;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC PROFILE SCREEN  —  route: /public-profile
 //
-// Displays another user's public identity (avatar, name, username), their
-// follower / following counts, and a list of their shared decks.
+// Behaviour:
+//   • PUBLIC account  → full profile: hero header (avatar + gradient ring +
+//     privacy badge + name + username + member-since + followers/following),
+//     bio card, about card, library stat card (decks, cards, shared — no
+//     drafts), and the real-time shared deck list.
+//   • PRIVATE account → minimal view: avatar, full name, username and a
+//     "This account is private" lock card.  No stats, no decks, no bio.
 //
-// The current user can follow or unfollow the profile owner from this screen.
+// The design language mirrors the owner's ProfileScreen: gradient header band,
+// same card primitives (_SectionCard, _CardLabel, etc.), identical colour
+// tokens.  The only intentional differences are:
+//   • Back-arrow top bar instead of "Edit Account" button
+//   • Follow / Unfollow button (hidden when viewing your own profile)
+//   • No Settings, Notifications, or Log Out sections
 //
-// Arguments: PublicProfileArgs (targetUid, suppressViewNotification)
-//            via settings.arguments
-//
-// suppressViewNotification: when true, the screen skips firing the
-// "profile_viewed" notification. Set to true when navigating here from a
-// profile_viewed notification tile to prevent an infinite ping-pong loop.
+// Arguments : PublicProfileArgs (targetUid, suppressViewNotification)
+//             via ModalRoute settings.arguments
 //
 // Architecture: public StatelessWidget → private StatefulWidget _Body
 //
@@ -40,13 +47,12 @@ class PublicProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args == null || args is! PublicProfileArgs) {
-      // Navigated without args (e.g. direct URL or missing fromUid)
       return Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
           child: Column(
             children: [
-              _ProfileTopBar(onBack: () => Navigator.of(context).pop()),
+              _TopBar(onBack: () => Navigator.of(context).pop()),
               Expanded(
                 child: Center(
                   child: Padding(
@@ -97,10 +103,6 @@ class _PublicProfileBody extends StatefulWidget {
   });
 
   final String targetUid;
-
-  /// When true, visiting this profile will NOT fire a "profile_viewed"
-  /// notification to the owner. Used when navigating here from a
-  /// profile_viewed notification to break the infinite loop.
   final bool suppressViewNotification;
 
   @override
@@ -114,19 +116,15 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
   bool _isFollowLoading = false;
 
   PublicProfile? _profile;
+  PublicLibraryStats? _stats;
   bool _isFollowing = false;
   int _followerCount = 0;
   int _followingCount = 0;
 
   String? _errorMessage;
 
-  // ── FIX (Bug 1): hold the decks stream in state, not inside the
-  // StatelessWidget build method. Creating the stream inside a StatelessWidget
-  // that receives setState-driven rebuilds from the parent causes a brand-new
-  // stream to be created on every rebuild. The StreamBuilder then sees a new
-  // stream → resets to ConnectionState.waiting → shows the spinner briefly →
-  // then data arrives. Keeping the stream here means it is created once and
-  // survives follow/unfollow state changes.
+  // Hold the decks stream in state so follow/unfollow setState calls do NOT
+  // recreate the stream and reset the StreamBuilder.
   late final Stream<List<PublicDeckSummary>> _decksStream;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -134,7 +132,6 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
   @override
   void initState() {
     super.initState();
-    // Create the stream once. It will live for the lifetime of this State.
     _decksStream = ProfileService.userDecksStream(widget.targetUid);
     _loadProfile();
   }
@@ -151,14 +148,6 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
       final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
       final db = FirebaseFirestore.instance;
 
-      // FIX (Bug 2): force a server fetch for the follow-state document.
-      // With Firestore offline persistence enabled (main.dart), a plain .get()
-      // can serve a stale cached doc — e.g. showing a deleted followers entry
-      // as still existing. That makes the Follow button display "Following"
-      // even though the user never followed (or already unfollowed). Fetching
-      // from the server guarantees we read the actual current state.
-      // Profile and counts are fine from cache; only the follow-state needs
-      // to be accurate to avoid the misleading "Following" button.
       final results = await Future.wait([
         ProfileService.getProfile(widget.targetUid),
         db
@@ -166,7 +155,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
             .doc(widget.targetUid)
             .collection('followers')
             .doc(currentUid)
-            .get(const GetOptions(source: Source.server)), // ← server only
+            .get(const GetOptions(source: Source.server)),
         db
             .collection('users')
             .doc(widget.targetUid)
@@ -188,21 +177,16 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
       final followerAgg = results[2] as AggregateQuerySnapshot;
       final followingAgg = results[3] as AggregateQuerySnapshot;
 
-      // If the profile is private and the viewer is not the owner, show lock screen
-      if (profile.isPrivate && currentUid != widget.targetUid) {
-        setState(() {
-          _isLoadingProfile = false;
-          _errorMessage = 'This account is private.';
-        });
-        return;
+      // Fetch library stats only for public profiles (no need if private).
+      PublicLibraryStats? stats;
+      if (!profile.isPrivate) {
+        stats = await ProfileService.getLibraryStats(widget.targetUid);
       }
 
-      // Send a "profile viewed" notification to the owner (fire-and-forget).
-      // Skipped when:
-      //   • viewing your own profile
-      //   • the profile is private
-      //   • suppressViewNotification is true (arrived from a profile_viewed
-      //     notification tile — firing here would create an infinite loop)
+      if (!mounted) return;
+
+      // Fire profile-viewed notification (public accounts only, not self, not
+      // suppressed, not from a private viewer).
       if (currentUid.isNotEmpty &&
           currentUid != widget.targetUid &&
           !profile.isPrivate &&
@@ -216,6 +200,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
 
       setState(() {
         _profile = profile;
+        _stats = stats;
         _isFollowing = followDoc.exists;
         _followerCount = followerAgg.count ?? 0;
         _followingCount = followingAgg.count ?? 0;
@@ -239,12 +224,6 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
 
   // ── Profile viewed notification ───────────────────────────────────────────
 
-  /// Writes a "profile_viewed" notification to the profile owner.
-  /// Fire-and-forget; errors are silent.
-  ///
-  /// Includes a 24-hour deduplication guard: if this viewer already triggered
-  /// a profile_viewed notification for this owner in the last 24 hours, the
-  /// write is skipped to prevent notification spam from repeat visits.
   Future<void> _sendProfileViewedNotification({
     required String viewerUid,
     required String ownerUid,
@@ -259,20 +238,13 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
 
       final db = FirebaseFirestore.instance;
 
-      // Fetch viewer's profile — used for both full name and privacy check.
       final viewerSnap = await db.collection('users').doc(viewerUid).get();
       final viewerData = viewerSnap.data() ?? {};
       final viewerFullName = viewerData['fullName'] as String? ?? 'Someone';
 
-      // ── Private viewer guard ──────────────────────────────────────────────
-      // If the viewer has set their account to private they browse anonymously
-      // — no notification footprint left on the profiles they visit.
       final viewerIsPrivate = viewerData['isPrivate'] as bool? ?? false;
       if (viewerIsPrivate) return;
 
-      // ── 24-hour dedup guard ───────────────────────────────────────────────
-      // Skip if this viewer already sent a profile_viewed notification to
-      // this owner within the last 24 hours.
       final cutoff = Timestamp.fromDate(
         DateTime.now().subtract(const Duration(hours: 24)),
       );
@@ -286,7 +258,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
           .limit(1)
           .get();
 
-      if (existing.docs.isNotEmpty) return; // already notified recently
+      if (existing.docs.isNotEmpty) return;
 
       await db
           .collection('users')
@@ -342,7 +314,8 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
     } on ArgumentError catch (e) {
       if (!mounted) return;
       _showErrorSnackBar(e.message.toString());
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[PublicProfileScreen._toggleFollow] error: $e');
       if (!mounted) return;
       _showErrorSnackBar('Something went wrong. Please try again.');
     } finally {
@@ -360,6 +333,19 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
         ownerUid: deck.ownerUid,
       ),
     );
+  }
+
+  void _openFollowersList(String tab) async {
+    await Navigator.of(context).pushNamed(
+      AppRoutes.followList,
+      arguments: FollowListArgs(
+        targetUid: widget.targetUid,
+        initialTab: tab == 'followers'
+            ? FollowListTab.followers
+            : FollowListTab.following,
+      ),
+    );
+    _loadProfile();
   }
 
   // ── Error display ─────────────────────────────────────────────────────────
@@ -390,57 +376,63 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // ── Decorative blobs ─────────────────────────────────────────────
+          // ── Decorative blobs — mirror profile_screen positioning ──────────
           Positioned(
-            top: -40,
-            right: -80,
+            top: -80,
+            left: -60,
             child: _Blob(
-              size: 300,
-              color: AppColors.primaryContainer.withValues(alpha: 0.22),
+              size: 340,
+              color: AppColors.secondaryContainer.withValues(alpha: 0.18),
             ),
           ),
           Positioned(
-            bottom: 200,
-            left: -100,
+            top: MediaQuery.of(context).size.height * 0.45,
+            right: -100,
             child: _Blob(
-              size: 260,
-              color: AppColors.secondaryContainer.withValues(alpha: 0.25),
+              size: 280,
+              color: AppColors.tertiaryContainer.withValues(alpha: 0.14),
             ),
           ),
 
           SafeArea(
+            bottom: false,
             child: Column(
               children: [
                 // ── Top bar ───────────────────────────────────────────────
-                _ProfileTopBar(
-                  onBack: () => Navigator.of(context).pop(),
-                ),
+                _TopBar(onBack: () => Navigator.of(context).pop()),
 
                 // ── Content ───────────────────────────────────────────────
                 Expanded(
                   child: _isLoadingProfile
                       ? const Center(child: AppSpinner())
                       : _errorMessage != null
-                          ? _ErrorState(
+                          ? _GenericErrorState(
                               message: _errorMessage!,
                               onRetry: _loadProfile,
                             )
                           : _profile == null
                               ? const SizedBox.shrink()
-                              : _ProfileContent(
-                                  profile: _profile!,
-                                  // Pass the stable stream instance — not a
-                                  // new call to userDecksStream() — so the
-                                  // StreamBuilder is never reset by a setState.
-                                  decksStream: _decksStream,
-                                  isOwnProfile: isOwnProfile,
-                                  isFollowing: _isFollowing,
-                                  isFollowLoading: _isFollowLoading,
-                                  followerCount: _followerCount,
-                                  followingCount: _followingCount,
-                                  onFollowToggle: _toggleFollow,
-                                  onDeckTap: _openDeckDetail,
-                                ),
+                              : _profile!.isPrivate &&
+                                      currentUid != widget.targetUid
+                                  ? _PrivateProfileView(
+                                      profile: _profile!,
+                                    )
+                                  : _PublicProfileView(
+                                      profile: _profile!,
+                                      stats: _stats,
+                                      decksStream: _decksStream,
+                                      isOwnProfile: isOwnProfile,
+                                      isFollowing: _isFollowing,
+                                      isFollowLoading: _isFollowLoading,
+                                      followerCount: _followerCount,
+                                      followingCount: _followingCount,
+                                      onFollowToggle: _toggleFollow,
+                                      onDeckTap: _openDeckDetail,
+                                      onFollowersTap: () =>
+                                          _openFollowersList('followers'),
+                                      onFollowingTap: () =>
+                                          _openFollowersList('following'),
+                                    ),
                 ),
               ],
             ),
@@ -455,15 +447,15 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
 // TOP BAR
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileTopBar extends StatelessWidget {
-  const _ProfileTopBar({required this.onBack});
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.onBack});
 
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.background.withValues(alpha: 0.80),
+      color: AppColors.background.withValues(alpha: 0.90),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Row(
         children: [
@@ -491,18 +483,149 @@ class _ProfileTopBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE CONTENT
+// PRIVATE PROFILE VIEW
 //
-// Renders the profile header (avatar, name, stats, follow button) and the
-// real-time list of the user's public decks via StreamBuilder.
-//
-// Receives [decksStream] from the parent State so that follow/unfollow
-// setState calls do NOT recreate the stream and reset the StreamBuilder.
+// Shown when the target account has isPrivate == true and the viewer is not
+// the owner.  Only displays avatar, full name, username, and a lock card.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileContent extends StatelessWidget {
-  const _ProfileContent({
+class _PrivateProfileView extends StatelessWidget {
+  const _PrivateProfileView({required this.profile});
+
+  final PublicProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 80),
+      child: Column(
+        children: [
+          // ── Minimal hero — gradient band, avatar, name, username ──────────
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.09),
+                  AppColors.secondaryContainer.withValues(alpha: 0.14),
+                  AppColors.background,
+                ],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: const [0.0, 0.55, 1.0],
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 32),
+            child: Column(
+              children: [
+                // Avatar with gradient ring
+                _AvatarRing(
+                  photoUrl: profile.photoUrl,
+                  fullName: profile.fullName,
+                  isPrivate: true,
+                ),
+                const SizedBox(height: 16),
+
+                // Full name
+                Text(
+                  profile.fullName.isNotEmpty ? profile.fullName : 'User',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                    color: AppColors.onSurface,
+                    height: 1.1,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+
+                // @username
+                if (profile.username.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '@${profile.username}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                      letterSpacing: 0.1,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // ── Lock card ─────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: _SectionCard(
+              child: Column(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: AppColors.onSurface.withValues(alpha: 0.07),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.lock_outline_rounded,
+                      size: 24,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'This account is private',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.onSurface,
+                      letterSpacing: -0.2,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Only the name and username\nare visible for private accounts.',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC PROFILE VIEW
+//
+// Full profile layout matching the owner's ProfileScreen in design language:
+//   1. Hero header  — gradient band · avatar (gradient ring + privacy badge) ·
+//                     full name · @username · member-since ·
+//                     followers/following (tappable) · follow button
+//   2. Bio card     — shown only when bio is non-empty
+//   3. About card   — school / course / year / region
+//   4. Library card — Decks | Cards | Shared  (3-cell, no Drafts)
+//   5. Shared decks list (real-time stream)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PublicProfileView extends StatelessWidget {
+  const _PublicProfileView({
     required this.profile,
+    required this.stats,
     required this.decksStream,
     required this.isOwnProfile,
     required this.isFollowing,
@@ -511,9 +634,12 @@ class _ProfileContent extends StatelessWidget {
     required this.followingCount,
     required this.onFollowToggle,
     required this.onDeckTap,
+    required this.onFollowersTap,
+    required this.onFollowingTap,
   });
 
   final PublicProfile profile;
+  final PublicLibraryStats? stats;
   final Stream<List<PublicDeckSummary>> decksStream;
   final bool isOwnProfile;
   final bool isFollowing;
@@ -522,48 +648,115 @@ class _ProfileContent extends StatelessWidget {
   final int followingCount;
   final VoidCallback onFollowToggle;
   final void Function(PublicDeckSummary) onDeckTap;
+  final VoidCallback onFollowersTap;
+  final VoidCallback onFollowingTap;
+
+  String get _memberSince {
+    if (profile.createdAt == null) return '';
+    final dt = profile.createdAt!.toDate();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return 'Member since ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  bool get _hasAbout =>
+      profile.school.isNotEmpty ||
+      profile.course.isNotEmpty ||
+      profile.yearLevel.isNotEmpty ||
+      profile.region.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // ── Profile header ───────────────────────────────────────────────
+        // ── 1. Hero header ────────────────────────────────────────────────
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-            child: _ProfileHeader(
-              profile: profile,
-              isOwnProfile: isOwnProfile,
-              isFollowing: isFollowing,
-              isFollowLoading: isFollowLoading,
-              followerCount: followerCount,
-              followingCount: followingCount,
-              onFollowToggle: onFollowToggle,
-            ),
+          child: _PublicHeroHeader(
+            profile: profile,
+            memberSince: _memberSince,
+            followerCount: followerCount,
+            followingCount: followingCount,
+            isOwnProfile: isOwnProfile,
+            isFollowing: isFollowing,
+            isFollowLoading: isFollowLoading,
+            onFollowToggle: onFollowToggle,
+            onFollowersTap: onFollowersTap,
+            onFollowingTap: onFollowingTap,
           ),
         ),
 
-        // ── Decks section header ─────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
-            child: Text(
-              'Shared Decks',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: AppColors.onSurface,
-                letterSpacing: -0.3,
+        // ── 2. Bio card ───────────────────────────────────────────────────
+        if (profile.bio.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: _BioCard(bio: profile.bio),
+            ),
+          ),
+
+        // ── 3. About card ─────────────────────────────────────────────────
+        if (_hasAbout)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: _AboutCard(
+                school: profile.school,
+                course: profile.course,
+                yearLevel: profile.yearLevel,
+                region: profile.region,
               ),
             ),
           ),
+
+        // ── 4. Library stats card ─────────────────────────────────────────
+        if (stats != null)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: _LibraryStatsCard(stats: stats!),
+            ),
+          ),
+
+        // ── 5. Shared decks section header ────────────────────────────────
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.public_outlined,
+                  size: 13,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'SHARED LIBRARY',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
 
-        // ── Decks list (real-time) ───────────────────────────────────────
-        // Uses the stable [decksStream] passed from the parent State.
-        // This stream is created once in initState() and is never recreated
-        // by follow/unfollow or other setState calls.
+        // ── 6. Deck list (real-time) ──────────────────────────────────────
         StreamBuilder<List<PublicDeckSummary>>(
           stream: decksStream,
           builder: (context, snapshot) {
@@ -579,13 +772,11 @@ class _ProfileContent extends StatelessWidget {
             final decks = snapshot.data ?? [];
 
             if (decks.isEmpty) {
-              return const SliverToBoxAdapter(
-                child: _EmptyDecksState(),
-              );
+              return const SliverToBoxAdapter(child: _EmptyDecksState());
             }
 
             return SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) => Padding(
@@ -607,91 +798,141 @@ class _ProfileContent extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE HEADER
+// PUBLIC HERO HEADER
 //
-// Avatar, full name, username, follower/following counts, and follow button.
+// Mirrors the _HeroHeader widget in profile_screen.dart but replaces the
+// "Edit Account" button with a follow/unfollow action.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({
+class _PublicHeroHeader extends StatelessWidget {
+  const _PublicHeroHeader({
     required this.profile,
+    required this.memberSince,
+    required this.followerCount,
+    required this.followingCount,
     required this.isOwnProfile,
     required this.isFollowing,
     required this.isFollowLoading,
-    required this.followerCount,
-    required this.followingCount,
     required this.onFollowToggle,
+    required this.onFollowersTap,
+    required this.onFollowingTap,
   });
 
   final PublicProfile profile;
+  final String memberSince;
+  final int followerCount;
+  final int followingCount;
   final bool isOwnProfile;
   final bool isFollowing;
   final bool isFollowLoading;
-  final int followerCount;
-  final int followingCount;
   final VoidCallback onFollowToggle;
+  final VoidCallback onFollowersTap;
+  final VoidCallback onFollowingTap;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.onSurface.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withValues(alpha: 0.09),
+            AppColors.secondaryContainer.withValues(alpha: 0.14),
+            AppColors.background,
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0.0, 0.55, 1.0],
+        ),
       ),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
       child: Column(
         children: [
-          // ── Avatar ────────────────────────────────────────────────────
-          _ProfileAvatar(photoUrl: profile.photoUrl, size: 80),
-          const SizedBox(height: 14),
+          // Avatar with gradient ring + privacy badge
+          _AvatarRing(
+            photoUrl: profile.photoUrl,
+            fullName: profile.fullName,
+            isPrivate: false,
+          ),
+          const SizedBox(height: 16),
 
-          // ── Full name ─────────────────────────────────────────────────
+          // Full name
           Text(
-            profile.fullName,
+            profile.fullName.isNotEmpty ? profile.fullName : 'User',
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 22,
+              fontSize: 26,
               fontWeight: FontWeight.w800,
+              letterSpacing: -0.6,
               color: AppColors.onSurface,
-              letterSpacing: -0.4,
+              height: 1.1,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 4),
 
-          // ── Username ──────────────────────────────────────────────────
-          Text(
-            '@${profile.username}',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.outline,
+          // @username
+          if (profile.username.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              '@${profile.username}',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+                letterSpacing: 0.1,
+              ),
+              textAlign: TextAlign.center,
             ),
-          ),
-          const SizedBox(height: 20),
+          ],
 
-          // ── Follower / following counts ───────────────────────────────
+          // Member since
+          if (memberSince.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 11,
+                  color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  memberSince,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          // Followers / Following — tappable
+          const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _StatPill(count: followerCount, label: 'Followers'),
+              _FollowStat(
+                count: followerCount,
+                label: 'Followers',
+                onTap: onFollowersTap,
+              ),
               Container(
                 width: 1,
                 height: 28,
-                margin: const EdgeInsets.symmetric(horizontal: 20),
+                margin: const EdgeInsets.symmetric(horizontal: 24),
                 color: AppColors.outlineVariant.withValues(alpha: 0.5),
               ),
-              _StatPill(count: followingCount, label: 'Following'),
+              _FollowStat(
+                count: followingCount,
+                label: 'Following',
+                onTap: onFollowingTap,
+              ),
             ],
           ),
 
-          // ── Follow button (hidden on own profile) ─────────────────────
+          // Follow button (hidden on own profile)
           if (!isOwnProfile) ...[
             const SizedBox(height: 20),
             FollowButton(
@@ -707,91 +948,540 @@ class _ProfileHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE AVATAR
+// AVATAR RING  (gradient ring + privacy badge — mirrors profile_screen)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar({required this.photoUrl, required this.size});
+class _AvatarRing extends StatelessWidget {
+  const _AvatarRing({
+    required this.photoUrl,
+    required this.fullName,
+    required this.isPrivate,
+  });
 
   final String? photoUrl;
-  final double size;
+  final String fullName;
+  final bool isPrivate;
 
   @override
   Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [
+                AppColors.primary.withValues(alpha: 0.30),
+                AppColors.secondary.withValues(alpha: 0.20),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.18),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(4),
+          child: _AvatarContent(photoUrl: photoUrl, fullName: fullName),
+        ),
+        Positioned(
+          bottom: 2,
+          right: 2,
+          child: _PrivacyBadge(isPrivate: isPrivate),
+        ),
+      ],
+    );
+  }
+}
+
+class _AvatarContent extends StatelessWidget {
+  const _AvatarContent({required this.photoUrl, required this.fullName});
+
+  final String? photoUrl;
+  final String fullName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (photoUrl != null && photoUrl!.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          photoUrl!,
+          width: 108,
+          height: 108,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Container(
+              width: 108,
+              height: 108,
+              color: AppColors.primaryContainer.withValues(alpha: 0.2),
+              child: Center(
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    strokeCap: StrokeCap.round,
+                    color: AppColors.primary,
+                    value: progress.expectedTotalBytes != null
+                        ? progress.cumulativeBytesLoaded /
+                            progress.expectedTotalBytes!
+                        : null,
+                  ),
+                ),
+              ),
+            );
+          },
+          errorBuilder: (_, __, ___) => _FallbackAvatar(fullName: fullName),
+        ),
+      );
+    }
+    return _FallbackAvatar(fullName: fullName);
+  }
+}
+
+class _FallbackAvatar extends StatelessWidget {
+  const _FallbackAvatar({required this.fullName});
+  final String fullName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (fullName.isNotEmpty) {
+      return Container(
+        width: 108,
+        height: 108,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            colors: [AppColors.primaryContainer, AppColors.secondaryContainer],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            fullName[0].toUpperCase(),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 38,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+      );
+    }
     return Container(
-      width: size,
-      height: size,
+      width: 108,
+      height: 108,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: AppColors.primaryContainer,
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.25),
-          width: 3,
-        ),
+        color: AppColors.primaryContainer.withValues(alpha: 0.3),
       ),
-      child: ClipOval(
-        child: photoUrl != null && photoUrl!.isNotEmpty
-            ? Image.network(
-                photoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.person_rounded,
-                  color: AppColors.primary,
-                  size: 40,
-                ),
-              )
-            : const Icon(
-                Icons.person_rounded,
-                color: AppColors.primary,
-                size: 40,
-              ),
+      child: Icon(
+        Icons.person_rounded,
+        size: 56,
+        color: AppColors.primary.withValues(alpha: 0.5),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STAT PILL
-//
-// Displays a numeric count with a label below it (e.g. "42 / Followers").
+// PRIVACY BADGE  (mirrors profile_screen._PrivacyBadge exactly)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _StatPill extends StatelessWidget {
-  const _StatPill({required this.count, required this.label});
+class _PrivacyBadge extends StatelessWidget {
+  const _PrivacyBadge({required this.isPrivate});
+  final bool isPrivate;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isPrivate ? AppColors.onSurface : AppColors.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: AppColors.background, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isPrivate ? Icons.lock_rounded : Icons.public_rounded,
+            size: 9,
+            color: Colors.white,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            isPrivate ? 'Private' : 'Public',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOW STAT  (tappable count + label, no decoration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FollowStat extends StatelessWidget {
+  const _FollowStat({
+    required this.count,
+    required this.label,
+    required this.onTap,
+  });
 
   final int count;
   final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        splashColor: AppColors.primary.withValues(alpha: 0.08),
+        highlightColor: AppColors.primary.withValues(alpha: 0.05),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Column(
+            children: [
+              Text(
+                _fmt(count),
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.onSurface,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BIO CARD  (mirrors profile_screen._BioCard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BioCard extends StatelessWidget {
+  const _BioCard({required this.bio});
+  final String bio;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardLabel(icon: Icons.format_quote_rounded, label: 'BIO'),
+          const SizedBox(height: 10),
+          Text(
+            bio,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: AppColors.onSurface,
+              height: 1.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ABOUT CARD  (mirrors profile_screen._AboutCard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AboutCard extends StatelessWidget {
+  const _AboutCard({
+    required this.school,
+    required this.course,
+    required this.yearLevel,
+    required this.region,
+  });
+
+  final String school;
+  final String course;
+  final String yearLevel;
+  final String region;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardLabel(icon: Icons.person_outline_rounded, label: 'ABOUT'),
+          const SizedBox(height: 12),
+          if (school.isNotEmpty)
+            _AboutRow(
+              icon: Icons.school_outlined,
+              label: 'School',
+              value: school,
+              color: AppColors.secondary,
+            ),
+          if (course.isNotEmpty)
+            _AboutRow(
+              icon: Icons.menu_book_outlined,
+              label: 'Course',
+              value: course,
+              color: AppColors.tertiary,
+            ),
+          if (yearLevel.isNotEmpty)
+            _AboutRow(
+              icon: Icons.grade_outlined,
+              label: 'Year Level',
+              value: yearLevel,
+              color: AppColors.primary,
+            ),
+          if (region.isNotEmpty)
+            _AboutRow(
+              icon: Icons.location_on_outlined,
+              label: 'Region',
+              value: region,
+              color: AppColors.onSurfaceVariant,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutRow extends StatelessWidget {
+  const _AboutRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.0,
+                    color: AppColors.onSurfaceVariant.withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  value,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIBRARY STATS CARD
+//
+// 3-cell grid: Decks | Cards | Shared.  Drafts intentionally excluded.
+// Design mirrors profile_screen._LibraryCard (gradient container, same tokens).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LibraryStatsCard extends StatelessWidget {
+  const _LibraryStatsCard({required this.stats});
+
+  final PublicLibraryStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primaryContainer.withValues(alpha: 0.22),
+            AppColors.secondaryContainer.withValues(alpha: 0.18),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.12),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withValues(alpha: 0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CardLabel(icon: Icons.bar_chart_rounded, label: 'LIBRARY'),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatCell(
+                  value: '${stats.deckCount}',
+                  label: 'Decks',
+                  icon: Icons.layers_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+              _StatDivider(),
+              Expanded(
+                child: _StatCell(
+                  value: '${stats.cardCount}',
+                  label: 'Cards',
+                  icon: Icons.style_outlined,
+                  color: AppColors.secondary,
+                ),
+              ),
+              _StatDivider(),
+              Expanded(
+                child: _StatCell(
+                  value: '${stats.sharedDeckCount}',
+                  label: 'Shared',
+                  icon: Icons.public_outlined,
+                  color: AppColors.tertiary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCell extends StatelessWidget {
+  const _StatCell({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.color,
+  });
+
+  final String value;
+  final String label;
+  final IconData icon;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 17, color: color),
+        ),
+        const SizedBox(height: 8),
         Text(
-          _formatCount(count),
+          value,
           style: GoogleFonts.plusJakartaSans(
             fontSize: 22,
             fontWeight: FontWeight.w800,
             color: AppColors.onSurface,
-            letterSpacing: -0.5,
+            height: 1,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 3),
         Text(
           label,
           style: GoogleFonts.plusJakartaSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: AppColors.outline,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.onSurfaceVariant,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
   }
+}
 
-  String _formatCount(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
+class _StatDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 52,
+      color: AppColors.outlineVariant.withValues(alpha: 0.35),
+    );
   }
 }
 
@@ -830,19 +1520,17 @@ class _EmptyDecksState extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ERROR STATE
+// GENERIC ERROR STATE  (network / not-found errors with retry)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
+class _GenericErrorState extends StatelessWidget {
+  const _GenericErrorState({required this.message, required this.onRetry});
 
   final String message;
   final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final isPrivate = message == 'This account is private.';
-
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -850,7 +1538,7 @@ class _ErrorState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isPrivate ? Icons.lock_outline_rounded : Icons.person_off_rounded,
+              Icons.person_off_rounded,
               size: 64,
               color: AppColors.outline.withValues(alpha: 0.5),
             ),
@@ -864,23 +1552,80 @@ class _ErrorState extends StatelessWidget {
               ),
               textAlign: TextAlign.center,
             ),
-            if (!isPrivate) ...[
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: onRetry,
-                child: Text(
-                  'Try again',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: onRetry,
+              child: Text(
+                'Try again',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED DESIGN PRIMITIVES  (mirrors profile_screen equivalents)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.outlineVariant.withValues(alpha: 0.25),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.onSurface.withValues(alpha: 0.035),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _CardLabel extends StatelessWidget {
+  const _CardLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 13, color: AppColors.primary),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+            color: AppColors.primary,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -377,70 +377,72 @@ abstract final class ShareService {
 
     await batch.commit();
 
-    // ── Notify the followee that they have a new follower ─────────────────
-    // Fire-and-forget; independent of the public-deck fan-out below, so it
-    // still fires even when the followee has no public decks to fan out.
-    _notifyNewFollower(
-      followeeUid: followeeUid,
-      followerUid: followerUid,
-    );
-
-    // ── Fan-out: notify existing followers of the followee's latest deck ──
-    // Check if the followee has any public decks to notify about.
-    final publicDecksSnap = await _db
-        .collection('public_decks')
-        .where('ownerUid', isEqualTo: followeeUid)
-        .orderBy('sharedAt', descending: true)
-        .limit(1)
-        .get();
-
-    if (publicDecksSnap.docs.isEmpty) return;
-
-    final latestDeck = publicDecksSnap.docs.first;
-    final latestDeckData = latestDeck.data();
-
-    // Read the followee's full name for the notification
-    final followeeSnap = await _db.collection('users').doc(followeeUid).get();
-    final followeeFullName = followeeSnap.data()?['fullName'] as String? ?? '';
-
-    // Read all current followers of the followee
-    final followersSnap = await _db
-        .collection('users')
-        .doc(followeeUid)
-        .collection('followers')
-        .get();
-
-    if (followersSnap.docs.isEmpty) return;
-
-    final fanOutBatch = _db.batch();
-
-    for (final followerDoc in followersSnap.docs) {
-      final fUid = followerDoc.id;
-
-      // Independent per-recipient check: a follower who has turned off
-      // "new_shared_deck" notifications simply gets no doc written for them,
-      // while everyone else in the fan-out is unaffected.
-      final enabled = await NotificationPrefsService.isEnabledFor(
-        uid: fUid,
-        type: NotificationType.newSharedDeck,
+    // ── Notifications + fan-out (fire-and-forget) ─────────────────────────
+    // Errors here must never surface as a follow failure — the relationship
+    // is already committed above. Wrap everything in a silent try-catch.
+    try {
+      // Notify the followee that they have a new follower.
+      _notifyNewFollower(
+        followeeUid: followeeUid,
+        followerUid: followerUid,
       );
-      if (!enabled) continue;
 
-      final notifRef =
-          _db.collection('users').doc(fUid).collection('notifications').doc();
+      // Fan-out: notify existing followers of the followee's latest deck.
+      final publicDecksSnap = await _db
+          .collection('public_decks')
+          .where('ownerUid', isEqualTo: followeeUid)
+          .orderBy('sharedAt', descending: true)
+          .limit(1)
+          .get();
 
-      fanOutBatch.set(notifRef, {
-        'type': 'new_shared_deck',
-        'fromUid': followeeUid,
-        'fromUsername': followeeFullName,
-        'deckId': latestDeck.id,
-        'deckTitle': latestDeckData['title'] as String? ?? '',
-        'createdAt': FieldValue.serverTimestamp(),
-        'read': false,
-      });
+      if (publicDecksSnap.docs.isEmpty) return;
+
+      final latestDeck = publicDecksSnap.docs.first;
+      final latestDeckData = latestDeck.data();
+
+      final followeeSnap = await _db.collection('users').doc(followeeUid).get();
+      final followeeFullName =
+          followeeSnap.data()?['fullName'] as String? ?? '';
+
+      final followersSnap = await _db
+          .collection('users')
+          .doc(followeeUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final fanOutBatch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final fUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: fUid,
+          type: NotificationType.newSharedDeck,
+        );
+        if (!enabled) continue;
+
+        final notifRef =
+            _db.collection('users').doc(fUid).collection('notifications').doc();
+
+        fanOutBatch.set(notifRef, {
+          'type': 'new_shared_deck',
+          'fromUid': followeeUid,
+          'fromUsername': followeeFullName,
+          'deckId': latestDeck.id,
+          'deckTitle': latestDeckData['title'] as String? ?? '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await fanOutBatch.commit();
+    } catch (e) {
+      // Silently ignore — notification fan-out is best-effort and must
+      // never roll back or report a failure for an already-committed follow.
+      debugPrint('[ShareService.follow] fan-out error (non-critical): $e');
     }
-
-    await fanOutBatch.commit();
   }
 
   /// Writes a "new_follower" notification to [followeeUid] letting them know
