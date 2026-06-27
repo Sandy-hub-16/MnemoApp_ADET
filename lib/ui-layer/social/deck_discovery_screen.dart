@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../landing_page/app_theme.dart';
 import '../../data-layer/models/social/public_deck_summary.dart';
 import '../../data-layer/models/social/public_profile.dart';
@@ -24,6 +25,9 @@ import 'widgets/public_deck_card.dart';
 //     filtered client-side to public accounts only). Tapping the result
 //     navigates to their public profile. Private accounts never surface
 //     here.
+//   • "Following" section — when the user follows at least one account,
+//     their most recent public decks are shown in a distinct, labelled
+//     horizontal carousel above the main feed.
 //
 // Architecture: public StatelessWidget → private StatefulWidget _Body
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,18 +67,22 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
   DocumentSnapshot? _lastDoc;
   List<PublicDeckSummary> _decks = [];
 
+  // ── "Following" deck section ─────────────────────────────────────────────
+  // Decks from accounts the current user follows, fetched once on init.
+  List<PublicDeckSummary> _followingDecks = [];
+  bool _isLoadingFollowing = false;
+  bool _followingSectionVisible = false; // true once we know there are results
+
   // ── "@username" search mode ──────────────────────────────────────────────
-  // Active whenever the search field's raw (untrimmed-of-@) text starts with
-  // "@". While active, the deck list is replaced entirely by a single user
-  // lookup result (or a "no account found" state) — see _isUserSearchMode.
   bool _isUserSearchMode = false;
   bool _isSearchingUser = false;
   PublicProfile? _foundUser;
-  int _userSearchToken = 0; // guards against stale async results
+  int _userSearchToken = 0;
 
   static const int _pageSize = 20;
+  // Max decks to show per followed account in the "Following" section.
+  static const int _followingDeckLimit = 3;
 
-  // Tags available as filter chips — matches the tags used in create_deck_screen
   static const List<String> _tags = [
     'Biology',
     'Physics',
@@ -92,6 +100,7 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     super.initState();
     _searchController.addListener(_onSearchChanged);
     _loadFirstPage();
+    _loadFollowingDecks();
   }
 
   @override
@@ -99,6 +108,76 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     _debounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  // ── Following deck loader ─────────────────────────────────────────────────
+
+  /// Loads up to [_followingDeckLimit] recent public decks per followed
+  /// account. Runs a single `following` collection read, then batches one
+  /// `public_decks` query per followee (up to 20 followees to stay within
+  /// Firestore limits). Decks are de-duplicated and sorted by sharedAt.
+  Future<void> _loadFollowingDecks() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    if (mounted) setState(() => _isLoadingFollowing = true);
+
+    try {
+      // 1. Fetch the UIDs the current user follows (limit to 20 to avoid
+      //    runaway reads on large following lists).
+      final followingSnap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('following')
+          .limit(20)
+          .get();
+
+      if (followingSnap.docs.isEmpty) {
+        if (mounted) setState(() => _isLoadingFollowing = false);
+        return;
+      }
+
+      final followedUids = followingSnap.docs.map((d) => d.id).toList();
+
+      // 2. For each followed UID, query their most recent public decks.
+      final futures = followedUids.map((followedUid) {
+        return FirebaseFirestore.instance
+            .collection('public_decks')
+            .where('ownerUid', isEqualTo: followedUid)
+            .orderBy('sharedAt', descending: true)
+            .limit(_followingDeckLimit)
+            .get();
+      });
+
+      final snapshots = await Future.wait(futures);
+
+      // 3. Flatten, convert, sort by sharedAt desc, de-duplicate by deckId.
+      final seen = <String>{};
+      final results = <PublicDeckSummary>[];
+
+      for (final snap in snapshots) {
+        for (final doc in snap.docs) {
+          final id = doc.id;
+          if (seen.contains(id)) continue;
+          seen.add(id);
+          results.add(PublicDeckSummary.fromFirestore(
+            doc as DocumentSnapshot<Map<String, dynamic>>,
+          ));
+        }
+      }
+
+      results.sort((a, b) => b.sharedAt.compareTo(a.sharedAt));
+
+      if (mounted) {
+        setState(() {
+          _followingDecks = results;
+          _followingSectionVisible = results.isNotEmpty;
+          _isLoadingFollowing = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingFollowing = false);
+    }
   }
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -111,7 +190,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
 
     final rawText = _searchController.text.trim();
 
-    // "@username" mode — exact-match user lookup, bypassing deck search.
     if (rawText.startsWith('@')) {
       final candidate = rawText.substring(1);
       setState(() {
@@ -120,7 +198,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
       });
 
       if (candidate.isEmpty) {
-        // Just "@" typed so far — nothing to look up yet.
         setState(() => _isSearchingUser = false);
         return;
       }
@@ -132,7 +209,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
       return;
     }
 
-    // Normal deck-search mode.
     if (_isUserSearchMode) {
       setState(() {
         _isUserSearchMode = false;
@@ -175,17 +251,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     });
   }
 
-  /// Looks up a user by exact, case-sensitive username match.
-  ///
-  /// Only surfaces accounts that are public. `isPrivate` defaults to `false`
-  /// (public) whenever the field is absent — same convention used everywhere
-  /// else in the app (see PublicProfile.fromFirestore) — so the privacy
-  /// check happens client-side after the fetch rather than as a Firestore
-  /// `where('isPrivate', isEqualTo: false)` clause, which would incorrectly
-  /// exclude every account that has never touched the privacy toggle.
-  ///
-  /// Uses [_userSearchToken] to guard against a stale response from an
-  /// earlier keystroke overwriting a more recent one (e.g. typing fast).
   Future<void> _lookupUsername(String username) async {
     final token = ++_userSearchToken;
     if (mounted) setState(() => _isSearchingUser = true);
@@ -202,7 +267,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
       PublicProfile? result;
       if (snap.docs.isNotEmpty) {
         final profile = PublicProfile.fromFirestore(snap.docs.first);
-        // Private accounts never surface here — exact username or not.
         if (!profile.isPrivate) result = profile;
       }
 
@@ -221,7 +285,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
-  /// Builds the base Firestore query, optionally filtered by [_activeTag].
   Query<Map<String, dynamic>> _baseQuery() {
     Query<Map<String, dynamic>> q = FirebaseFirestore.instance
         .collection('public_decks')
@@ -234,7 +297,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     return q;
   }
 
-  /// Loads the first page of results, replacing any existing data.
   Future<void> _loadFirstPage() async {
     if (_isLoading) return;
     setState(() {
@@ -266,7 +328,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     }
   }
 
-  /// Loads the next page of results, appending to existing data.
   Future<void> _loadNextPage() async {
     if (_isLoadingMore || !_hasMore || _lastDoc == null) return;
     setState(() => _isLoadingMore = true);
@@ -299,7 +360,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
 
   // ── Filtering ─────────────────────────────────────────────────────────────
 
-  /// Returns the subset of [_decks] matching the current search keyword and tag.
   List<PublicDeckSummary> get _filteredDecks {
     if (_cachedResults != null) return _cachedResults!;
     if (_searchQuery.isEmpty && _activeTag == null) return _decks;
@@ -310,7 +370,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     );
   }
 
-  /// Activates or deactivates a tag filter and reloads from Firestore.
   void _onTagSelected(String tag) {
     final newTag = _activeTag == tag ? null : tag;
     setState(() => _activeTag = newTag);
@@ -352,6 +411,16 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
       ),
     );
   }
+
+  // ── Whether the "Following" section should be shown ───────────────────────
+
+  /// The following section is suppressed while the user is typing in the
+  /// search field, so it doesn't compete with search results.
+  bool get _showFollowingSection =>
+      _followingSectionVisible &&
+      !_isUserSearchMode &&
+      _searchQuery.isEmpty &&
+      _activeTag == null;
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
@@ -474,7 +543,13 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                                 strokeWidth: 2.5,
                               ),
                             )
-                          : _DeckList(
+                          : _DeckFeed(
+                              // "Following" section
+                              followingDecks: _showFollowingSection
+                                  ? _followingDecks
+                                  : const [],
+                              isLoadingFollowing: _isLoadingFollowing,
+                              // Main feed
                               decks: _filteredDecks,
                               isLoadingMore: _isLoadingMore,
                               hasMore: _hasMore,
@@ -492,10 +567,6 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TOP BAR
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEARCH FIELD
@@ -679,13 +750,6 @@ class _TagFilterRow extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // USER SEARCH RESULT
-//
-// Replaces the deck list entirely while "@username" search mode is active.
-// Three states: searching (spinner), found (a single _UserResultCard), or
-// not found (an empty state matching the deck-search empty state's visual
-// language). Private accounts are filtered out before reaching this widget,
-// so "not found" also covers the private-account case from the searcher's
-// point of view — there's nothing to distinguish, by design.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _UserSearchResult extends StatelessWidget {
@@ -787,12 +851,6 @@ class _UserSearchResult extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // USER RESULT CARD
-//
-// A single found-account card shown for an exact "@username" match.
-// Mirrors PublicDeckCard's visual language (same surface, radius, shadow)
-// while staying visually distinct enough to read as "this is an account,
-// not a deck" — a larger ringed avatar, the "@handle" styled in primary,
-// and a chevron affordance instead of a card-count chip.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _UserResultCard extends StatelessWidget {
@@ -826,7 +884,6 @@ class _UserResultCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // ── Avatar ────────────────────────────────────────────────
               Container(
                 width: 52,
                 height: 52,
@@ -857,8 +914,6 @@ class _UserResultCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-
-              // ── Identity ──────────────────────────────────────────────
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -891,8 +946,6 @@ class _UserResultCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-
-              // ── Tap affordance ────────────────────────────────────────
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -914,13 +967,28 @@ class _UserResultCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DECK LIST
+// DECK FEED
 //
-// Renders the filtered deck list with infinite scroll and empty state.
+// Combines the "Following" horizontal carousel (when non-empty) and the main
+// paginated vertical list into a single scrollable widget.
+//
+// Layout (when following section is present):
+//
+//   ┌──────────────────────────────────────┐
+//   │  👥 FROM PEOPLE YOU FOLLOW           │  ← section header with badge
+//   │  [deck] [deck] [deck] →              │  ← horizontal scroll carousel
+//   ├──────────────────────────────────────┤
+//   │  🌐 ALL PUBLIC DECKS                 │  ← section header
+//   │  [deck card]                         │
+//   │  [deck card]                         │
+//   │  …                                   │
+//   └──────────────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DeckList extends StatefulWidget {
-  const _DeckList({
+class _DeckFeed extends StatefulWidget {
+  const _DeckFeed({
+    required this.followingDecks,
+    required this.isLoadingFollowing,
     required this.decks,
     required this.isLoadingMore,
     required this.hasMore,
@@ -930,6 +998,8 @@ class _DeckList extends StatefulWidget {
     this.activeTag,
   });
 
+  final List<PublicDeckSummary> followingDecks;
+  final bool isLoadingFollowing;
   final List<PublicDeckSummary> decks;
   final bool isLoadingMore;
   final bool hasMore;
@@ -939,10 +1009,10 @@ class _DeckList extends StatefulWidget {
   final String? activeTag;
 
   @override
-  State<_DeckList> createState() => _DeckListState();
+  State<_DeckFeed> createState() => _DeckFeedState();
 }
 
-class _DeckListState extends State<_DeckList> {
+class _DeckFeedState extends State<_DeckFeed> {
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -966,57 +1036,437 @@ class _DeckListState extends State<_DeckList> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.decks.isEmpty) {
+    final hasFollowing = widget.followingDecks.isNotEmpty;
+    final hasMain = widget.decks.isNotEmpty;
+
+    if (!hasFollowing && !hasMain) {
       return _EmptyState(
         searchQuery: widget.searchQuery,
         activeTag: widget.activeTag,
       );
     }
 
-    return ListView.builder(
+    return CustomScrollView(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 140),
-      itemCount: widget.decks.length + (widget.isLoadingMore ? 1 : 0),
-      itemBuilder: (context, i) {
-        if (i == widget.decks.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            child: Center(
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(
-                      color: AppColors.primary,
-                      strokeWidth: 2.5,
+      slivers: [
+        // ── "From People You Follow" section ────────────────────────────
+        if (hasFollowing) ...[
+          SliverToBoxAdapter(
+            child: _FollowingSectionHeader(),
+          ),
+          SliverToBoxAdapter(
+            child: _FollowingCarousel(
+              decks: widget.followingDecks,
+              onTap: widget.onTap,
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+          // Visual divider before main feed
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Divider(
+                color: AppColors.outlineVariant.withValues(alpha: 0.4),
+                thickness: 1,
+              ),
+            ),
+          ),
+        ],
+
+        // ── "All Public Decks" section header ────────────────────────────
+        SliverToBoxAdapter(
+          child: _AllDecksSectionHeader(hasFollowingSection: hasFollowing),
+        ),
+
+        // ── Main deck list ────────────────────────────────────────────────
+        if (hasMain)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  if (i == widget.decks.length) {
+                    // Loading-more indicator
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 32),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                                strokeWidth: 2.5,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Loading more decks...',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  final deck = widget.decks[i];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: PublicDeckCard(
+                      deck: deck,
+                      onTap: () => widget.onTap(deck),
+                    ),
+                  );
+                },
+                childCount:
+                    widget.decks.length + (widget.isLoadingMore ? 1 : 0),
+              ),
+            ),
+          )
+        else
+          SliverToBoxAdapter(
+            child: _EmptyState(
+              searchQuery: widget.searchQuery,
+              activeTag: widget.activeTag,
+            ),
+          ),
+
+        // Bottom padding for nav bar
+        const SliverToBoxAdapter(child: SizedBox(height: 140)),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOWING SECTION HEADER
+//
+// The "FROM PEOPLE YOU FOLLOW" label with a people-badge icon and a subtle
+// recommended pill. Visually distinct from the "ALL PUBLIC DECKS" header
+// below so users immediately understand the provenance of the top section.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FollowingSectionHeader extends StatelessWidget {
+  const _FollowingSectionHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.people_rounded,
+              size: 16,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'FROM PEOPLE YOU FOLLOW',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onSurface,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  'Recommended based on who you follow',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 11,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'For You',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOWING CAROUSEL
+//
+// Horizontal scrollable row of compact deck cards from followed accounts.
+// Each card is narrower than the main-feed cards (280 px) so multiple are
+// visible at once, hinting at the scroll affordance.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FollowingCarousel extends StatelessWidget {
+  const _FollowingCarousel({
+    required this.decks,
+    required this.onTap,
+  });
+
+  final List<PublicDeckSummary> decks;
+  final ValueChanged<PublicDeckSummary> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 172,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+        itemCount: decks.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, i) {
+          final deck = decks[i];
+          return SizedBox(
+            width: 260,
+            child: _FollowingDeckCard(deck: deck, onTap: () => onTap(deck)),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOLLOWING DECK CARD
+//
+// A compact variant of PublicDeckCard used in the horizontal carousel.
+// Carries a subtle primary-tinted left border to visually tie the card back
+// to the "following" brand color without repeating the section header.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FollowingDeckCard extends StatelessWidget {
+  const _FollowingDeckCard({required this.deck, required this.onTap});
+
+  final PublicDeckSummary deck;
+  final VoidCallback onTap;
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays < 1) return 'today';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
+    if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo ago';
+    return '${(diff.inDays / 365).floor()}y ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerLowest,
+          borderRadius: BorderRadius.circular(18),
+          border: Border(
+            left: BorderSide(
+              color: AppColors.primary.withValues(alpha: 0.55),
+              width: 3,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+            BoxShadow(
+              color: AppColors.onSurface.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Tag + time
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    deck.tag.toUpperCase(),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.onSecondaryContainer,
+                      letterSpacing: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Loading more decks...',
+                ),
+                Text(
+                  _timeAgo(deck.sharedAt),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.outline,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Title
+            Expanded(
+              child: Text(
+                deck.title,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.onSurface,
+                  height: 1.25,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Owner + card count
+            Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryContainer,
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.2),
+                      width: 1,
+                    ),
+                  ),
+                  child: ClipOval(
+                    child: deck.ownerPhotoUrl != null &&
+                            deck.ownerPhotoUrl!.isNotEmpty
+                        ? Image.network(deck.ownerPhotoUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.person_rounded,
+                                  color: AppColors.primary,
+                                  size: 12,
+                                ))
+                        : const Icon(
+                            Icons.person_rounded,
+                            color: AppColors.primary,
+                            size: 12,
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    deck.ownerFullName,
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: AppColors.onSurfaceVariant,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${deck.cardCount} cards',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.outline,
+                  ),
+                ),
+              ],
             ),
-          );
-        }
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-        final deck = widget.decks[i];
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: PublicDeckCard(
-            deck: deck,
-            onTap: () => widget.onTap(deck),
+// ─────────────────────────────────────────────────────────────────────────────
+// ALL DECKS SECTION HEADER
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AllDecksSectionHeader extends StatelessWidget {
+  const _AllDecksSectionHeader({required this.hasFollowingSection});
+
+  final bool hasFollowingSection;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, hasFollowingSection ? 12 : 0, 20, 12),
+      child: Row(
+        children: [
+          Icon(
+            Icons.public_rounded,
+            size: 16,
+            color: AppColors.onSurfaceVariant,
           ),
-        );
-      },
+          const SizedBox(width: 6),
+          Text(
+            'ALL PUBLIC DECKS',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: AppColors.onSurfaceVariant,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

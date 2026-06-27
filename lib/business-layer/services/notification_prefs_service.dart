@@ -4,46 +4,62 @@ import 'package:firebase_auth/firebase_auth.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTIFICATION PREFERENCES SERVICE
 //
-// Lets a user independently turn each of the 4 notification types on/off.
-// Toggling one type never affects the other 3 — every type is stored under
+// Lets a user independently turn each notification type on/off.
+// Toggling one type never affects the others — every type is stored under
 // its own key and checked in isolation.
 //
 // STORAGE
 // ───────
 //   users/{uid}.notificationPrefs = {
-//     new_follower:    bool,
-//     new_shared_deck: bool,
-//     deck_cloned:     bool,
-//     profile_viewed:  bool,
+//     new_follower:      bool,
+//     new_shared_deck:   bool,
+//     deck_cloned:       bool,
+//     profile_viewed:    bool,
+//     username_changed:  bool,   ← NEW
+//     bio_updated:       bool,   ← NEW
+//     followed_new_deck: bool,   ← NEW (deck from followed account)
 //   }
 //
 // Missing field/doc/map → defaults to enabled (true). This means existing
 // users who have never opened the new Settings section keep receiving every
-// notification type exactly as before — nothing changes until they explicitly
-// flip a toggle off.
+// notification type exactly as before.
 //
 // GATING
 // ──────
-// Every notification-creation call site (in ShareService and
-// PublicProfileScreen) calls [isEnabledFor] with the *recipient's* uid before
-// writing a notification doc. If that single type is disabled for that
-// recipient, creation is skipped entirely — no doc is written at all, so
-// disabled types never even reach Firestore.
+// Every notification-creation call site calls [isEnabledFor] with the
+// *recipient's* uid before writing a notification doc. If that single type
+// is disabled for that recipient, creation is skipped entirely — no doc is
+// written at all, so disabled types never even reach Firestore.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// The 4 notification type identifiers also used as `AppNotification.type`
+/// All notification type identifiers. Also used as `AppNotification.type`
 /// values and as the keys inside `notificationPrefs`.
 abstract final class NotificationType {
+  // ── Original 4 ───────────────────────────────────────────────────────────
   static const String newFollower = 'new_follower';
   static const String newSharedDeck = 'new_shared_deck';
   static const String deckCloned = 'deck_cloned';
   static const String profileViewed = 'profile_viewed';
+
+  // ── Following-based activity (3 new) ─────────────────────────────────────
+  /// Someone you follow changed their username.
+  static const String usernameChanged = 'username_changed';
+
+  /// Someone you follow updated their bio.
+  static const String bioUpdated = 'bio_updated';
+
+  /// Someone you follow published a new public deck
+  /// (distinct from new_shared_deck which is the *owner's* perspective).
+  static const String followedNewDeck = 'followed_new_deck';
 
   static const List<String> all = [
     newFollower,
     newSharedDeck,
     deckCloned,
     profileViewed,
+    usernameChanged,
+    bioUpdated,
+    followedNewDeck,
   ];
 }
 
@@ -54,9 +70,7 @@ abstract final class NotificationPrefsService {
 
   /// Reads `notificationPrefs` for [uid] and returns whether [type] is
   /// currently enabled for that user. Defaults to `true` if the user, the
-  /// map, or the specific key is missing — so a brand-new user (or one who
-  /// signed up before this feature existed) receives notifications normally
-  /// until they explicitly opt out.
+  /// map, or the specific key is missing.
   ///
   /// Used as a gate immediately before writing any notification document.
   static Future<bool> isEnabledFor({
@@ -76,7 +90,7 @@ abstract final class NotificationPrefsService {
   }
 
   /// Streams the current user's full notification-preferences map, with all
-  /// 4 keys always present (defaulting missing ones to `true`). Used by the
+  /// keys always present (defaulting missing ones to `true`). Used by the
   /// Settings screen so toggles reflect Firestore in real time.
   static Stream<Map<String, bool>> watchOwnPrefs() {
     final uid = _currentUid;
@@ -89,7 +103,7 @@ abstract final class NotificationPrefsService {
   }
 
   /// Sets a single notification type on/off for the current user. Only the
-  /// given [type] key is written — the other 3 types are left completely
+  /// given [type] key is written — all other types are left completely
   /// untouched, so turning one off/on never affects the others.
   static Future<void> setEnabled({
     required String type,

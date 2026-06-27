@@ -76,6 +76,14 @@ class NotificationTile extends StatelessWidget {
         return isUnread
             ? Icons.content_copy_rounded
             : Icons.content_copy_outlined;
+      case 'username_changed':
+        return isUnread ? Icons.badge_rounded : Icons.badge_outlined;
+      case 'bio_updated':
+        return isUnread ? Icons.edit_note_rounded : Icons.edit_note_outlined;
+      case 'followed_new_deck':
+        return isUnread
+            ? Icons.auto_stories_rounded
+            : Icons.auto_stories_outlined;
       default: // new_shared_deck and any future deck-related type
         return isUnread
             ? Icons.notifications_rounded
@@ -92,14 +100,24 @@ class NotificationTile extends StatelessWidget {
         return ' started following you';
       case 'deck_cloned':
         return ' cloned your deck: ';
-      default: // new_shared_deck and any future deck-related type
+      case 'username_changed':
+        return notification.oldValue.isNotEmpty
+            ? ' changed their username from @${notification.oldValue} to @${notification.fromUsername}'
+            : ' changed their username';
+      case 'bio_updated':
+        return ' updated their bio';
+      case 'followed_new_deck':
+        return ' shared a new deck: ';
+      default: // new_shared_deck
         return ' shared a new deck: ';
     }
   }
 
   /// Whether this notification type has an associated deck title to show.
   bool _hasDeckTitle(String type) =>
-      type != 'profile_viewed' && type != 'new_follower';
+      type == 'new_shared_deck' ||
+      type == 'deck_cloned' ||
+      type == 'followed_new_deck';
 
   @override
   Widget build(BuildContext context) {

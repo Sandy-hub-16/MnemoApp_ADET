@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../landing_page/app_theme.dart';
+import '../../../business-layer/services/share_service.dart';
 
 // ── Email censor ──────────────────────────────────────────────────────────────
 // Reveals first 2 characters, masks the rest of the local part, keeps domain.
@@ -432,6 +433,27 @@ class _SettingsBodyState extends State<_SettingsBody> {
           .collection('users')
           .doc(uid)
           .update(updates);
+
+      // ── FAN-OUT FOLLOWING NOTIFICATIONS (fire-and-forget) ─────────────
+      // Notify followers when a username or bio changes. Errors are
+      // silently swallowed so a notification hiccup never blocks the save.
+      final newUsername = _usernameCtrl.text.trim();
+      final newBio = _bioCtrl.text.trim();
+
+      if (!_usernameIsLocked && newUsername != origUsername) {
+        ShareService.fanOutUsernameChanged(
+          ownerUid: uid,
+          newUsername: newUsername,
+          oldUsername: origUsername,
+        );
+      }
+
+      if (newBio != origBio) {
+        ShareService.fanOutBioUpdated(
+          ownerUid: uid,
+          ownerUsername: newUsername.isNotEmpty ? newUsername : origUsername,
+        );
+      }
 
       // ── SUCCESS: SHOW SUCCESS MESSAGE ──────────────────────────────────
       if (mounted) {

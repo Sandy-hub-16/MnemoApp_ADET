@@ -1650,6 +1650,26 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
 
       widget.onVisibilityChanged(newVisibility);
 
+      // Fan-out "followed new deck" notification to all followers when
+      // the owner publishes a deck. Fire-and-forget: a notification hiccup
+      // should never block the visibility toggle or surface as an error.
+      if (newVisibility == 'public') {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          final userSnap = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .get();
+          final ownerUsername = userSnap.data()?['username'] as String? ?? '';
+          ShareService.fanOutFollowedNewDeck(
+            ownerUid: uid,
+            deckId: widget.deckId,
+            deckTitle: widget.deckTitle,
+            ownerUsername: ownerUsername,
+          );
+        }
+      }
+
       if (context.mounted) Navigator.pop(context);
     } on StateError catch (e) {
       if (context.mounted) {

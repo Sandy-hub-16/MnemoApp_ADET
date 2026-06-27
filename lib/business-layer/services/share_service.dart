@@ -617,4 +617,183 @@ abstract final class ShareService {
       }
     }
   }
+
+  // ── FAN-OUT: USERNAME CHANGED ─────────────────────────────────────────────
+
+  /// Notifies all followers of [ownerUid] that they changed their username
+  /// from [oldUsername] to [newUsername].
+  ///
+  /// Called fire-and-forget from the profile-save path after a successful
+  /// Firestore update. Errors are silently swallowed so a notification
+  /// hiccup never surfaces to the user.
+  ///
+  /// Skipped per-recipient when the recipient has disabled
+  /// [NotificationType.usernameChanged] in Settings.
+  static Future<void> fanOutUsernameChanged({
+    required String ownerUid,
+    required String newUsername,
+    required String oldUsername,
+  }) async {
+    try {
+      final followersSnap = await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final batch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final followerUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: followerUid,
+          type: NotificationType.usernameChanged,
+        );
+        if (!enabled) continue;
+
+        final notifRef = _db
+            .collection('users')
+            .doc(followerUid)
+            .collection('notifications')
+            .doc();
+
+        batch.set(notifRef, {
+          'type': NotificationType.usernameChanged,
+          'fromUid': ownerUid,
+          'fromUsername': newUsername,
+          'deckId': '',
+          'deckTitle': '',
+          'oldValue': oldUsername,
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await batch.commit();
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
+  }
+
+  // ── FAN-OUT: BIO UPDATED ──────────────────────────────────────────────────
+
+  /// Notifies all followers of [ownerUid] that they updated their bio.
+  ///
+  /// Called fire-and-forget from the profile-save path after a successful
+  /// Firestore update. Errors are silently swallowed.
+  ///
+  /// Skipped per-recipient when [NotificationType.bioUpdated] is disabled.
+  static Future<void> fanOutBioUpdated({
+    required String ownerUid,
+    required String ownerUsername,
+  }) async {
+    try {
+      final followersSnap = await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final batch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final followerUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: followerUid,
+          type: NotificationType.bioUpdated,
+        );
+        if (!enabled) continue;
+
+        final notifRef = _db
+            .collection('users')
+            .doc(followerUid)
+            .collection('notifications')
+            .doc();
+
+        batch.set(notifRef, {
+          'type': NotificationType.bioUpdated,
+          'fromUid': ownerUid,
+          'fromUsername': ownerUsername,
+          'deckId': '',
+          'deckTitle': '',
+          'oldValue': '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await batch.commit();
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
+  }
+
+  // ── FAN-OUT: FOLLOWED ACCOUNT NEW DECK ───────────────────────────────────
+
+  /// Notifies all followers of [ownerUid] that they published a new public
+  /// deck, using the [NotificationType.followedNewDeck] type so recipients
+  /// can distinguish "deck from someone I follow" from the generic
+  /// [NotificationType.newSharedDeck] type (which is used for the fan-out
+  /// that fires when someone *first follows* an account that already has
+  /// public decks).
+  ///
+  /// Called fire-and-forget from [setVisibility] after a deck is published.
+  /// Errors are silently swallowed.
+  ///
+  /// Skipped per-recipient when [NotificationType.followedNewDeck] is disabled.
+  static Future<void> fanOutFollowedNewDeck({
+    required String ownerUid,
+    required String deckId,
+    required String deckTitle,
+    required String ownerUsername,
+  }) async {
+    try {
+      final followersSnap = await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final batch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final followerUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: followerUid,
+          type: NotificationType.followedNewDeck,
+        );
+        if (!enabled) continue;
+
+        final notifRef = _db
+            .collection('users')
+            .doc(followerUid)
+            .collection('notifications')
+            .doc();
+
+        batch.set(notifRef, {
+          'type': NotificationType.followedNewDeck,
+          'fromUid': ownerUid,
+          'fromUsername': ownerUsername,
+          'deckId': deckId,
+          'deckTitle': deckTitle,
+          'oldValue': '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await batch.commit();
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
+  }
 }

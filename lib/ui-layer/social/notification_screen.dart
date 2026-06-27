@@ -296,7 +296,9 @@ class _NotificationBodyState extends State<_NotificationBody> {
 
     // 2. Handle by notification type
     if (notification.type == 'profile_viewed' ||
-        notification.type == 'new_follower') {
+        notification.type == 'new_follower' ||
+        notification.type == 'username_changed' ||
+        notification.type == 'bio_updated') {
       // Navigate to the other user's public profile only if we have a valid
       // UID. suppressViewNotification: true prevents PublicProfileScreen
       // from firing another profile_viewed notification back at them, which
@@ -313,7 +315,8 @@ class _NotificationBodyState extends State<_NotificationBody> {
       return;
     }
 
-    // 3. new_shared_deck / deck_cloned — check whether the deck still exists
+    // 3. new_shared_deck / deck_cloned / followed_new_deck — check whether
+    //    the deck still exists before navigating.
     final deckDoc = await FirebaseFirestore.instance
         .collection('public_decks')
         .doc(notification.deckId)
@@ -564,7 +567,7 @@ class _NotificationBodyState extends State<_NotificationBody> {
             ),
             const SizedBox(height: 10),
             Text(
-              'When someone follows you, clones your deck, or shares a new one, you\'ll see it here.',
+              'When someone follows you, clones your deck, or someone you follow shares a new deck, changes their username, or updates their bio, you\'ll see it here.',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 14,
                 fontWeight: FontWeight.w400,

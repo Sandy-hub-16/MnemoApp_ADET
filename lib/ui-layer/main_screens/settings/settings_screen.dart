@@ -1347,6 +1347,30 @@ class _SocialNotificationsDialogState
                       value: _prefs[NotificationType.profileViewed] ?? true,
                       onChanged: (v) =>
                           _toggle(NotificationType.profileViewed, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.auto_stories_rounded,
+                      label: 'Following — New Decks',
+                      subtitle: 'When someone you follow publishes a new deck',
+                      value: _prefs[NotificationType.followedNewDeck] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.followedNewDeck, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.badge_rounded,
+                      label: 'Following — Username Changes',
+                      subtitle:
+                          'When someone you follow changes their username',
+                      value: _prefs[NotificationType.usernameChanged] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.usernameChanged, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.edit_note_rounded,
+                      label: 'Following — Bio Updates',
+                      subtitle: 'When someone you follow updates their bio',
+                      value: _prefs[NotificationType.bioUpdated] ?? true,
+                      onChanged: (v) => _toggle(NotificationType.bioUpdated, v),
                       isLast: true,
                     ),
                   ],
