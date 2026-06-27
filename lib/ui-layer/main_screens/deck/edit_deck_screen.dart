@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../landing_page/app_theme.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EDIT DECK SCREEN  —  route: /edit-deck
@@ -363,11 +364,7 @@ class _EditDeckScreenState extends State<EditDeckScreen> {
                 // Body
                 Expanded(
                   child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
+                      ? const Center(child: AppSpinner())
                       : _cards.isEmpty
                           ? const _EmptyState()
                           : _EditorBody(
@@ -482,10 +479,7 @@ class _EditTopBar extends StatelessWidget {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                        child: AppSpinnerSmall(color: Colors.white),
                       )
                     : Text(
                         'Save',

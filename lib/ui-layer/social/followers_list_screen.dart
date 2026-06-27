@@ -10,6 +10,7 @@ import '../../data-layer/route_args/social_route_args.dart';
 import '../../main.dart';
 import '../landing_page/app_theme.dart';
 import 'widgets/follow_button.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FOLLOW LIST SCREEN  —  route: /follow-list
@@ -364,9 +365,7 @@ class _FollowSubListState extends State<_FollowSubList>
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting &&
             _lastProfiles == null) {
-          return const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          );
+          return const Center(child: AppSpinner());
         }
 
         if (snapshot.hasError) {
@@ -404,9 +403,7 @@ class _FollowSubListState extends State<_FollowSubList>
             }
 
             if (!profileSnapshot.hasData && profiles.isEmpty) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              );
+              return const Center(child: AppSpinner());
             }
 
             if (profiles.isEmpty) {

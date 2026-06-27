@@ -10,6 +10,7 @@ import '../../data-layer/route_args/social_route_args.dart';
 import '../../main.dart';
 import '../landing_page/app_theme.dart';
 import 'widgets/feed_item_card.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SOCIAL FEED SCREEN  —  route: /feed
@@ -123,11 +124,7 @@ class _SocialFeedBodyState extends State<_SocialFeedBody> {
                             // ── Loading ──────────────────────────────────
                             if (snapshot.connectionState ==
                                 ConnectionState.waiting) {
-                              return const Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.primary,
-                                ),
-                              );
+                              return const Center(child: AppSpinner());
                             }
 
                             // ── Error ────────────────────────────────────

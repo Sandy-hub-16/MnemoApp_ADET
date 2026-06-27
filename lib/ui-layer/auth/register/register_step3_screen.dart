@@ -10,6 +10,7 @@ import '../widgets/auth_text_field.dart';
 import '../widgets/auth_buttons.dart';
 import '../widgets/auth_decorations.dart';
 import '../widgets/step_progress.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 3: CREDENTIALS
@@ -227,7 +228,7 @@ class _Step3BodyState extends State<_Step3Body> {
 
         // ── Google sign-up shortcut ────────────────────────────────────────
         _isGoogleLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: AppSpinner())
             : GoogleSignInButton(onTap: _handleGoogleSignUp),
         const SizedBox(height: 28),
         const OrDivider(),
@@ -294,7 +295,7 @@ class _Step3BodyState extends State<_Step3Body> {
 
         // ── Sign Up CTA ───────────────────────────────────────────────────
         _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: AppSpinner())
             : AuthPrimaryButton(
                 label: 'Create Account',
                 onTap: _handleSignUp,

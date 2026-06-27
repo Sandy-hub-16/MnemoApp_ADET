@@ -10,6 +10,7 @@ import '../../data-layer/route_args/social_route_args.dart';
 import '../../main.dart';
 import '../landing_page/app_theme.dart';
 import 'widgets/notification_tile.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTIFICATION SCREEN  —  route: /notifications
@@ -416,11 +417,7 @@ class _NotificationBodyState extends State<_NotificationBody> {
                     builder: (context, snapshot) {
                       // ── Loading ──────────────────────────────────────────
                       if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        );
+                        return const Center(child: AppSpinner());
                       }
 
                       // ── Error ────────────────────────────────────────────
@@ -743,10 +740,7 @@ class _NotificationTopBar extends StatelessWidget {
                         child: SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
+                          child: AppSpinnerSmall(),
                         ),
                       )
                     : TextButton(
@@ -818,10 +812,7 @@ class _DynamicDeleteButton extends StatelessWidget {
         child: SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(
-            color: AppColors.error,
-            strokeWidth: 2,
-          ),
+          child: AppSpinnerSmall(color: AppColors.error),
         ),
       );
     }

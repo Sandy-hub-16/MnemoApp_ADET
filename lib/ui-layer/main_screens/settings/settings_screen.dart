@@ -9,6 +9,7 @@ import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/notification_prefs_service.dart';
 import 'amnesia_dialog.dart';
 import 'delete_account_dialog.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS SCREEN
@@ -855,10 +856,7 @@ class _PrivacyTile extends StatelessWidget {
             const SizedBox(
               width: 36,
               height: 36,
-              child: Padding(
-                padding: EdgeInsets.all(8),
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              child: Center(child: AppSpinnerSmall()),
             )
           else
             Switch(
@@ -950,7 +948,7 @@ class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
       return const Dialog(
         child: Padding(
           padding: EdgeInsets.all(40),
-          child: CircularProgressIndicator(),
+          child: Center(child: AppSpinner()),
         ),
       );
     }
@@ -1305,7 +1303,7 @@ class _SocialNotificationsDialogState
             if (_loading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 32),
-                child: Center(child: CircularProgressIndicator()),
+                child: Center(child: AppSpinner()),
               )
             else
               Container(

@@ -7,6 +7,7 @@ import '../../data-layer/models/social/public_deck_summary.dart';
 import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/share_service.dart';
 import '../main_screens/deck/deck_quiz_screen.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED DECK DETAIL SCREEN  —  route: /shared-deck-detail
@@ -263,11 +264,7 @@ class _SharedDeckDetailBodyState extends State<_SharedDeckDetailBody> {
                 // ── Content ───────────────────────────────────────────────
                 Expanded(
                   child: _isLoadingData
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
+                      ? const Center(child: AppSpinner())
                       : _errorMessage != null
                           ? _ErrorState(
                               message: _errorMessage!,
@@ -748,10 +745,7 @@ class _CloneButton extends StatelessWidget {
             ? const SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(
-                  color: AppColors.onPrimary,
-                  strokeWidth: 2.5,
-                ),
+                child: AppSpinnerSmall(color: AppColors.onPrimary),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,

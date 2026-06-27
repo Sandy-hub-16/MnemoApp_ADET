@@ -37,7 +37,8 @@ class ConnectivityIndicator extends StatelessWidget {
                   width: 12,
                   height: 12,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
+                    strokeWidth: 1.5,
+                    strokeCap: StrokeCap.round,
                     valueColor: AlwaysStoppedAnimation<Color>(
                       AppColors.tertiary,
                     ),

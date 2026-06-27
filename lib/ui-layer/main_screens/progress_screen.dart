@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../landing_page/app_theme.dart';
 import '../../business-layer/services/progress_service.dart';
 import 'deck/deck_study_screen.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROGRESS SCREEN  —  route: /progress
@@ -100,12 +101,7 @@ class _ProgressScaffoldState extends State<_ProgressScaffold> {
               children: [
                 Expanded(
                   child: _loading
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        )
+                      ? const Center(child: AppSpinner())
                       : CustomScrollView(
                           physics: const BouncingScrollPhysics(),
                           slivers: [

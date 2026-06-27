@@ -11,6 +11,7 @@ import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/deck_search_engine.dart';
 import '../../main.dart';
 import 'widgets/public_deck_card.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK DISCOVERY SCREEN  —  route: /discover
@@ -537,12 +538,7 @@ class _DeckDiscoveryBodyState extends State<_DeckDiscoveryBody> {
                           onTapUser: _openPublicProfile,
                         )
                       : _isLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: AppColors.primary,
-                                strokeWidth: 2.5,
-                              ),
-                            )
+                          ? const Center(child: AppSpinner())
                           : _DeckFeed(
                               // "Following" section
                               followingDecks: _showFollowingSection
@@ -766,12 +762,7 @@ class _UserSearchResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isSearching) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 2.5,
-        ),
-      );
+      return const Center(child: AppSpinner());
     }
 
     final user = foundUser;
@@ -1093,12 +1084,13 @@ class _DeckFeedState extends State<_DeckFeed> {
                       child: Center(
                         child: Column(
                           children: [
-                            SizedBox(
+                            const SizedBox(
                               width: 28,
                               height: 28,
                               child: CircularProgressIndicator(
                                 color: AppColors.primary,
                                 strokeWidth: 2.5,
+                                strokeCap: StrokeCap.round,
                               ),
                             ),
                             const SizedBox(height: 12),

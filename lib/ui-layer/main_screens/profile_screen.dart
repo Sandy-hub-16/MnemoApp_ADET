@@ -7,6 +7,7 @@ import '../../business-layer/services/auth_google_service.dart';
 import '../../data-layer/route_args/social_route_args.dart';
 import '../../main.dart';
 import 'settings/settings_screen.dart' show accountPrivacyNotifier;
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE SCREEN
@@ -240,12 +241,7 @@ class _ProfileBodyState extends State<_ProfileBody> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
-          strokeWidth: 2,
-        ),
-      );
+      return const Center(child: AppSpinner());
     }
 
     final hasAbout = _school.isNotEmpty ||
@@ -1295,13 +1291,18 @@ class _AvatarContent extends StatelessWidget {
               height: 108,
               color: AppColors.primaryContainer.withValues(alpha: 0.2),
               child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                  value: progress.expectedTotalBytes != null
-                      ? progress.cumulativeBytesLoaded /
-                          progress.expectedTotalBytes!
-                      : null,
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    strokeCap: StrokeCap.round,
+                    color: AppColors.primary,
+                    value: progress.expectedTotalBytes != null
+                        ? progress.cumulativeBytesLoaded /
+                            progress.expectedTotalBytes!
+                        : null,
+                  ),
                 ),
               ),
             );

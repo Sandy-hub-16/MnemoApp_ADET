@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'ui-layer/landing_page/landing_screen.dart';
 import 'ui-layer/landing_page/app_theme.dart';
+import 'ui-layer/widgets/app_spinner.dart';
 import 'ui-layer/auth/login_screen.dart';
 import 'ui-layer/auth/register/register_step1_screen.dart';
 import 'ui-layer/auth/register/register_step2_screen.dart';
@@ -79,7 +80,7 @@ class AuthGate extends StatelessWidget {
         // Still waiting for Firebase to emit the first auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: AppSpinner()),
           );
         }
 

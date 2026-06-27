@@ -13,6 +13,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/account_deletion_service.dart';
 import '../../../main.dart';
+import '../../widgets/app_spinner.dart';
 
 const String kDeleteConfirmationPhrase = 'DELETE MY ACCOUNT';
 
@@ -165,10 +166,7 @@ class _DeleteAccountConfirmationDialogState
       mainAxisSize: MainAxisSize.min,
       children: [
         const SizedBox(height: 8),
-        const CircularProgressIndicator(
-          color: AppColors.error,
-          strokeWidth: 3,
-        ),
+        const AppSpinner(color: AppColors.error),
         const SizedBox(height: 24),
         Text(
           'Deleting your account...',

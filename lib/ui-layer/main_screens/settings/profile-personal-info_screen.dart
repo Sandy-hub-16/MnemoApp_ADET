@@ -11,6 +11,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/share_service.dart';
+import '../../widgets/app_spinner.dart';
 
 // ── Email censor ──────────────────────────────────────────────────────────────
 // Reveals first 2 characters, masks the rest of the local part, keeps domain.
@@ -564,8 +565,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
 
         if (_loading)
           const Expanded(
-            child: Center(
-                child: CircularProgressIndicator(color: AppColors.primary)),
+            child: Center(child: AppSpinner()),
           )
         else
           Expanded(
@@ -746,12 +746,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                     ),
                     child: _isDirty
                         ? _saving
-                            ? const Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.primary,
-                                  strokeWidth: 3,
-                                ),
-                              )
+                            ? const Center(child: AppSpinner())
                             : _BottomSaveButton(onTap: _onSaveTap)
                         : const SizedBox.shrink(),
                   ),
@@ -848,8 +843,7 @@ class _TopBar extends StatelessWidget {
                           ? const SizedBox(
                               width: 14,
                               height: 14,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2),
+                              child: AppSpinnerSmall(color: Colors.white),
                             )
                           : Text(
                               'Save',
@@ -946,10 +940,7 @@ class _AvatarSection extends StatelessWidget {
                   color: Colors.black.withValues(alpha: 0.45),
                 ),
                 child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
-                    strokeWidth: 3,
-                  ),
+                  child: AppSpinner(color: Colors.white),
                 ),
               ),
             ),

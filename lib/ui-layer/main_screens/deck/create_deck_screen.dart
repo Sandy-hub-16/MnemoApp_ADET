@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/deck_service.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE DECK SCREEN  —  route: /create-deck
@@ -1791,10 +1792,7 @@ class _NavigationButtons extends StatelessWidget {
                         child: SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.onPrimary,
-                          ),
+                          child: AppSpinnerSmall(color: AppColors.onPrimary),
                         ),
                       )
                     : showSave

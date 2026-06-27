@@ -7,6 +7,7 @@ import '../../landing_page/app_theme.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/auth_buttons.dart';
 import '../widgets/auth_decorations.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VERIFY EMAIL SCREEN
@@ -410,7 +411,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
   Widget _buildLoading() {
     return const SizedBox(
       height: 480,
-      child: Center(child: CircularProgressIndicator()),
+      child: Center(child: AppSpinner()),
     );
   }
 
@@ -515,7 +516,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
               ? const Padding(
                   key: ValueKey('spin'),
                   padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(child: AppSpinner()),
                 )
               : _resendLeft > 0
                   ? _ResendCooldownButton(
@@ -605,7 +606,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen>
             const SizedBox(height: 40),
             // In the success case, AuthGate handles navigation automatically
             // once the token refresh fires. Show a spinner while waiting.
-            if (success) const CircularProgressIndicator(),
+            if (success) const AppSpinner(),
             const SizedBox(height: 48),
           ],
         ),

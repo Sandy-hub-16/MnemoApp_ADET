@@ -7,6 +7,7 @@ import '../../main.dart';
 import '../../business-layer/services/progress_service.dart';
 import 'deck/create_deck_options.dart';
 import 'deck/deck_quiz_screen.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HOME SCREEN  —  route: /home
@@ -129,12 +130,7 @@ class _HomeScaffoldState extends State<_HomeScaffold> {
           SafeArea(
             bottom: false,
             child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primary,
-                      strokeWidth: 2,
-                    ),
-                  )
+                ? const Center(child: AppSpinner())
                 : _HomeBody(
                     fullName: _fullName,
                     username: _username,

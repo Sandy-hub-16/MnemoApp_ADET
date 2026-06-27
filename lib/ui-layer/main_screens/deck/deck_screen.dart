@@ -14,6 +14,7 @@ import '../../../business-layer/services/deck_service.dart';
 import '../../../business-layer/services/export_service.dart';
 import '../../../business-layer/services/share_service.dart';
 import '../../../business-layer/services/deck_search_engine.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK SCREEN  —  route: /decks
@@ -153,7 +154,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
+        child: AppSpinner(),
       ),
     );
 
@@ -258,12 +259,9 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return const SliverToBoxAdapter(
-                              child: Padding(
+                              child: const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 40),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                      color: AppColors.primary),
-                                ),
+                                child: Center(child: AppSpinner()),
                               ),
                             );
                           }
@@ -1733,9 +1731,7 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
           _isTogglingVisibility
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  ),
+                  child: Center(child: AppSpinnerSmall()),
                 )
               : ListTile(
                   leading: Icon(

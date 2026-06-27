@@ -11,6 +11,7 @@ import '../../business-layer/services/share_service.dart';
 import '../../business-layer/services/notification_prefs_service.dart';
 import 'widgets/public_deck_card.dart';
 import 'widgets/follow_button.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC PROFILE SCREEN  —  route: /public-profile
@@ -418,11 +419,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
                 // ── Content ───────────────────────────────────────────────
                 Expanded(
                   child: _isLoadingProfile
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
+                      ? const Center(child: AppSpinner())
                       : _errorMessage != null
                           ? _ErrorState(
                               message: _errorMessage!,
@@ -574,9 +571,7 @@ class _ProfileContent extends StatelessWidget {
               return const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 40),
-                  child: Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  ),
+                  child: Center(child: AppSpinner()),
                 ),
               );
             }
