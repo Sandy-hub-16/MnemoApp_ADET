@@ -264,20 +264,26 @@ class _ProfileBodyState extends State<_ProfileBody> {
             memberSince: _memberSince,
             followerCount: _followerCount,
             followingCount: _followingCount,
-            onFollowersTap: () => Navigator.of(context).pushNamed(
-              AppRoutes.followList,
-              arguments: FollowListArgs(
-                targetUid: _uid,
-                initialTab: FollowListTab.followers,
-              ),
-            ),
-            onFollowingTap: () => Navigator.of(context).pushNamed(
-              AppRoutes.followList,
-              arguments: FollowListArgs(
-                targetUid: _uid,
-                initialTab: FollowListTab.following,
-              ),
-            ),
+            onFollowersTap: () async {
+              await Navigator.of(context).pushNamed(
+                AppRoutes.followList,
+                arguments: FollowListArgs(
+                  targetUid: _uid,
+                  initialTab: FollowListTab.followers,
+                ),
+              );
+              _loadProfile();
+            },
+            onFollowingTap: () async {
+              await Navigator.of(context).pushNamed(
+                AppRoutes.followList,
+                arguments: FollowListArgs(
+                  targetUid: _uid,
+                  initialTab: FollowListTab.following,
+                ),
+              );
+              _loadProfile();
+            },
             onEditTap: () async {
               await Navigator.of(context).pushNamed('/account-settings');
               _loadProfile();

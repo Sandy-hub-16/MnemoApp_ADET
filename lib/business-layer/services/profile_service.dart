@@ -12,8 +12,12 @@ import '../../data-layer/models/social/public_profile.dart';
 // DATA PATHS
 // ──────────
 //   getProfile()      → reads users/{targetUid}
-//                       returns PublicProfile (fullName, username, photoUrl)
+//                       returns PublicProfile (all public fields)
 //                       throws StateError if the document does not exist
+//
+//   getLibraryStats() → reads users/{targetUid}/decks and public_decks
+//                       returns a _LibraryStats with deckCount, cardCount,
+//                       sharedDeckCount (excludes drafts).
 //
 //   userDecksStream() → listens to public_decks where ownerUid == targetUid,
 //                       ordered by sharedAt descending
@@ -21,6 +25,23 @@ import '../../data-layer/models/social/public_profile.dart';
 //
 // Requirements: 5.1, 5.2, 5.3, 5.5
 // ─────────────────────────────────────────────────────────────────────────────
+
+class PublicLibraryStats {
+  const PublicLibraryStats({
+    required this.deckCount,
+    required this.cardCount,
+    required this.sharedDeckCount,
+  });
+
+  /// Total non-draft decks.
+  final int deckCount;
+
+  /// Total cards across all non-draft decks.
+  final int cardCount;
+
+  /// Number of decks shared to the public feed.
+  final int sharedDeckCount;
+}
 
 abstract final class ProfileService {
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -32,7 +53,8 @@ abstract final class ProfileService {
   /// Fetches the public profile fields for [targetUid].
   ///
   /// Reads `users/{targetUid}` and returns a [PublicProfile] containing
-  /// `fullName`, `username`, and `photoUrl`.
+  /// all publicly displayable fields (name, username, photo, bio, about,
+  /// privacy flag).
   ///
   /// Throws [StateError] if no document exists for [targetUid].
   ///
@@ -45,6 +67,46 @@ abstract final class ProfileService {
     }
 
     return PublicProfile.fromFirestore(doc);
+  }
+
+  // ── LIBRARY STATS ─────────────────────────────────────────────────────────
+
+  /// Reads the deck sub-collection of [targetUid] to compute:
+  ///   • deckCount       — non-draft decks
+  ///   • cardCount       — total cards across non-draft decks
+  ///   • sharedDeckCount — decks mirrored to public_decks
+  ///
+  /// Drafts are intentionally excluded so viewers never see a user's
+  /// draft count.
+  static Future<PublicLibraryStats> getLibraryStats(String targetUid) async {
+    final decksSnap =
+        await _db.collection('users').doc(targetUid).collection('decks').get();
+
+    int deckCount = 0;
+    int cardCount = 0;
+
+    for (final doc in decksSnap.docs) {
+      final d = doc.data();
+      if (d['isDraft'] == true) continue; // skip drafts
+      deckCount++;
+      if (d['cardCount'] is int) {
+        cardCount += (d['cardCount'] as int);
+      } else if (d['cards'] is List) {
+        cardCount += (d['cards'] as List).length;
+      }
+    }
+
+    final publicSnap = await _db
+        .collection('public_decks')
+        .where('ownerUid', isEqualTo: targetUid)
+        .count()
+        .get();
+
+    return PublicLibraryStats(
+      deckCount: deckCount,
+      cardCount: cardCount,
+      sharedDeckCount: publicSnap.count ?? 0,
+    );
   }
 
   // ── USER DECKS STREAM ─────────────────────────────────────────────────────
@@ -63,9 +125,8 @@ abstract final class ProfileService {
         .orderBy('sharedAt', descending: true)
         .snapshots()
         .map(
-          (snapshot) => snapshot.docs
-              .map(PublicDeckSummary.fromFirestore)
-              .toList(),
+          (snapshot) =>
+              snapshot.docs.map(PublicDeckSummary.fromFirestore).toList(),
         );
   }
 }

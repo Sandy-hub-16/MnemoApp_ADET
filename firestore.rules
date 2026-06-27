@@ -28,8 +28,13 @@ service cloud.firestore {
 
       // ── Private deck sub-collection ─────────────────────────────────────
       // Owner has full access.
+      // Any authenticated user may read deck metadata (title, cardCount,
+      // isDraft) so that PublicProfileScreen can compute library stats
+      // (deck count, card count) for public profiles. Cards remain private
+      // unless the deck is mirrored to public_decks (see cards rule below).
       match /decks/{deckId} {
-        allow read, write: if request.auth != null
+        allow read:  if request.auth != null;
+        allow write: if request.auth != null
                            && request.auth.uid == uid;
 
         // Cards: owner has full access.
