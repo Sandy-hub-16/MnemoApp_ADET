@@ -8,6 +8,7 @@ import '../widgets/auth_text_field.dart';
 import '../widgets/auth_buttons.dart';
 import '../widgets/auth_decorations.dart';
 import '../widgets/step_progress.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SIGN UP — STEP 1: IDENTITY
@@ -198,7 +199,7 @@ class _Step1BodyState extends State<_Step1Body> {
 
         // ── Next CTA ──────────────────────────────────────────────────────
         _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: AppSpinner())
             : AuthPrimaryButton(
                 label: 'Next Step',
                 onTap: _handleNext,

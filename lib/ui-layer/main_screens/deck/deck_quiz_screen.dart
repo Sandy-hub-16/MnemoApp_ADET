@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/progress_service.dart';
 import 'deck_quiz_results_screen.dart';
+import '../../widgets/app_spinner.dart';
 import '../settings/settings_screen.dart'
     show
         kQuizTimerEnabledKey,
@@ -1131,7 +1132,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(color: AppColors.primary, strokeWidth: 3),
+          AppSpinner(),
           SizedBox(height: 20),
           Text(
             'Preparing your cards...',
@@ -1618,6 +1619,7 @@ class _QuizScreenState extends State<QuizScreen> with TickerProviderStateMixin {
                   child: CircularProgressIndicator(
                     color: AppColors.primary,
                     strokeWidth: 2.5,
+                    strokeCap: StrokeCap.round,
                   ),
                 ),
                 const SizedBox(height: 12),

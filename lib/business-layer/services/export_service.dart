@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../../ui-layer/widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPORT SERVICE
@@ -66,9 +67,7 @@ abstract final class ExportService {
         builder: (_) => const PopScope(
           canPop: false,
           child: Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF6750A4),
-            ),
+            child: AppSpinner(),
           ),
         ),
       );

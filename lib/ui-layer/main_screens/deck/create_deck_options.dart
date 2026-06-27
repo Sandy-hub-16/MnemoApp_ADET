@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/rate_limit_service.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CREATE DECK OPTIONS
@@ -1698,7 +1699,7 @@ Future<void> handleUploadAndGenerateDeck(BuildContext context) async {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(color: AppColors.primary),
+                const AppSpinner(),
                 const SizedBox(height: 16),
                 Text(
                   'Generating your deck…',
@@ -2026,7 +2027,7 @@ Future<void> handlePasteNotesAndGenerateDeck(BuildContext context) async {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const CircularProgressIndicator(color: AppColors.primary),
+                const AppSpinner(),
                 const SizedBox(height: 16),
                 Text(
                   'Generating your deck…',

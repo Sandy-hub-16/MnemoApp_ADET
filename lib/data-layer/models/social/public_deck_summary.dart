@@ -16,6 +16,7 @@ class PublicDeckSummary {
     required this.cardCount,
     required this.ownerUid,
     required this.ownerUsername,
+    required this.ownerFullName,
     this.ownerPhotoUrl,
     required this.sharedAt,
     required this.cloneCount,
@@ -27,6 +28,7 @@ class PublicDeckSummary {
   final int cardCount;
   final String ownerUid;
   final String ownerUsername;
+  final String ownerFullName;
   final String? ownerPhotoUrl;
   final DateTime sharedAt;
   final int cloneCount;
@@ -44,6 +46,7 @@ class PublicDeckSummary {
       cardCount: (data['cardCount'] as num?)?.toInt() ?? 0,
       ownerUid: data['ownerUid'] as String? ?? '',
       ownerUsername: data['ownerUsername'] as String? ?? '',
+      ownerFullName: data['ownerFullName'] as String? ?? '',
       ownerPhotoUrl: data['ownerPhotoUrl'] as String?,
       sharedAt: (data['sharedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       cloneCount: (data['cloneCount'] as num?)?.toInt() ?? 0,
@@ -58,6 +61,7 @@ class PublicDeckSummary {
         'cardCount': cardCount,
         'ownerUid': ownerUid,
         'ownerUsername': ownerUsername,
+        'ownerFullName': ownerFullName,
         'ownerPhotoUrl': ownerPhotoUrl,
         'sharedAt': Timestamp.fromDate(sharedAt),
         'cloneCount': cloneCount,

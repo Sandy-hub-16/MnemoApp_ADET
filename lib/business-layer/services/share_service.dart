@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'notification_prefs_service.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARE SERVICE
 //
@@ -124,6 +126,7 @@ abstract final class ShareService {
     final userData =
         (results[0] as DocumentSnapshot<Map<String, dynamic>>).data() ?? {};
     final ownerUsername = userData['username'] as String? ?? '';
+    final ownerFullName = userData['fullName'] as String? ?? '';
     final ownerPhotoUrl = userData['photoUrl'] as String?;
     final realCardCount = (results[1] as AggregateQuerySnapshot).count ?? 0;
 
@@ -145,6 +148,7 @@ abstract final class ShareService {
         'cardCount': realCardCount,
         'ownerUid': uid,
         'ownerUsername': ownerUsername,
+        'ownerFullName': ownerFullName,
         'ownerPhotoUrl': ownerPhotoUrl,
         'sharedAt': FieldValue.serverTimestamp(),
         'cloneCount': 0,
@@ -241,7 +245,7 @@ abstract final class ShareService {
       'isDraft': false,
       'visibility': 'private',
       'clonedFrom': sourceDeckId,
-      'clonedFromUsername': publicData['ownerUsername'] as String? ?? '',
+      'clonedFromUsername': publicData['ownerFullName'] as String? ?? '',
       'cardCount': cardsSnap.docs.length,
       'targetCardCount': cardsSnap.docs.length,
       'progress': 0.0,
@@ -288,6 +292,9 @@ abstract final class ShareService {
   /// Writes a "deck_cloned" notification to [ownerUid] letting them know
   /// [clonerUid] cloned their deck. Fire-and-forget; errors are silent so a
   /// notification hiccup never surfaces as a clone failure to the user.
+  ///
+  /// Skipped entirely (no doc written) if [ownerUid] has turned off
+  /// "deck_cloned" notifications in Settings.
   static Future<void> _notifyDeckCloned({
     required String ownerUid,
     required String clonerUid,
@@ -295,9 +302,15 @@ abstract final class ShareService {
     required String deckTitle,
   }) async {
     try {
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: ownerUid,
+        type: NotificationType.deckCloned,
+      );
+      if (!enabled) return;
+
       final clonerSnap = await _db.collection('users').doc(clonerUid).get();
-      final clonerUsername =
-          clonerSnap.data()?['username'] as String? ?? 'Someone';
+      final clonerFullName =
+          clonerSnap.data()?['fullName'] as String? ?? 'Someone';
 
       await _db
           .collection('users')
@@ -306,7 +319,7 @@ abstract final class ShareService {
           .add({
         'type': 'deck_cloned',
         'fromUid': clonerUid,
-        'fromUsername': clonerUsername,
+        'fromUsername': clonerFullName,
         'deckId': deckId,
         'deckTitle': deckTitle,
         'createdAt': FieldValue.serverTimestamp(),
@@ -386,9 +399,9 @@ abstract final class ShareService {
     final latestDeck = publicDecksSnap.docs.first;
     final latestDeckData = latestDeck.data();
 
-    // Read the followee's username for the notification
+    // Read the followee's full name for the notification
     final followeeSnap = await _db.collection('users').doc(followeeUid).get();
-    final followeeUsername = followeeSnap.data()?['username'] as String? ?? '';
+    final followeeFullName = followeeSnap.data()?['fullName'] as String? ?? '';
 
     // Read all current followers of the followee
     final followersSnap = await _db
@@ -403,13 +416,23 @@ abstract final class ShareService {
 
     for (final followerDoc in followersSnap.docs) {
       final fUid = followerDoc.id;
+
+      // Independent per-recipient check: a follower who has turned off
+      // "new_shared_deck" notifications simply gets no doc written for them,
+      // while everyone else in the fan-out is unaffected.
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: fUid,
+        type: NotificationType.newSharedDeck,
+      );
+      if (!enabled) continue;
+
       final notifRef =
           _db.collection('users').doc(fUid).collection('notifications').doc();
 
       fanOutBatch.set(notifRef, {
         'type': 'new_shared_deck',
         'fromUid': followeeUid,
-        'fromUsername': followeeUsername,
+        'fromUsername': followeeFullName,
         'deckId': latestDeck.id,
         'deckTitle': latestDeckData['title'] as String? ?? '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -423,14 +446,23 @@ abstract final class ShareService {
   /// Writes a "new_follower" notification to [followeeUid] letting them know
   /// [followerUid] just followed them. Fire-and-forget; errors are silent so
   /// a notification hiccup never surfaces as a follow failure to the user.
+  ///
+  /// Skipped entirely (no doc written) if [followeeUid] has turned off
+  /// "new_follower" notifications in Settings.
   static Future<void> _notifyNewFollower({
     required String followeeUid,
     required String followerUid,
   }) async {
     try {
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: followeeUid,
+        type: NotificationType.newFollower,
+      );
+      if (!enabled) return;
+
       final followerSnap = await _db.collection('users').doc(followerUid).get();
-      final followerUsername =
-          followerSnap.data()?['username'] as String? ?? 'Someone';
+      final followerFullName =
+          followerSnap.data()?['fullName'] as String? ?? 'Someone';
 
       await _db
           .collection('users')
@@ -439,7 +471,7 @@ abstract final class ShareService {
           .add({
         'type': 'new_follower',
         'fromUid': followerUid,
-        'fromUsername': followerUsername,
+        'fromUsername': followerFullName,
         'deckId': '',
         'deckTitle': '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -498,7 +530,7 @@ abstract final class ShareService {
     required String ownerUid,
     required String deckId,
     required String deckTitle,
-    required String ownerUsername,
+    required String ownerFullName,
   }) async {
     final followersSnap = await _db
         .collection('users')
@@ -512,6 +544,16 @@ abstract final class ShareService {
 
     for (final followerDoc in followersSnap.docs) {
       final followerUid = followerDoc.id;
+
+      // Independent per-recipient check — same as the fan-out inside
+      // follow(); a follower who disabled this type gets no doc, others
+      // are unaffected.
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: followerUid,
+        type: NotificationType.newSharedDeck,
+      );
+      if (!enabled) continue;
+
       final notifRef = _db
           .collection('users')
           .doc(followerUid)
@@ -521,7 +563,7 @@ abstract final class ShareService {
       batch.set(notifRef, {
         'type': 'new_shared_deck',
         'fromUid': ownerUid,
-        'fromUsername': ownerUsername,
+        'fromUsername': ownerFullName,
         'deckId': deckId,
         'deckTitle': deckTitle,
         'createdAt': FieldValue.serverTimestamp(),
@@ -573,6 +615,185 @@ abstract final class ShareService {
         debugPrint(
             '[ShareService.repairCardCounts] $deckId: $storedCount → $realCount');
       }
+    }
+  }
+
+  // ── FAN-OUT: USERNAME CHANGED ─────────────────────────────────────────────
+
+  /// Notifies all followers of [ownerUid] that they changed their username
+  /// from [oldUsername] to [newUsername].
+  ///
+  /// Called fire-and-forget from the profile-save path after a successful
+  /// Firestore update. Errors are silently swallowed so a notification
+  /// hiccup never surfaces to the user.
+  ///
+  /// Skipped per-recipient when the recipient has disabled
+  /// [NotificationType.usernameChanged] in Settings.
+  static Future<void> fanOutUsernameChanged({
+    required String ownerUid,
+    required String newUsername,
+    required String oldUsername,
+  }) async {
+    try {
+      final followersSnap = await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final batch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final followerUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: followerUid,
+          type: NotificationType.usernameChanged,
+        );
+        if (!enabled) continue;
+
+        final notifRef = _db
+            .collection('users')
+            .doc(followerUid)
+            .collection('notifications')
+            .doc();
+
+        batch.set(notifRef, {
+          'type': NotificationType.usernameChanged,
+          'fromUid': ownerUid,
+          'fromUsername': newUsername,
+          'deckId': '',
+          'deckTitle': '',
+          'oldValue': oldUsername,
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await batch.commit();
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
+  }
+
+  // ── FAN-OUT: BIO UPDATED ──────────────────────────────────────────────────
+
+  /// Notifies all followers of [ownerUid] that they updated their bio.
+  ///
+  /// Called fire-and-forget from the profile-save path after a successful
+  /// Firestore update. Errors are silently swallowed.
+  ///
+  /// Skipped per-recipient when [NotificationType.bioUpdated] is disabled.
+  static Future<void> fanOutBioUpdated({
+    required String ownerUid,
+    required String ownerUsername,
+  }) async {
+    try {
+      final followersSnap = await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final batch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final followerUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: followerUid,
+          type: NotificationType.bioUpdated,
+        );
+        if (!enabled) continue;
+
+        final notifRef = _db
+            .collection('users')
+            .doc(followerUid)
+            .collection('notifications')
+            .doc();
+
+        batch.set(notifRef, {
+          'type': NotificationType.bioUpdated,
+          'fromUid': ownerUid,
+          'fromUsername': ownerUsername,
+          'deckId': '',
+          'deckTitle': '',
+          'oldValue': '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await batch.commit();
+    } catch (_) {
+      // Silently ignore — notification is best-effort
+    }
+  }
+
+  // ── FAN-OUT: FOLLOWED ACCOUNT NEW DECK ───────────────────────────────────
+
+  /// Notifies all followers of [ownerUid] that they published a new public
+  /// deck, using the [NotificationType.followedNewDeck] type so recipients
+  /// can distinguish "deck from someone I follow" from the generic
+  /// [NotificationType.newSharedDeck] type (which is used for the fan-out
+  /// that fires when someone *first follows* an account that already has
+  /// public decks).
+  ///
+  /// Called fire-and-forget from [setVisibility] after a deck is published.
+  /// Errors are silently swallowed.
+  ///
+  /// Skipped per-recipient when [NotificationType.followedNewDeck] is disabled.
+  static Future<void> fanOutFollowedNewDeck({
+    required String ownerUid,
+    required String deckId,
+    required String deckTitle,
+    required String ownerUsername,
+  }) async {
+    try {
+      final followersSnap = await _db
+          .collection('users')
+          .doc(ownerUid)
+          .collection('followers')
+          .get();
+
+      if (followersSnap.docs.isEmpty) return;
+
+      final batch = _db.batch();
+
+      for (final followerDoc in followersSnap.docs) {
+        final followerUid = followerDoc.id;
+
+        final enabled = await NotificationPrefsService.isEnabledFor(
+          uid: followerUid,
+          type: NotificationType.followedNewDeck,
+        );
+        if (!enabled) continue;
+
+        final notifRef = _db
+            .collection('users')
+            .doc(followerUid)
+            .collection('notifications')
+            .doc();
+
+        batch.set(notifRef, {
+          'type': NotificationType.followedNewDeck,
+          'fromUid': ownerUid,
+          'fromUsername': ownerUsername,
+          'deckId': deckId,
+          'deckTitle': deckTitle,
+          'oldValue': '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'read': false,
+        });
+      }
+
+      await batch.commit();
+    } catch (_) {
+      // Silently ignore — notification is best-effort
     }
   }
 }

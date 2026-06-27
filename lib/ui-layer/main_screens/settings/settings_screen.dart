@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../landing_page/app_theme.dart';
+import '../../../business-layer/services/notification_prefs_service.dart';
 import 'amnesia_dialog.dart';
 import 'delete_account_dialog.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SETTINGS SCREEN
@@ -145,6 +149,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _showSocialNotificationsDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => const _SocialNotificationsDialog(),
+    );
+  }
+
   void _showLegalModal(
     BuildContext context,
     String title,
@@ -250,6 +261,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: 'Study Reminders',
                       subtitle: 'Set daily study notifications',
                       onTap: () => _showStudyRemindersDialog(context),
+                      isLast: true,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+
+                // ── Notifications ─────────────────────────────────────────────
+                _SectionHeader(
+                  icon: Icons.notifications_active_rounded,
+                  label: 'NOTIFICATIONS',
+                  color: AppColors.tertiary,
+                ),
+                const SizedBox(height: 12),
+                _SettingsGroup(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.tune_rounded,
+                      iconBg: AppColors.tertiaryContainer.withOpacity(0.5),
+                      iconColor: AppColors.onTertiaryContainer,
+                      label: 'Notification Types',
+                      subtitle: 'Choose what you get notified about',
+                      onTap: () => _showSocialNotificationsDialog(context),
+                      isFirst: true,
                       isLast: true,
                     ),
                   ],
@@ -822,10 +856,7 @@ class _PrivacyTile extends StatelessWidget {
             const SizedBox(
               width: 36,
               height: 36,
-              child: Padding(
-                padding: EdgeInsets.all(8),
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              child: Center(child: AppSpinnerSmall()),
             )
           else
             Switch(
@@ -917,7 +948,7 @@ class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
       return const Dialog(
         child: Padding(
           padding: EdgeInsets.all(40),
-          child: CircularProgressIndicator(),
+          child: Center(child: AppSpinner()),
         ),
       );
     }
@@ -1158,8 +1189,294 @@ class _StudyRemindersDialogState extends State<_StudyRemindersDialog> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LEGAL CONTENT DATA
+// SOCIAL NOTIFICATIONS DIALOG
+//
+// Lets the user independently enable/disable each of the 4 notification
+// types. Backed by NotificationPrefsService, which stores each type under
+// its own key in users/{uid}.notificationPrefs — flipping one type never
+// touches the other 3, both here and at the point notifications are created.
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _SocialNotificationsDialog extends StatefulWidget {
+  const _SocialNotificationsDialog();
+
+  @override
+  State<_SocialNotificationsDialog> createState() =>
+      _SocialNotificationsDialogState();
+}
+
+class _SocialNotificationsDialogState
+    extends State<_SocialNotificationsDialog> {
+  Map<String, bool> _prefs = {
+    for (final t in NotificationType.all) t: true,
+  };
+  bool _loading = true;
+  StreamSubscription<Map<String, bool>>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = NotificationPrefsService.watchOwnPrefs().listen((prefs) {
+      if (!mounted) return;
+      setState(() {
+        _prefs = prefs;
+        _loading = false;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  /// Flips a single notification type. Only [type]'s key is written to
+  /// Firestore — the other 3 types are completely untouched, so this can
+  /// never have a side effect on any type other than the one tapped.
+  Future<void> _toggle(String type, bool value) async {
+    setState(() => _prefs = {..._prefs, type: value});
+    await NotificationPrefsService.setEnabled(type: type, enabled: value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      backgroundColor: AppColors.surfaceContainerLowest,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.tertiaryContainer.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(Icons.tune_rounded,
+                      color: AppColors.tertiary, size: 26),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Notification Types',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.onSurface,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      Text(
+                        'Turn each one on or off independently',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: AppColors.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      color: AppColors.onSurfaceVariant, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.surfaceContainerLow,
+                    padding: const EdgeInsets.all(6),
+                    minimumSize: const Size(32, 32),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: AppSpinner()),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    _NotificationTypeRow(
+                      icon: Icons.person_add_rounded,
+                      label: 'New Followers',
+                      subtitle: 'When someone follows you',
+                      value: _prefs[NotificationType.newFollower] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.newFollower, v),
+                      isFirst: true,
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.notifications_rounded,
+                      label: 'New Shared Decks',
+                      subtitle: 'When someone you follow shares a deck',
+                      value: _prefs[NotificationType.newSharedDeck] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.newSharedDeck, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.content_copy_rounded,
+                      label: 'Deck Clones',
+                      subtitle: 'When someone clones your deck',
+                      value: _prefs[NotificationType.deckCloned] ?? true,
+                      onChanged: (v) => _toggle(NotificationType.deckCloned, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.person_rounded,
+                      label: 'Profile Views',
+                      subtitle: 'When someone views your profile',
+                      value: _prefs[NotificationType.profileViewed] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.profileViewed, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.auto_stories_rounded,
+                      label: 'Following — New Decks',
+                      subtitle: 'When someone you follow publishes a new deck',
+                      value: _prefs[NotificationType.followedNewDeck] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.followedNewDeck, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.badge_rounded,
+                      label: 'Following — Username Changes',
+                      subtitle:
+                          'When someone you follow changes their username',
+                      value: _prefs[NotificationType.usernameChanged] ?? true,
+                      onChanged: (v) =>
+                          _toggle(NotificationType.usernameChanged, v),
+                    ),
+                    _NotificationTypeRow(
+                      icon: Icons.edit_note_rounded,
+                      label: 'Following — Bio Updates',
+                      subtitle: 'When someone you follow updates their bio',
+                      value: _prefs[NotificationType.bioUpdated] ?? true,
+                      onChanged: (v) => _toggle(NotificationType.bioUpdated, v),
+                      isLast: true,
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Text(
+                  'Done',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATION TYPE ROW — single toggle row inside _SocialNotificationsDialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NotificationTypeRow extends StatelessWidget {
+  const _NotificationTypeRow({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.isFirst = false,
+    this.isLast = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool isFirst;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        border: !isLast
+            ? Border(
+                bottom: BorderSide(
+                  color: AppColors.outlineVariant.withOpacity(0.3),
+                  width: 0.5,
+                ),
+              )
+            : null,
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.onSurfaceVariant, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeColor: AppColors.primary,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _LegalSection {
   const _LegalSection({required this.heading, required this.body});

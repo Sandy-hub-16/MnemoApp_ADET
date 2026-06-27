@@ -7,6 +7,7 @@ import '../../data-layer/models/social/public_deck_summary.dart';
 import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/share_service.dart';
 import '../main_screens/deck/deck_quiz_screen.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHARED DECK DETAIL SCREEN  —  route: /shared-deck-detail
@@ -74,10 +75,8 @@ class _SharedDeckDetailBodyState extends State<_SharedDeckDetailBody> {
       final db = FirebaseFirestore.instance;
 
       // Fetch public deck summary
-      final summarySnap = await db
-          .collection('public_decks')
-          .doc(widget.args.deckId)
-          .get();
+      final summarySnap =
+          await db.collection('public_decks').doc(widget.args.deckId).get();
 
       if (!summarySnap.exists) {
         if (mounted) {
@@ -112,9 +111,7 @@ class _SharedDeckDetailBodyState extends State<_SharedDeckDetailBody> {
 
       final realCardCount = totalCountSnap.count ?? summary.cardCount;
 
-      final cards = cardsSnap.docs
-          .map((d) => d.data())
-          .toList();
+      final cards = cardsSnap.docs.map((d) => d.data()).toList();
 
       // Build a corrected summary with the real card count
       final correctedSummary = realCardCount != summary.cardCount
@@ -125,6 +122,7 @@ class _SharedDeckDetailBodyState extends State<_SharedDeckDetailBody> {
               cardCount: realCardCount,
               ownerUid: summary.ownerUid,
               ownerUsername: summary.ownerUsername,
+              ownerFullName: summary.ownerFullName,
               ownerPhotoUrl: summary.ownerPhotoUrl,
               sharedAt: summary.sharedAt,
               cloneCount: summary.cloneCount,
@@ -223,8 +221,7 @@ class _SharedDeckDetailBodyState extends State<_SharedDeckDetailBody> {
         ),
         backgroundColor: AppColors.error,
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       ),
     );
@@ -267,11 +264,7 @@ class _SharedDeckDetailBodyState extends State<_SharedDeckDetailBody> {
                 // ── Content ───────────────────────────────────────────────
                 Expanded(
                   child: _isLoadingData
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
+                      ? const Center(child: AppSpinner())
                       : _errorMessage != null
                           ? _ErrorState(
                               message: _errorMessage!,
@@ -416,8 +409,7 @@ class _DeckDetailContent extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 10),
                         child: _CardPreviewTile(
                           index: entry.key + 1,
-                          question:
-                              entry.value['question'] as String? ?? '',
+                          question: entry.value['question'] as String? ?? '',
                         ),
                       ),
                     ),
@@ -474,8 +466,7 @@ class _DeckHeaderCard extends StatelessWidget {
         children: [
           // ── Tag chip ───────────────────────────────────────────────────
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: AppColors.secondaryContainer,
               borderRadius: BorderRadius.circular(999),
@@ -531,35 +522,53 @@ class _DeckHeaderCard extends StatelessWidget {
           // ── Owner row ──────────────────────────────────────────────────
           Row(
             children: [
-              // Avatar
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.primaryContainer,
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.2),
-                    width: 2,
-                  ),
-                ),
-                child: summary.ownerPhotoUrl != null
-                    ? ClipOval(
-                        child: Image.network(
-                          summary.ownerPhotoUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
+              // Avatar — fetched live so it stays current if the owner
+              // changes their profile photo after sharing the deck.
+              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: summary.ownerUid.isEmpty
+                    ? null
+                    : FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(summary.ownerUid)
+                        .snapshots(),
+                builder: (context, snapshot) {
+                  final livePhotoUrl =
+                      snapshot.data?.data()?['photoUrl'] as String?;
+                  final photoUrl =
+                      (livePhotoUrl != null && livePhotoUrl.isNotEmpty)
+                          ? livePhotoUrl
+                          : summary.ownerPhotoUrl;
+
+                  return Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primaryContainer,
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                        width: 2,
+                      ),
+                    ),
+                    child: photoUrl != null && photoUrl.isNotEmpty
+                        ? ClipOval(
+                            child: Image.network(
+                              photoUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person_rounded,
+                                color: AppColors.primary,
+                                size: 20,
+                              ),
+                            ),
+                          )
+                        : const Icon(
                             Icons.person_rounded,
                             color: AppColors.primary,
                             size: 20,
                           ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.person_rounded,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
+                  );
+                },
               ),
               const SizedBox(width: 10),
 
@@ -579,7 +588,7 @@ class _DeckHeaderCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '@${summary.ownerUsername}',
+                        summary.ownerFullName,
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -736,10 +745,7 @@ class _CloneButton extends StatelessWidget {
             ? const SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(
-                  color: AppColors.onPrimary,
-                  strokeWidth: 2.5,
-                ),
+                child: AppSpinnerSmall(color: AppColors.onPrimary),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,

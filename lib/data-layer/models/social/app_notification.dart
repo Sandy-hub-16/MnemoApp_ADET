@@ -6,15 +6,27 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 // In-app notification document stored at
 // users/{uid}/notifications/{notificationId}.
 //
-// Current `type` values:
-//   • "new_shared_deck" — someone you follow published a new public deck
-//   • "profile_viewed"  — someone viewed your public profile
-//   • "deck_cloned"     — someone cloned one of your public decks
-//   • "new_follower"    — someone followed you
+// Current `type` values (7 total):
+//   Original 4
+//   ───────────
+//   • "new_shared_deck"   — someone you follow published a new public deck
+//   • "profile_viewed"    — someone viewed your public profile
+//   • "deck_cloned"       — someone cloned one of your public decks
+//   • "new_follower"      — someone followed you
 //
-// `deckId` / `deckTitle` are empty strings for types with no associated
-// deck (profile_viewed, new_follower). `type` is kept as a plain String to
-// allow future notification types without a breaking model change.
+//   Following-based activity (3 new)
+//   ──────────────────────────────────
+//   • "username_changed"  — someone you follow changed their username
+//   • "bio_updated"       — someone you follow updated their bio
+//   • "followed_new_deck" — someone you follow published a new public deck
+//                           (fan-out from the sharer's side; recipient sees it
+//                            as "someone you follow shared a deck")
+//
+// `deckId` / `deckTitle` are empty strings for types with no associated deck.
+// `oldValue` carries the previous username for "username_changed", and is an
+// empty string for all other types.
+// `type` is kept as a plain String to allow future types without a breaking
+// model change.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppNotification {
@@ -27,11 +39,12 @@ class AppNotification {
     required this.deckTitle,
     required this.createdAt,
     required this.read,
+    this.oldValue = '',
   });
 
   final String notificationId;
 
-  /// Notification type identifier — e.g. "new_shared_deck".
+  /// Notification type identifier — e.g. "username_changed".
   final String type;
 
   final String fromUid;
@@ -40,6 +53,10 @@ class AppNotification {
   final String deckTitle;
   final DateTime createdAt;
   final bool read;
+
+  /// For "username_changed": the previous username (before the change).
+  /// Empty string for all other notification types.
+  final String oldValue;
 
   // ── Firestore deserialization ─────────────────────────────────────────────
 
@@ -56,6 +73,7 @@ class AppNotification {
       deckTitle: data['deckTitle'] as String? ?? '',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       read: data['read'] as bool? ?? false,
+      oldValue: data['oldValue'] as String? ?? '',
     );
   }
 }

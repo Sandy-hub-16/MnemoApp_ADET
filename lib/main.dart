@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'ui-layer/landing_page/landing_screen.dart';
 import 'ui-layer/landing_page/app_theme.dart';
+import 'ui-layer/widgets/app_spinner.dart';
 import 'ui-layer/auth/login_screen.dart';
 import 'ui-layer/auth/register/register_step1_screen.dart';
 import 'ui-layer/auth/register/register_step2_screen.dart';
@@ -19,6 +20,7 @@ import 'ui-layer/main_screens/deck/deck_quiz_results_screen.dart';
 import 'ui-layer/social/notification_screen.dart';
 import 'ui-layer/social/shared_deck_detail_screen.dart';
 import 'ui-layer/social/public_profile_screen.dart';
+import 'ui-layer/social/followers_list_screen.dart';
 import 'ui-layer/social/social_feed_screen.dart';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -78,7 +80,7 @@ class AuthGate extends StatelessWidget {
         // Still waiting for Firebase to emit the first auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: Center(child: AppSpinner()),
           );
         }
 
@@ -119,6 +121,7 @@ abstract final class AppRoutes {
   static const String discover = '/discover';
   static const String sharedDeckDetail = '/shared-deck-detail';
   static const String publicProfile = '/public-profile';
+  static const String followList = '/follow-list';
   static const String feed = '/feed';
   static const String notifications = '/notifications';
 }
@@ -155,6 +158,7 @@ abstract final class AppRouter {
       AppRoutes.discover => const MainShell(initialIndex: 2),
       AppRoutes.sharedDeckDetail => const SharedDeckDetailScreen(),
       AppRoutes.publicProfile => const PublicProfileScreen(),
+      AppRoutes.followList => const FollowListScreen(),
       AppRoutes.feed => const SocialFeedScreen(),
       _ => const MainShell(),
     };

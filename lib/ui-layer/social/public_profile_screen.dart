@@ -8,8 +8,10 @@ import '../../data-layer/models/social/public_deck_summary.dart';
 import '../../data-layer/route_args/social_route_args.dart';
 import '../../business-layer/services/profile_service.dart';
 import '../../business-layer/services/share_service.dart';
+import '../../business-layer/services/notification_prefs_service.dart';
 import 'widgets/public_deck_card.dart';
 import 'widgets/follow_button.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC PROFILE SCREEN  —  route: /public-profile
@@ -249,12 +251,18 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
     required String ownerUsername,
   }) async {
     try {
+      final enabled = await NotificationPrefsService.isEnabledFor(
+        uid: ownerUid,
+        type: NotificationType.profileViewed,
+      );
+      if (!enabled) return;
+
       final db = FirebaseFirestore.instance;
 
-      // Fetch viewer's profile — used for both username and privacy check.
+      // Fetch viewer's profile — used for both full name and privacy check.
       final viewerSnap = await db.collection('users').doc(viewerUid).get();
       final viewerData = viewerSnap.data() ?? {};
-      final viewerUsername = viewerData['username'] as String? ?? 'Someone';
+      final viewerFullName = viewerData['fullName'] as String? ?? 'Someone';
 
       // ── Private viewer guard ──────────────────────────────────────────────
       // If the viewer has set their account to private they browse anonymously
@@ -287,7 +295,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
           .add({
         'type': 'profile_viewed',
         'fromUid': viewerUid,
-        'fromUsername': viewerUsername,
+        'fromUsername': viewerFullName,
         'deckId': '',
         'deckTitle': '',
         'createdAt': FieldValue.serverTimestamp(),
@@ -411,11 +419,7 @@ class _PublicProfileBodyState extends State<_PublicProfileBody> {
                 // ── Content ───────────────────────────────────────────────
                 Expanded(
                   child: _isLoadingProfile
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        )
+                      ? const Center(child: AppSpinner())
                       : _errorMessage != null
                           ? _ErrorState(
                               message: _errorMessage!,
@@ -567,9 +571,7 @@ class _ProfileContent extends StatelessWidget {
               return const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 40),
-                  child: Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  ),
+                  child: Center(child: AppSpinner()),
                 ),
               );
             }

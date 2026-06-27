@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../landing_page/app_theme.dart';
 import '../../../business-layer/services/amnesia_service.dart';
+import '../../widgets/app_spinner.dart';
 
 class AmnesiaConfirmationDialog extends StatefulWidget {
   const AmnesiaConfirmationDialog({super.key});
@@ -159,10 +160,7 @@ class _AmnesiaConfirmationDialogState extends State<AmnesiaConfirmationDialog> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(
-            color: AppColors.primary,
-            strokeWidth: 3,
-          ),
+          const AppSpinner(),
           const SizedBox(height: 24),
           Text(
             'Resetting all progress...',

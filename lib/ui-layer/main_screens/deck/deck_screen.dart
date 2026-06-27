@@ -14,6 +14,7 @@ import '../../../business-layer/services/deck_service.dart';
 import '../../../business-layer/services/export_service.dart';
 import '../../../business-layer/services/share_service.dart';
 import '../../../business-layer/services/deck_search_engine.dart';
+import '../../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DECK SCREEN  —  route: /decks
@@ -51,7 +52,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _deckSubscription;
 
   bool _draftsExpanded = false;
-  
+
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounce;
   String _searchQuery = '';
@@ -153,7 +154,7 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
+        child: AppSpinner(),
       ),
     );
 
@@ -258,12 +259,9 @@ class _DeckHubScaffoldState extends State<_DeckHubScaffold> {
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return const SliverToBoxAdapter(
-                              child: Padding(
+                              child: const Padding(
                                 padding: EdgeInsets.symmetric(vertical: 40),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                      color: AppColors.primary),
-                                ),
+                                child: Center(child: AppSpinner()),
                               ),
                             );
                           }
@@ -1259,6 +1257,7 @@ class _DeckCardState extends State<_DeckCard> {
   }
 
   void _onVisibilityChanged(String newVisibility) {
+    if (!mounted) return;
     setState(() => _currentVisibility = newVisibility);
   }
 
@@ -1398,7 +1397,7 @@ class _DeckCardState extends State<_DeckCard> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Cloned from @${widget.clonedFromUsername}',
+                      'Cloned from ${widget.clonedFromUsername}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 10,
                         color: AppColors.outline,
@@ -1649,6 +1648,26 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
 
       widget.onVisibilityChanged(newVisibility);
 
+      // Fan-out "followed new deck" notification to all followers when
+      // the owner publishes a deck. Fire-and-forget: a notification hiccup
+      // should never block the visibility toggle or surface as an error.
+      if (newVisibility == 'public') {
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          final userSnap = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .get();
+          final ownerUsername = userSnap.data()?['username'] as String? ?? '';
+          ShareService.fanOutFollowedNewDeck(
+            ownerUid: uid,
+            deckId: widget.deckId,
+            deckTitle: widget.deckTitle,
+            ownerUsername: ownerUsername,
+          );
+        }
+      }
+
       if (context.mounted) Navigator.pop(context);
     } on StateError catch (e) {
       if (context.mounted) {
@@ -1712,9 +1731,7 @@ class _DeckOptionsSheetState extends State<_DeckOptionsSheet> {
           _isTogglingVisibility
               ? const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(
-                    child: CircularProgressIndicator(color: AppColors.primary),
-                  ),
+                  child: Center(child: AppSpinnerSmall()),
                 )
               : ListTile(
                   leading: Icon(

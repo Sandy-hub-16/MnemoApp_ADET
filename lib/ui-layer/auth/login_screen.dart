@@ -10,6 +10,7 @@ import 'widgets/auth_scaffold.dart';
 import 'widgets/auth_text_field.dart';
 import 'widgets/auth_buttons.dart';
 import 'widgets/auth_decorations.dart';
+import '../widgets/app_spinner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LOGIN ATTEMPT TRACKER  (singleton — survives widget rebuilds)
@@ -402,10 +403,7 @@ class _SignInBodyState extends State<_SignInBody> {
                             ? const SizedBox(
                                 height: 18,
                                 width: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
+                                child: AppSpinnerSmall(color: Colors.white),
                               )
                             : Text(
                                 'Send Link',
@@ -625,7 +623,7 @@ class _SignInBodyState extends State<_SignInBody> {
 
               // ── Sign In CTA ──────────────────────────────────────────────
               _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(child: AppSpinner())
                   : AuthPrimaryButton(
                       label: locked
                           ? 'Locked — ${_formatLockoutTime(remainingSeconds)}'

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../landing_page/app_theme.dart';
+import '../../widgets/app_spinner.dart';
 
 class StudyScreenArgs {
   final String deckId;
@@ -144,7 +145,7 @@ class _DeckStudyScreenState extends State<DeckStudyScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
+              child: const Center(child: AppSpinner()))
           : _error != null
               ? Center(
                   child: Padding(
@@ -351,7 +352,7 @@ class _DeckDetailsHeader extends StatelessWidget {
                       size: 14, color: Colors.white),
                   const SizedBox(width: 6),
                   Text(
-                    'Created by @$clonedFromUsername',
+                    'Created by $clonedFromUsername',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       color: Colors.white,

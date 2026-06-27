@@ -23,10 +23,22 @@ class NotificationTile extends StatelessWidget {
     super.key,
     required this.notification,
     required this.onTap,
+    this.onLongPress,
+    this.selectionMode = false,
+    this.selected = false,
   });
 
   final AppNotification notification;
   final VoidCallback onTap;
+
+  /// Fired on long-press — used by the parent screen to enter selection mode.
+  final VoidCallback? onLongPress;
+
+  /// When true, tapping the tile toggles [selected] instead of running the
+  /// normal navigation/mark-read behavior, and a checkbox is shown in place
+  /// of the leading icon.
+  final bool selectionMode;
+  final bool selected;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -64,6 +76,14 @@ class NotificationTile extends StatelessWidget {
         return isUnread
             ? Icons.content_copy_rounded
             : Icons.content_copy_outlined;
+      case 'username_changed':
+        return isUnread ? Icons.badge_rounded : Icons.badge_outlined;
+      case 'bio_updated':
+        return isUnread ? Icons.edit_note_rounded : Icons.edit_note_outlined;
+      case 'followed_new_deck':
+        return isUnread
+            ? Icons.auto_stories_rounded
+            : Icons.auto_stories_outlined;
       default: // new_shared_deck and any future deck-related type
         return isUnread
             ? Icons.notifications_rounded
@@ -80,14 +100,24 @@ class NotificationTile extends StatelessWidget {
         return ' started following you';
       case 'deck_cloned':
         return ' cloned your deck: ';
-      default: // new_shared_deck and any future deck-related type
+      case 'username_changed':
+        return notification.oldValue.isNotEmpty
+            ? ' changed their username from @${notification.oldValue} to @${notification.fromUsername}'
+            : ' changed their username';
+      case 'bio_updated':
+        return ' updated their bio';
+      case 'followed_new_deck':
+        return ' shared a new deck: ';
+      default: // new_shared_deck
         return ' shared a new deck: ';
     }
   }
 
   /// Whether this notification type has an associated deck title to show.
   bool _hasDeckTitle(String type) =>
-      type != 'profile_viewed' && type != 'new_follower';
+      type == 'new_shared_deck' ||
+      type == 'deck_cloned' ||
+      type == 'followed_new_deck';
 
   @override
   Widget build(BuildContext context) {
@@ -95,14 +125,23 @@ class NotificationTile extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
+      onLongPress: onLongPress,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          // Unread tiles get a faint primary tint; read tiles are plain white
-          color: isUnread
-              ? AppColors.primaryContainer.withValues(alpha: 0.12)
-              : AppColors.surfaceContainerLowest,
+          // Selected tiles (in selection mode) get a stronger primary tint
+          // so it's obvious at a glance which ones are checked.
+          color: selectionMode && selected
+              ? AppColors.primaryContainer.withValues(alpha: 0.35)
+              : isUnread
+                  ? AppColors.primaryContainer.withValues(alpha: 0.12)
+                  : AppColors.surfaceContainerLowest,
           borderRadius: BorderRadius.circular(16),
+          border: selectionMode && selected
+              ? Border.all(color: AppColors.primary, width: 1.5)
+              : Border.all(color: Colors.transparent, width: 1.5),
           boxShadow: [
             BoxShadow(
               color: AppColors.onSurface.withValues(alpha: 0.04),
@@ -114,21 +153,49 @@ class NotificationTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Bell icon (read/unread indicator) ─────────────────────
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isUnread
-                    ? AppColors.primaryContainer
-                    : AppColors.surfaceContainerLow,
-              ),
-              child: Icon(
-                _iconFor(notification.type, isUnread),
-                size: 20,
-                color: isUnread ? AppColors.primary : AppColors.outline,
-              ),
+            // ── Bell icon (read/unread) or selection checkbox ──────────
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              transitionBuilder: (child, anim) =>
+                  ScaleTransition(scale: anim, child: child),
+              child: selectionMode
+                  ? AnimatedContainer(
+                      key: const ValueKey('checkbox'),
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.surfaceContainerLow,
+                        border: selected
+                            ? null
+                            : Border.all(color: AppColors.outline, width: 1.5),
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check_rounded,
+                              size: 20, color: Colors.white)
+                          : null,
+                    )
+                  : Container(
+                      key: const ValueKey('icon'),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isUnread
+                            ? AppColors.primaryContainer
+                            : AppColors.surfaceContainerLow,
+                      ),
+                      child: Icon(
+                        _iconFor(notification.type, isUnread),
+                        size: 20,
+                        color: isUnread ? AppColors.primary : AppColors.outline,
+                      ),
+                    ),
             ),
             const SizedBox(width: 12),
 
@@ -183,7 +250,7 @@ class NotificationTile extends StatelessWidget {
             ),
 
             // ── Unread dot ────────────────────────────────────────────
-            if (isUnread) ...[
+            if (isUnread && !selectionMode) ...[
               const SizedBox(width: 8),
               Container(
                 width: 8,

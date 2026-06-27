@@ -32,3 +32,19 @@ class PublicProfileArgs {
   /// where viewing the notifier's profile sends them another notification.
   final bool suppressViewNotification;
 }
+
+/// Arguments for AppRoutes.followList.
+///
+/// Drives the tabbed Followers / Following screen for [targetUid]. The tab
+/// the screen opens on is controlled by [initialTab].
+class FollowListArgs {
+  const FollowListArgs({
+    required this.targetUid,
+    this.initialTab = FollowListTab.followers,
+  });
+
+  final String targetUid;
+  final FollowListTab initialTab;
+}
+
+enum FollowListTab { followers, following }
