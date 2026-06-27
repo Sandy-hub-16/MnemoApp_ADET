@@ -66,16 +66,24 @@ class _NotificationBodyState extends State<_NotificationBody> {
   bool _isMarkingAll = false;
 
   // ── Selection-mode state ─────────────────────────────────────────────────
-  // Entered via long-press on any tile. While active, tapping a tile toggles
-  // its membership in _selectedIds instead of navigating/marking read.
-  bool _selectionMode = false;
-  final Set<String> _selectedIds = {};
+  // Using ValueNotifiers instead of plain setState so that toggling
+  // selection rebuilds ONLY the tiles and top-bar, not the StreamBuilder
+  // or the entire list — which was causing the jarring full-screen flash.
+  final ValueNotifier<bool> _selectionMode = ValueNotifier(false);
+  final ValueNotifier<Set<String>> _selectedIds = ValueNotifier({});
   bool _isDeleting = false;
 
   @override
   void initState() {
     super.initState();
     _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  }
+
+  @override
+  void dispose() {
+    _selectionMode.dispose();
+    _selectedIds.dispose();
+    super.dispose();
   }
 
   // ── Firestore helpers ─────────────────────────────────────────────────────
@@ -130,44 +138,41 @@ class _NotificationBodyState extends State<_NotificationBody> {
   // ── Selection mode ─────────────────────────────────────────────────────────
 
   void _enterSelectionMode(String notificationId) {
-    setState(() {
-      _selectionMode = true;
-      _selectedIds.add(notificationId);
-    });
+    // Mutate a new Set so ValueNotifier listeners detect the change.
+    final next = Set<String>.from(_selectedIds.value)..add(notificationId);
+    _selectedIds.value = next;
+    _selectionMode.value = true;
   }
 
   void _toggleSelected(String notificationId) {
-    setState(() {
-      if (_selectedIds.contains(notificationId)) {
-        _selectedIds.remove(notificationId);
-      } else {
-        _selectedIds.add(notificationId);
-      }
-      // Auto-exit selection mode once nothing is left checked, so the
-      // top-bar button reverts back to "Delete All" on its own.
-      if (_selectedIds.isEmpty) {
-        _selectionMode = false;
-      }
-    });
+    final next = Set<String>.from(_selectedIds.value);
+    if (next.contains(notificationId)) {
+      next.remove(notificationId);
+    } else {
+      next.add(notificationId);
+    }
+    _selectedIds.value = next;
+    // Auto-exit selection mode once nothing is left checked.
+    if (next.isEmpty) {
+      _selectionMode.value = false;
+    }
   }
 
   void _exitSelectionMode() {
-    setState(() {
-      _selectionMode = false;
-      _selectedIds.clear();
-    });
+    _selectedIds.value = {};
+    _selectionMode.value = false;
   }
 
   /// Deletes only the currently checked notifications. Same button placement
   /// as "Delete All" — this is what runs instead, while selection mode is
   /// active.
   Future<void> _deleteSelected() async {
-    if (_currentUid.isEmpty || _selectedIds.isEmpty) return;
+    if (_currentUid.isEmpty || _selectedIds.value.isEmpty) return;
 
     final confirmed = await _confirmDelete(
       title: 'Delete selected notifications?',
-      message: 'This will permanently delete ${_selectedIds.length} '
-          '${_selectedIds.length == 1 ? 'notification' : 'notifications'}. '
+      message: 'This will permanently delete ${_selectedIds.value.length} '
+          '${_selectedIds.value.length == 1 ? 'notification' : 'notifications'}. '
           'This can\'t be undone.',
     );
     if (confirmed != true || !mounted) return;
@@ -175,7 +180,7 @@ class _NotificationBodyState extends State<_NotificationBody> {
     setState(() => _isDeleting = true);
     try {
       final batch = FirebaseFirestore.instance.batch();
-      for (final id in _selectedIds) {
+      for (final id in _selectedIds.value) {
         batch.delete(
           FirebaseFirestore.instance
               .collection('users')
@@ -381,17 +386,24 @@ class _NotificationBodyState extends State<_NotificationBody> {
             child: _currentUid.isEmpty
                 ? Column(
                     children: [
-                      _NotificationTopBar(
-                        notifications: const [],
-                        isMarkingAll: false,
-                        onMarkAllRead: null,
-                        onBack: () => Navigator.of(context).pop(),
-                        selectionMode: false,
-                        selectedCount: 0,
-                        isDeleting: false,
-                        onDeleteAll: null,
-                        onDeleteSelected: null,
-                        onCancelSelection: null,
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _selectionMode,
+                        builder: (context, selMode, _) =>
+                            ValueListenableBuilder<Set<String>>(
+                          valueListenable: _selectedIds,
+                          builder: (context, selIds, _) => _NotificationTopBar(
+                            notifications: const [],
+                            isMarkingAll: false,
+                            onMarkAllRead: null,
+                            onBack: () => Navigator.of(context).pop(),
+                            selectionMode: selMode,
+                            selectedCount: selIds.length,
+                            isDeleting: _isDeleting,
+                            onDeleteAll: null,
+                            onDeleteSelected: null,
+                            onCancelSelection: null,
+                          ),
+                        ),
                       ),
                       Expanded(child: _buildEmptyState()),
                     ],
@@ -412,17 +424,25 @@ class _NotificationBodyState extends State<_NotificationBody> {
                       if (snapshot.hasError) {
                         return Column(
                           children: [
-                            _NotificationTopBar(
-                              notifications: const [],
-                              isMarkingAll: false,
-                              onMarkAllRead: null,
-                              onBack: () => Navigator.of(context).pop(),
-                              selectionMode: false,
-                              selectedCount: 0,
-                              isDeleting: false,
-                              onDeleteAll: null,
-                              onDeleteSelected: null,
-                              onCancelSelection: null,
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _selectionMode,
+                              builder: (context, selMode, _) =>
+                                  ValueListenableBuilder<Set<String>>(
+                                valueListenable: _selectedIds,
+                                builder: (context, selIds, _) =>
+                                    _NotificationTopBar(
+                                  notifications: const [],
+                                  isMarkingAll: false,
+                                  onMarkAllRead: null,
+                                  onBack: () => Navigator.of(context).pop(),
+                                  selectionMode: selMode,
+                                  selectedCount: selIds.length,
+                                  isDeleting: _isDeleting,
+                                  onDeleteAll: null,
+                                  onDeleteSelected: null,
+                                  onCancelSelection: null,
+                                ),
+                              ),
                             ),
                             Expanded(child: _buildErrorState()),
                           ],
@@ -435,29 +455,43 @@ class _NotificationBodyState extends State<_NotificationBody> {
                           .map((doc) => AppNotification.fromFirestore(doc))
                           .toList();
 
-                      return Column(
-                        children: [
-                          _NotificationTopBar(
-                            notifications: notifications,
-                            isMarkingAll: _isMarkingAll,
-                            onMarkAllRead: () => _markAllRead(notifications),
-                            onBack: () => Navigator.of(context).pop(),
-                            selectionMode: _selectionMode,
-                            selectedCount: _selectedIds.length,
-                            isDeleting: _isDeleting,
-                            onDeleteAll: notifications.isEmpty
-                                ? null
-                                : () => _deleteAll(notifications),
-                            onDeleteSelected:
-                                _selectedIds.isEmpty ? null : _deleteSelected,
-                            onCancelSelection: _exitSelectionMode,
-                          ),
-                          Expanded(
-                            child: notifications.isEmpty
-                                ? _buildEmptyState()
-                                : _buildList(notifications),
-                          ),
-                        ],
+                      // The Column + top-bar + list are wrapped in a
+                      // ValueListenableBuilder so selection changes only
+                      // rebuild this subtree — not the StreamBuilder.
+                      return ValueListenableBuilder<bool>(
+                        valueListenable: _selectionMode,
+                        builder: (context, selMode, _) =>
+                            ValueListenableBuilder<Set<String>>(
+                          valueListenable: _selectedIds,
+                          builder: (context, selIds, _) {
+                            return Column(
+                              children: [
+                                _NotificationTopBar(
+                                  notifications: notifications,
+                                  isMarkingAll: _isMarkingAll,
+                                  onMarkAllRead: () =>
+                                      _markAllRead(notifications),
+                                  onBack: () => Navigator.of(context).pop(),
+                                  selectionMode: selMode,
+                                  selectedCount: selIds.length,
+                                  isDeleting: _isDeleting,
+                                  onDeleteAll: notifications.isEmpty
+                                      ? null
+                                      : () => _deleteAll(notifications),
+                                  onDeleteSelected:
+                                      selIds.isEmpty ? null : _deleteSelected,
+                                  onCancelSelection: _exitSelectionMode,
+                                ),
+                                Expanded(
+                                  child: notifications.isEmpty
+                                      ? _buildEmptyState()
+                                      : _buildList(
+                                          notifications, selMode, selIds),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       );
                     },
                   ),
@@ -469,7 +503,8 @@ class _NotificationBodyState extends State<_NotificationBody> {
 
   // ── Notification list ─────────────────────────────────────────────────────
 
-  Widget _buildList(List<AppNotification> notifications) {
+  Widget _buildList(
+      List<AppNotification> notifications, bool selMode, Set<String> selIds) {
     return ListView.separated(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 140),
@@ -479,13 +514,14 @@ class _NotificationBodyState extends State<_NotificationBody> {
         final notification = notifications[index];
         final id = notification.notificationId;
         return NotificationTile(
+          key: ValueKey(id),
           notification: notification,
-          selectionMode: _selectionMode,
-          selected: _selectedIds.contains(id),
-          onTap: _selectionMode
+          selectionMode: selMode,
+          selected: selIds.contains(id),
+          onTap: selMode
               ? () => _toggleSelected(id)
               : () => _onTileTap(notification),
-          onLongPress: _selectionMode
+          onLongPress: selMode
               ? () => _toggleSelected(id)
               : () => _enterSelectionMode(id),
         );

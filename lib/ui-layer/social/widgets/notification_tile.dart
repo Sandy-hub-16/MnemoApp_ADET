@@ -108,7 +108,9 @@ class NotificationTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           // Selected tiles (in selection mode) get a stronger primary tint
@@ -121,7 +123,7 @@ class NotificationTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: selectionMode && selected
               ? Border.all(color: AppColors.primary, width: 1.5)
-              : null,
+              : Border.all(color: Colors.transparent, width: 1.5),
           boxShadow: [
             BoxShadow(
               color: AppColors.onSurface.withValues(alpha: 0.04),
@@ -134,40 +136,49 @@ class NotificationTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Bell icon (read/unread) or selection checkbox ──────────
-            selectionMode
-                ? Container(
-                    width: 40,
-                    height: 40,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: selected
-                          ? AppColors.primary
-                          : AppColors.surfaceContainerLow,
-                      border: selected
-                          ? null
-                          : Border.all(color: AppColors.outline, width: 1.5),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              transitionBuilder: (child, anim) =>
+                  ScaleTransition(scale: anim, child: child),
+              child: selectionMode
+                  ? AnimatedContainer(
+                      key: const ValueKey('checkbox'),
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected
+                            ? AppColors.primary
+                            : AppColors.surfaceContainerLow,
+                        border: selected
+                            ? null
+                            : Border.all(color: AppColors.outline, width: 1.5),
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check_rounded,
+                              size: 20, color: Colors.white)
+                          : null,
+                    )
+                  : Container(
+                      key: const ValueKey('icon'),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isUnread
+                            ? AppColors.primaryContainer
+                            : AppColors.surfaceContainerLow,
+                      ),
+                      child: Icon(
+                        _iconFor(notification.type, isUnread),
+                        size: 20,
+                        color: isUnread ? AppColors.primary : AppColors.outline,
+                      ),
                     ),
-                    child: selected
-                        ? const Icon(Icons.check_rounded,
-                            size: 20, color: Colors.white)
-                        : null,
-                  )
-                : Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isUnread
-                          ? AppColors.primaryContainer
-                          : AppColors.surfaceContainerLow,
-                    ),
-                    child: Icon(
-                      _iconFor(notification.type, isUnread),
-                      size: 20,
-                      color: isUnread ? AppColors.primary : AppColors.outline,
-                    ),
-                  ),
+            ),
             const SizedBox(width: 12),
 
             // ── Text content ──────────────────────────────────────────

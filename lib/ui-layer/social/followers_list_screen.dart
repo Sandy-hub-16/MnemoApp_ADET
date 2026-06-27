@@ -250,7 +250,13 @@ class _FollowSubList extends StatefulWidget {
   State<_FollowSubList> createState() => _FollowSubListState();
 }
 
-class _FollowSubListState extends State<_FollowSubList> {
+class _FollowSubListState extends State<_FollowSubList>
+    with AutomaticKeepAliveClientMixin {
+  // Keep this tab's subtree alive when the user switches to the other tab,
+  // so loaded profiles and avatar images are retained without re-fetching.
+  @override
+  bool get wantKeepAlive => true;
+
   final Map<String, PublicProfile> _profileCache = {};
 
   // Tracks uids the current user follows, so each row's FollowButton (shown
@@ -306,6 +312,22 @@ class _FollowSubListState extends State<_FollowSubList> {
     }
   }
 
+  // Holds the last fully-resolved profile list so we can show it
+  // immediately while a new Future.wait is pending (avoids the flash
+  // back to a spinner every time the stream emits a follow/unfollow).
+  List<PublicProfile>? _lastProfiles;
+  Future<List<PublicProfile?>>? _profilesFuture;
+  String _lastUidKey = '';
+
+  Future<List<PublicProfile?>> _profilesFutureFor(List<String> uids) {
+    final key = uids.join(',');
+    if (key != _lastUidKey) {
+      _lastUidKey = key;
+      _profilesFuture = Future.wait(uids.map(_resolve));
+    }
+    return _profilesFuture!;
+  }
+
   Future<void> _toggleFollow(String targetUid) async {
     if (_followActionInFlight.contains(targetUid)) return;
     setState(() => _followActionInFlight.add(targetUid));
@@ -336,10 +358,12 @@ class _FollowSubListState extends State<_FollowSubList> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _stream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _lastProfiles == null) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
@@ -356,7 +380,7 @@ class _FollowSubListState extends State<_FollowSubList> {
 
         final uids = snapshot.data?.docs.map((d) => d.id).toList() ?? [];
 
-        if (uids.isEmpty) {
+        if (uids.isEmpty && _lastProfiles == null) {
           return _MessageState(
             icon: widget.emptyIcon,
             iconColor: AppColors.primary,
@@ -366,18 +390,24 @@ class _FollowSubListState extends State<_FollowSubList> {
         }
 
         return FutureBuilder<List<PublicProfile?>>(
-          // Keyed by the joined uid list so this only re-runs when the
-          // actual set of uids changes, not on every rebuild.
-          future: Future.wait(uids.map(_resolve)),
+          // Stable future — only re-created when the uid set actually changes.
+          future: uids.isEmpty ? Future.value([]) : _profilesFutureFor(uids),
           builder: (context, profileSnapshot) {
-            if (!profileSnapshot.hasData) {
+            // While resolving, keep showing the last good list so there's
+            // no flash back to a spinner between tab switches / stream events.
+            final resolvedProfiles =
+                profileSnapshot.data?.whereType<PublicProfile>().toList();
+            final profiles = resolvedProfiles ?? _lastProfiles ?? [];
+
+            if (resolvedProfiles != null) {
+              _lastProfiles = resolvedProfiles;
+            }
+
+            if (!profileSnapshot.hasData && profiles.isEmpty) {
               return const Center(
                 child: CircularProgressIndicator(color: AppColors.primary),
               );
             }
-
-            final profiles =
-                profileSnapshot.data!.whereType<PublicProfile>().toList();
 
             if (profiles.isEmpty) {
               return _MessageState(
@@ -397,6 +427,7 @@ class _FollowSubListState extends State<_FollowSubList> {
                 final profile = profiles[index];
                 final isSelf = profile.uid == widget.currentUid;
                 return _PersonTile(
+                  key: ValueKey(profile.uid),
                   profile: profile,
                   onTap: () => Navigator.of(context).pushNamed(
                     AppRoutes.publicProfile,
@@ -428,6 +459,7 @@ class _FollowSubListState extends State<_FollowSubList> {
 
 class _PersonTile extends StatelessWidget {
   const _PersonTile({
+    super.key,
     required this.profile,
     required this.onTap,
     this.trailing,
@@ -475,7 +507,13 @@ class _PersonTile extends StatelessWidget {
                       profile.photoUrl != null && profile.photoUrl!.isNotEmpty
                           ? Image.network(
                               profile.photoUrl!,
+                              width: 44,
+                              height: 44,
                               fit: BoxFit.cover,
+                              // Keep showing the old image while the new one
+                              // loads — prevents the flash to the fallback icon.
+                              gaplessPlayback: true,
+                              cacheWidth: 88, // 2× for density
                               errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person_rounded,
                                 color: AppColors.primary,
